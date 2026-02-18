@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#FFE566"/>
+  <rect x="4" y="4" width="184" height="184" rx="38" fill="#FFE566" stroke="#1A1A1A" stroke-width="4"/>
+  <circle cx="96" cy="80" r="40" fill="white" stroke="#1A1A1A" stroke-width="4"/>
+  <circle cx="96" cy="80" r="30" fill="#FFFACD"/>
+  <path d="M84 70L86 76L92 76L87 80L89 86L84 82L79 86L81 80L76 76L82 76Z" fill="#FFE566"/>
+  <path d="M108 68L109 72L113 72L110 74L111 78L108 76L105 78L106 74L103 72L107 72Z" fill="#FFE566"/>
+  <path d="M96 88L97 91L100 91L98 93L99 96L96 94L93 96L94 93L92 91L95 91Z" fill="#FFE566"/>
+  <rect x="60" y="116" width="72" height="10" rx="4" fill="white" stroke="#1A1A1A" stroke-width="3"/>
+  <path d="M68 122H76L72 130H64L68 122Z" fill="#FFE566" stroke="#1A1A1A" stroke-width="2"/>
+  <text x="96" y="162" text-anchor="middle" font-family="system-ui,sans-serif" font-size="28" font-weight="800" fill="#1A1A1A">KZodi</text>
+</svg>

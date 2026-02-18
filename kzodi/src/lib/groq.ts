@@ -1,0 +1,458 @@
+/**
+ * Centralized Groq API Client — moonshotai/kimi-k2-instruct-0905
+ *
+ * Pay-as-you-go plan — high TPM limits
+ *
+ * Features:
+ *   - Direct language output (1 call, not 2)
+ *   - Compact system prompts to save input tokens
+ *   - TPM tracking with auto-delay when near limit
+ *   - Aggressive caching for repeated queries
+ *   - Request queue (max 2 concurrent) + retry with backoff
+ *   - LRU Cache: 500 entries, 30min TTL
+ */
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+// ─── Model Configuration ─────────────────────────────────────────────────────
+
+const MODEL = "moonshotai/kimi-k2-instruct-0905";
+const FALLBACK_MODEL = "openai/gpt-oss-120b";
+
+export const MODELS = {
+  CHAT: MODEL,
+  ANALYZE: MODEL,
+} as const;
+
+/** Pay-as-you-go TPM limits */
+const MODEL_TPM_LIMITS: Record<string, number> = {
+  [MODEL]: 100_000,
+  [FALLBACK_MODEL]: 150_000,
+};
+
+// ─── LRU Cache ───────────────────────────────────────────────────────────────
+
+interface CacheEntry {
+  value: string;
+  expiry: number;
+}
+
+class LRUCache {
+  private map = new Map<string, CacheEntry>();
+  private maxSize: number;
+  private ttlMs: number;
+
+  constructor(maxSize = 500, ttlMinutes = 30) {
+    this.maxSize = maxSize;
+    this.ttlMs = ttlMinutes * 60 * 1000;
+  }
+
+  get(key: string): string | null {
+    const entry = this.map.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiry) {
+      this.map.delete(key);
+      return null;
+    }
+    this.map.delete(key);
+    this.map.set(key, entry);
+    return entry.value;
+  }
+
+  set(key: string, value: string): void {
+    this.map.delete(key);
+    if (this.map.size >= this.maxSize) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) this.map.delete(oldest);
+    }
+    this.map.set(key, { value, expiry: Date.now() + this.ttlMs });
+  }
+
+  has(key: string): boolean {
+    return this.get(key) !== null;
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+}
+
+// ─── Request Queue ───────────────────────────────────────────────────────────
+
+type QueueTask<T> = {
+  fn: () => Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+};
+
+class RequestQueue {
+  private queue: QueueTask<unknown>[] = [];
+  private active = 0;
+  private maxConcurrent: number;
+
+  constructor(maxConcurrent = 2) {
+    this.maxConcurrent = maxConcurrent;
+  }
+
+  enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push({ fn, resolve: resolve as (v: unknown) => void, reject });
+      this.processNext();
+    });
+  }
+
+  private async processNext(): Promise<void> {
+    if (this.active >= this.maxConcurrent || this.queue.length === 0) return;
+    const task = this.queue.shift()!;
+    this.active++;
+    try {
+      const result = await task.fn();
+      task.resolve(result);
+    } catch (err) {
+      task.reject(err);
+    } finally {
+      this.active--;
+      this.processNext();
+    }
+  }
+
+  get pending(): number { return this.queue.length; }
+  get running(): number { return this.active; }
+}
+
+// ─── TPM Tracker ─────────────────────────────────────────────────────────────
+
+interface TokenUsage {
+  timestamp: number;
+  tokens: number;
+}
+
+class TPMTracker {
+  private usage: Map<string, TokenUsage[]> = new Map();
+
+  /** Record token usage for a model */
+  record(model: string, tokens: number): void {
+    if (!this.usage.has(model)) this.usage.set(model, []);
+    const list = this.usage.get(model)!;
+    list.push({ timestamp: Date.now(), tokens });
+    // Cleanup entries older than 60s
+    const cutoff = Date.now() - 60_000;
+    this.usage.set(model, list.filter((u) => u.timestamp > cutoff));
+  }
+
+  /** Get current TPM usage for a model */
+  getCurrentTPM(model: string): number {
+    const cutoff = Date.now() - 60_000;
+    const list = this.usage.get(model) || [];
+    return list.filter((u) => u.timestamp > cutoff).reduce((sum, u) => sum + u.tokens, 0);
+  }
+
+  /** Calculate delay needed to stay under TPM limit */
+  getRequiredDelay(model: string, estimatedTokens: number): number {
+    const limit = MODEL_TPM_LIMITS[model] || 10_000;
+    const current = this.getCurrentTPM(model);
+
+    // No usage in window → always allow immediately
+    if (current === 0) return 0;
+
+    const projected = current + estimatedTokens;
+    if (projected <= limit * 0.85) return 0; // Under 85% - safe
+
+    // Find when enough tokens will "expire" from the window
+    const list = (this.usage.get(model) || []).sort((a, b) => a.timestamp - b.timestamp);
+    let accumulated = current;
+    for (const entry of list) {
+      accumulated -= entry.tokens;
+      if (accumulated + estimatedTokens <= limit * 0.85) {
+        const waitUntil = entry.timestamp + 60_000;
+        const delay = waitUntil - Date.now();
+        return Math.max(delay, 0);
+      }
+    }
+
+    // Wait for oldest entry to expire
+    if (list.length > 0) {
+      const oldestExpiry = list[0].timestamp + 60_000;
+      return Math.max(oldestExpiry - Date.now(), 1000);
+    }
+
+    return 0;
+  }
+}
+
+// ─── Groq Client ─────────────────────────────────────────────────────────────
+
+export interface GroqMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface GroqChatParams {
+  messages: GroqMessage[];
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  response_format?: { type: string };
+}
+
+export interface GroqResponse {
+  content: string;
+  finish_reason: string;
+  truncated: boolean;
+  cached: boolean;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Rough token estimation (conservative: ~3 chars per token for mixed content) */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3);
+}
+
+function generateCacheKey(params: GroqChatParams, prefix: string): string {
+  const model = params.model || MODELS.CHAT;
+  const msgKey = params.messages.map((m) => `${m.role}:${m.content.slice(0, 200)}`).join("|");
+  return `${prefix}:${model}:${params.temperature ?? 0.7}:${params.max_tokens ?? 1000}:${msgKey}`;
+}
+
+class GroqClient {
+  private queues: Map<string, RequestQueue> = new Map();
+  private cache: LRUCache;
+  private tpm: TPMTracker;
+
+  constructor() {
+    this.cache = new LRUCache(500, 30);
+    this.tpm = new TPMTracker();
+  }
+
+  private getQueue(model: string): RequestQueue {
+    if (!this.queues.has(model)) {
+      this.queues.set(model, new RequestQueue(2));
+    }
+    return this.queues.get(model)!;
+  }
+
+  async chat(params: GroqChatParams, options?: {
+    cachePrefix?: string;
+    useCache?: boolean;
+    maxRetries?: number;
+  }): Promise<GroqResponse> {
+    const { cachePrefix = "chat", useCache = false, maxRetries = 3 } = options || {};
+
+    if (useCache) {
+      const cacheKey = generateCacheKey(params, cachePrefix);
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        console.log(`[Groq] Cache hit (${cachePrefix})`);
+        return { content: cached, finish_reason: "cached", truncated: false, cached: true };
+      }
+    }
+
+    const model = params.model || MODELS.CHAT;
+    const queue = this.getQueue(model);
+
+    const result = await queue.enqueue(() => this.callWithRetry(params, maxRetries, useCache ? cachePrefix : null));
+
+    // Auto-fallback: if primary model returns empty/too-short, try fallback model
+    if ((!result.content || result.content.length < 10) && model === MODEL && FALLBACK_MODEL) {
+      console.warn(`[Groq] Primary model empty (${result.content.length} chars). Auto-fallback to ${FALLBACK_MODEL}...`);
+      const fallbackParams = { ...params, model: FALLBACK_MODEL };
+      const fbQueue = this.getQueue(FALLBACK_MODEL);
+      const fbResult = await fbQueue.enqueue(() => this.callWithRetry(fallbackParams, maxRetries, useCache ? cachePrefix : null));
+      if (fbResult.content && fbResult.content.length >= 10) {
+        return fbResult;
+      }
+    }
+
+    return result;
+  }
+
+  private async callWithRetry(
+    params: GroqChatParams,
+    maxRetries: number,
+    cachePrefix: string | null
+  ): Promise<GroqResponse> {
+    const backoffs = [1000, 2000, 4000, 8000];
+    const model = params.model || MODELS.CHAT;
+
+    // Estimate tokens for TPM tracking
+    const inputText = params.messages.map((m) => m.content).join("");
+    const estimatedInput = estimateTokens(inputText);
+    const estimatedTotal = estimatedInput + (params.max_tokens || 1000);
+
+    // TPM-aware delay: wait if we'd exceed the limit
+    const delay = this.tpm.getRequiredDelay(model, estimatedTotal);
+    if (delay > 0) {
+      console.log(`[Groq] TPM throttle: waiting ${delay}ms before request to ${model} (current: ${this.tpm.getCurrentTPM(model)} TPM)`);
+      await sleep(delay);
+    }
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (!GROQ_API_KEY) {
+          console.error("[Groq] No API key configured");
+          return { content: "", finish_reason: "error", truncated: false, cached: false };
+        }
+
+        // On json_validate_failed retry, reinforce JSON instruction in messages
+        let messages = params.messages;
+        if (attempt > 0 && params.response_format) {
+          messages = [
+            ...params.messages,
+            { role: "user", content: "Remember: respond ONLY with a valid JSON object starting with { — no other text." },
+          ];
+        }
+
+        const body: Record<string, unknown> = {
+          model,
+          messages,
+          temperature: params.temperature ?? 0.7,
+          max_tokens: params.max_tokens ?? 1000,
+        };
+        if (params.response_format) {
+          body.response_format = params.response_format;
+        }
+
+        console.log(`[Groq] ${model} attempt ${attempt + 1}/${maxRetries + 1}, TPM: ${this.tpm.getCurrentTPM(model)}/${MODEL_TPM_LIMITS[model] || "??"}`);
+
+        const fetchController = new AbortController();
+        const fetchTimeout = setTimeout(() => fetchController.abort(), 60000);
+        const res = await fetch(GROQ_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${GROQ_API_KEY}`,
+          },
+          body: JSON.stringify(body),
+          signal: fetchController.signal,
+        });
+        clearTimeout(fetchTimeout);
+
+        // Handle rate limiting (429)
+        if (res.status === 429) {
+          const retryAfter = res.headers.get("retry-after");
+          const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : backoffs[attempt] || 8000;
+          console.warn(`[Groq] Rate limited (429) on ${model}. Wait ${waitMs}ms (attempt ${attempt + 1})`);
+          // Record a large token estimate to prevent immediate re-tries
+          this.tpm.record(model, estimatedTotal);
+          if (attempt < maxRetries) {
+            await sleep(waitMs);
+            continue;
+          }
+          return { content: "", finish_reason: "rate_limited", truncated: false, cached: false };
+        }
+
+        // Handle server errors (5xx)
+        if (res.status >= 500) {
+          const waitMs = backoffs[attempt] || 8000;
+          console.warn(`[Groq] Server error (${res.status}) on ${model}. Wait ${waitMs}ms`);
+          if (attempt < maxRetries) {
+            await sleep(waitMs);
+            continue;
+          }
+          return { content: "", finish_reason: "server_error", truncated: false, cached: false };
+        }
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error(`[Groq] Error ${res.status} on ${model}: ${errText.slice(0, 300)}`);
+
+          // Retry on 400 errors (json_validate_failed, bad request, etc.)
+          if (res.status === 400) {
+            console.warn(`[Groq] 400 error on ${model}. Retrying... (attempt ${attempt + 1})`);
+            if (attempt < maxRetries) {
+              await sleep(backoffs[attempt] || 2000);
+              continue;
+            }
+          }
+
+          // Retry on any 4xx (except 401/403 auth errors)
+          if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403) {
+            if (attempt < maxRetries) {
+              await sleep(backoffs[attempt] || 2000);
+              continue;
+            }
+          }
+
+          return { content: "", finish_reason: "error", truncated: false, cached: false };
+        }
+
+        // Success
+        const data = await res.json();
+        const choice = data.choices?.[0];
+        const content = choice?.message?.content || "";
+        const finishReason = choice?.finish_reason || "unknown";
+        const truncated = finishReason === "length";
+
+        // Track actual token usage
+        const usage = data.usage;
+        if (usage) {
+          this.tpm.record(model, (usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
+          console.log(`[Groq] ${model} tokens: ${usage.prompt_tokens}in + ${usage.completion_tokens}out = ${usage.total_tokens}total`);
+        } else {
+          this.tpm.record(model, estimatedTotal);
+        }
+
+        if (truncated) {
+          console.warn(`[Groq] TRUNCATED on ${model}! finish_reason=length, max_tokens=${params.max_tokens}. Output: ${content.length} chars`);
+        }
+
+        console.log(`[Groq] ${model} OK: ${content.length} chars, reason=${finishReason}`);
+
+        if (cachePrefix && content) {
+          const cacheKey = generateCacheKey(params, cachePrefix);
+          this.cache.set(cacheKey, content);
+        }
+
+        return { content, finish_reason: finishReason, truncated, cached: false };
+      } catch (err) {
+        console.error(`[Groq] Exception on ${model} attempt ${attempt + 1}:`, err);
+        if (attempt < maxRetries) {
+          await sleep(backoffs[attempt] || 4000);
+          continue;
+        }
+        return { content: "", finish_reason: "exception", truncated: false, cached: false };
+      }
+    }
+
+    return { content: "", finish_reason: "exhausted_retries", truncated: false, cached: false };
+  }
+
+  get stats() {
+    const models = Object.values(MODELS);
+    const perModel: Record<string, { tpm: number; limit: number }> = {};
+    for (const m of models) {
+      perModel[m] = {
+        tpm: this.tpm.getCurrentTPM(m),
+        limit: MODEL_TPM_LIMITS[m] || 0,
+      };
+    }
+    return { cacheSize: this.cache.size, perModel };
+  }
+}
+
+// ─── Singleton Export ────────────────────────────────────────────────────────
+
+export const groq = new GroqClient();
+
+// ─── Language Names (shared across routes) ───────────────────────────────────
+
+export const LANG_NAMES: Record<string, string> = {
+  my: "Burmese (Myanmar)",
+  th: "Thai",
+  zh: "Chinese (Simplified)",
+  ja: "Japanese",
+  ko: "Korean",
+  hi: "Hindi",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  pt: "Portuguese",
+  ru: "Russian",
+  ar: "Arabic",
+  vi: "Vietnamese",
+  id: "Indonesian",
+};
