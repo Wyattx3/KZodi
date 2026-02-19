@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChatStore, type ChatMessage } from "@/lib/chatStore";
 import { type Character } from "@/data/characters";
@@ -11,97 +11,542 @@ interface ChatRoomProps {
 }
 
 
+// Sticker Options (30 items)
+const STICKER_OPTIONS = [
+    { label: "Happy", emoji: "😊" },
+    { label: "Love", emoji: "😍" },
+    { label: "Laugh", emoji: "😂" },
+    { label: "Sad", emoji: "😢" },
+    { label: "Angry", emoji: "😡" },
+    { label: "Confused", emoji: "😕" },
+    { label: "Surprised", emoji: "😲" },
+    { label: "Scared", emoji: "😱" },
+    { label: "Shy", emoji: "😳" },
+    { label: "Wink", emoji: "😉" },
+    { label: "Cool", emoji: "😎" },
+    { label: "Sleepy", emoji: "😴" },
+    { label: "Sick", emoji: "😷" },
+    { label: "Angel", emoji: "😇" },
+    { label: "Devil", emoji: "😈" },
+    { label: "Thinking", emoji: "🤔" },
+    { label: "Thumbs Up", emoji: "👍" },
+    { label: "Thumbs Down", emoji: "👎" },
+    { label: "Clap", emoji: "👏" },
+    { label: "Pray", emoji: "🙏" },
+    { label: "Muscle", emoji: "💪" },
+    { label: "Wave", emoji: "👋" },
+    { label: "Ok", emoji: "👌" },
+    { label: "Peace", emoji: "✌️" },
+    { label: "Celebrate", emoji: "🎉" },
+    { label: "Fire", emoji: "🔥" },
+    { label: "Heart", emoji: "❤️" },
+    { label: "Broken Heart", emoji: "💔" },
+    { label: "Star", emoji: "⭐" },
+    { label: "Sparkles", emoji: "✨" },
+];
+
+// User Character Definition for Stickers
+const USER_CHARACTER: Character = {
+    id: "user-me",
+    name: "Me",
+    tag: "Original",
+    description: "A cute chibi version of the user, wearing a casual hoodie, friendly smile, expressive anime style.",
+    longDescription: "A generic cute anime avatar representing the user.",
+    tags: ["chibi", "user", "cute", "expressive"],
+    personality: "Friendly, casual",
+    greeting: "",
+    image: "", // Will rely on description for generation
+};
+
+// Sticker cache version — bump this to force re-processing of all stickers
+const STICKER_CACHE_VERSION = "v9-STRICT-XAI";
+if (typeof window !== "undefined") {
+    const currentVer = localStorage.getItem("kzodi-sticker-cache-ver");
+    if (currentVer !== STICKER_CACHE_VERSION) {
+        // Clear ALL sticker caches — both raw and processed — so new white-bg stickers get generated
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && (k.startsWith("kzodi-sticker-proc-") || k.startsWith("kzodi-sticker-"))) keysToRemove.push(k);
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+        localStorage.setItem("kzodi-sticker-cache-ver", STICKER_CACHE_VERSION);
+        console.log(`[Sticker] Cache version updated to ${STICKER_CACHE_VERSION}, cleared ${keysToRemove.length} sticker entries`);
+    }
+}
+
 // Sticker Component
-const Sticker = ({ prompt }: { prompt: string }) => {
-    const [stickerData, setStickerData] = useState<{ image?: string; svg?: string; type?: string } | null>(null);
-    const [loading, setLoading] = useState(true);
+// localStorage-backed sticker cache — survives page refresh, no extra API calls!
+const STICKER_LS_PREFIX = "kzodi-sticker-";
+const STICKER_PROCESSED_PREFIX = "kzodi-sticker-proc-";
+
+function getStickerFromCache(key: string): { image?: string; svg?: string; type?: string } | null {
+    try {
+        const raw = localStorage.getItem(STICKER_LS_PREFIX + key);
+        if (raw) return JSON.parse(raw);
+    } catch { /* ignore parse errors */ }
+    return null;
+}
+
+function saveStickerToCache(key: string, data: { image?: string; svg?: string; type?: string }) {
+    try {
+        localStorage.setItem(STICKER_LS_PREFIX + key, JSON.stringify(data));
+    } catch { /* quota exceeded — silently ignore */ }
+}
+
+function getProcessedFromCache(key: string): string | null {
+    try {
+        return localStorage.getItem(STICKER_PROCESSED_PREFIX + key);
+    } catch { return null; }
+}
+
+function saveProcessedToCache(key: string, dataUrl: string) {
+    try {
+        localStorage.setItem(STICKER_PROCESSED_PREFIX + key, dataUrl);
+    } catch { /* quota exceeded */ }
+}
+
+// White background removal — removes white/near-white pixels with smooth edge transition
+function removeWhiteBackground(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = imageData.data;
+
+    for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+
+        // Calculate how "white" this pixel is (0 = black, 1 = pure white)
+        const brightness = (r + g + b) / (3 * 255);
+        // Check color saturation — white has very low saturation
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const saturation = max === 0 ? 0 : (max - min) / max;
+
+        if (brightness > 0.92 && saturation < 0.1) {
+            // Pure white/near-white — fully transparent
+            d[i + 3] = 0;
+        } else if (brightness > 0.85 && saturation < 0.15) {
+            // Near-white edge — smooth fade for anti-aliasing
+            const whiteness = (brightness - 0.85) / 0.07;
+            d[i + 3] = Math.round(d[i + 3] * (1 - whiteness * 0.9));
+        } else if (brightness > 0.78 && saturation < 0.08) {
+            // Very light gray edge — gentle fade
+            const whiteness = (brightness - 0.78) / 0.07;
+            d[i + 3] = Math.round(d[i + 3] * (1 - whiteness * 0.5));
+        }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+}
+
+const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; character: Character; fallbackEmoji?: string }) => {
+    // Check for Pack Override (PACK:id:name:prompt)
+    const packMatch = prompt.match(/^PACK:(.+?):(.+?):(.+)$/);
+    let targetChar = character;
+    let effectivePrompt = prompt;
+
+    if (packMatch) {
+        const [_, pId, pName, pPrompt] = packMatch;
+        effectivePrompt = pPrompt;
+        // Create a temporary character for generation based on the pack
+        targetChar = {
+            ...character, // Keep base props to avoid TS errors
+            id: pId,
+            name: pName,
+            description: `A cute ${pName} character sticker art.`,
+            longDescription: "",
+            tags: ["sticker", "pack", pName.toLowerCase()],
+            image: "",
+            personality: "expressive"
+        };
+    }
+
+    const cacheKey = `${targetChar.id}-${effectivePrompt}`;
+    const cached = getStickerFromCache(cacheKey);
+    const cachedProcessed = getProcessedFromCache(cacheKey);
+
+    const [stickerData, setStickerData] = useState<{ image?: string; svg?: string; type?: string } | null>(cached);
+    const [processedImage, setProcessedImage] = useState<string | null>(cachedProcessed);
+    const [loading, setLoading] = useState(!cached && !cachedProcessed);
+    const [error, setError] = useState<string | null>(null);
+
+    // Reset state when cacheKey changes
+    useEffect(() => {
+        const c = getStickerFromCache(cacheKey);
+        const p = getProcessedFromCache(cacheKey);
+        setStickerData(c);
+        setProcessedImage(p);
+        setLoading(!c && !p);
+        setError(null);
+    }, [cacheKey]);
 
     useEffect(() => {
+        if (stickerData || processedImage) return;
+
         let mounted = true;
-        fetch("/api/sticker", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt }),
-        })
-            .then((res) => res.json())
-            .then((data) => {
+        setLoading(true);
+        setError(null);
+        const delay = Math.random() * 500;
+
+        const fetchSticker = async () => {
+            await new Promise(r => setTimeout(r, delay));
+            if (!mounted) return;
+
+            const recheck = getStickerFromCache(cacheKey);
+            if (recheck) {
                 if (mounted) {
-                    setStickerData(data);
+                    setStickerData(recheck);
                     setLoading(false);
                 }
-            })
-            .catch(() => {
-                if (mounted) setLoading(false);
-            });
+                return;
+            }
+
+            try {
+                const res = await fetch("/api/sticker", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        prompt: effectivePrompt,
+                        characterName: targetChar.name,
+                        characterDescription: targetChar.description,
+                        characterLongDescription: targetChar.longDescription || "",
+                        characterTags: targetChar.tags || [],
+                        characterPersonality: targetChar.personality || "",
+                        characterImage: targetChar.image,
+                        characterSource: targetChar.source || ""
+                    }),
+                });
+
+                if (!res.ok) {
+                    if (res.status === 402) throw new Error("QUOTA");
+                    throw new Error("API_FAIL");
+                }
+
+                const data = await res.json();
+
+                if (mounted) {
+                    saveStickerToCache(cacheKey, data);
+                    setStickerData(data);
+                    if (data.type === "svg" || !data.image) {
+                        setLoading(false);
+                    }
+                }
+            } catch (e: any) {
+                console.error("Sticker load failed", e);
+                if (mounted) {
+                    setLoading(false);
+                    setError(e.message === "QUOTA" ? "quota" : "generic");
+                }
+            }
+        };
+
+        fetchSticker();
         return () => { mounted = false; };
-    }, [prompt]);
+    }, [prompt, character.id, cacheKey, stickerData, processedImage]);
+
+    // ... (Chroma Key Effect remains same) ...
+
+    useEffect(() => {
+        if (processedImage) return;
+        if (!stickerData?.image || stickerData.type !== "image") return;
+
+        let mounted = true;
+        const img = new Image();
+        if (stickerData.image.startsWith("http")) img.crossOrigin = "Anonymous";
+        img.src = stickerData.image;
+
+        img.onload = () => {
+            if (!mounted) return;
+            try {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                if (!ctx) { setLoading(false); return; }
+
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+
+                removeWhiteBackground(canvas, ctx);
+
+                const result = canvas.toDataURL("image/png");
+                setProcessedImage(result);
+                saveProcessedToCache(cacheKey, result);
+            } catch (e) {
+                setProcessedImage(stickerData.image!);
+            }
+            setLoading(false);
+        };
+
+        img.onerror = () => {
+            if (mounted) {
+                setProcessedImage(stickerData.image!);
+                setLoading(false);
+            }
+        }
+        return () => { mounted = false; };
+    }, [stickerData, processedImage, cacheKey]);
+
 
     const stickerStyle: React.CSSProperties = {
-        maxWidth: "150px",
-        maxHeight: "150px",
+        maxWidth: "100%",
+        maxHeight: "100%",
+        width: "auto",
+        height: "auto",
         filter: "drop-shadow(0px 0px 3px rgba(255,255,255,0.8)) drop-shadow(0px 1px 2px rgba(0,0,0,0.15))",
         transition: "transform 0.2s ease",
         cursor: "pointer",
+        objectFit: "contain"
     };
 
     if (loading) {
         return (
-            <span style={{ fontSize: "12px", color: "#aaa", display: "block", margin: "4px 0" }}>
-                ✨ {prompt}
-            </span>
+            <div style={{
+                width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                position: "relative"
+            }}>
+                <div style={{ fontSize: "40px", opacity: 0.5, filter: "blur(2px)" }}>{fallbackEmoji || "✨"}</div>
+                <motion.div
+                    style={{ position: "absolute", width: 20, height: 20, border: "2px solid rgba(0,0,0,0.5)", borderTop: "2px solid transparent", borderRadius: "50%" }}
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                />
+            </div>
         );
     }
 
-    if (stickerData?.image) {
+    if (error === "quota") {
         return (
-            <img
-                src={stickerData.image}
-                alt={prompt}
-                style={{ ...stickerStyle, borderRadius: "8px" }}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.08)")}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
-            />
+            <div style={{ fontSize: "16px", textAlign: "center", color: "red", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} title="API Credit Limit Reached">
+                <span style={{ fontSize: "24px" }}>💸</span>
+                <span style={{ fontSize: "10px" }}>No Credits</span>
+            </div>
         );
+    }
+
+    if (processedImage) {
+        return <img src={processedImage} alt={prompt} style={{ ...stickerStyle, borderRadius: "0" }} />;
     }
 
     if (stickerData?.svg) {
-        return (
-            <div
-                dangerouslySetInnerHTML={{ __html: stickerData.svg }}
-                style={{ ...stickerStyle, overflow: "visible" }}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.08)")}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
-            />
-        );
+        return <div dangerouslySetInnerHTML={{ __html: stickerData.svg }} style={{ ...stickerStyle, overflow: "visible", display: "flex", alignItems: "center", justifyContent: "center" }} />;
     }
 
-    return null;
+    if (stickerData?.image) {
+        return <img src={stickerData.image} alt={prompt} style={{ ...stickerStyle, borderRadius: "8px" }} />;
+    }
+
+    return (
+        <div style={{ fontSize: "48px", textAlign: "center", lineHeight: "1" }} title="Sticker generation failed">
+            {fallbackEmoji || "❓"}
+        </div>
+    );
 };
 
 // Parse message content for sticker tags
-const STICKER_REGEX = /\[\[STICKER:\s*(.+?)\]\]/g;
+const STICKER_REGEX = /(\[\[\s*STICKER\s*:[^\]]+\]\])/gi;
 
-const renderMessageContent = (content: string) => {
+const renderMessageContent = (content: string, character: Character) => {
     // Split by sticker tags, keeping the delimiters
-    const parts = content.split(/(\[\[STICKER:\s*.+?\]\])/g);
+    const parts = content.split(STICKER_REGEX);
 
     return parts.map((part, i) => {
-        const stickerMatch = part.match(/\[\[STICKER:\s*(.+?)\]\]/);
+        const stickerMatch = part.match(/\[\[\s*STICKER\s*:\s*(.+?)\]\]/i);
         if (stickerMatch) {
             const stickerPrompt = stickerMatch[1].trim();
-            return <Sticker key={i} prompt={stickerPrompt} />;
+            // Find fallback emoji
+            const option = STICKER_OPTIONS.find(o => o.label.toLowerCase() === stickerPrompt.toLowerCase());
+            return <Sticker key={i} prompt={stickerPrompt} character={character} fallbackEmoji={option?.emoji} />;
         }
         if (!part || !part.trim()) return null;
         return <span key={i}>{part}</span>;
     });
 };
 
+// Sticker Grid Component for the Picker
+const StickerGrid = ({
+    character,
+    onSelect,
+    prompts
+}: {
+    character: Character,
+    onSelect: (label: string) => void,
+    prompts?: string[]
+}) => {
+    // Default to character feelings if no prompts provided
+    const items = prompts ? prompts.map(p => ({ label: p, emoji: "✨" })) : STICKER_OPTIONS;
+
+    return (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", overflowY: "auto", paddingRight: "4px" }}>
+            {items.map((opt, idx) => (
+                <button
+                    key={`${opt.label}-${idx}`}
+                    onClick={() => onSelect(opt.label)}
+                    style={{
+                        aspectRatio: "1/1",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "rgba(255,255,255,0.5)",
+                        borderRadius: "12px",
+                        border: "1px solid rgba(0,0,0,0.05)",
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+                        position: "relative",
+                        overflow: "hidden"
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "scale(1.05)";
+                        e.currentTarget.style.background = "rgba(255,255,255,0.8)";
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "scale(1)";
+                        e.currentTarget.style.background = "rgba(255,255,255,0.5)";
+                    }}
+                    title={opt.label}
+                >
+                    <div style={{ position: "absolute", inset: 0, padding: "8px", pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Sticker prompt={opt.label} character={character} fallbackEmoji={opt.emoji} />
+                    </div>
+                </button>
+            ))}
+        </div>
+    );
+};
+
+// Sticker Picker with Telegram-style Layout
+// Sticker Picker with Telegram-style Layout
+const StickerPicker = ({ character, onSelect }: { character: Character, onSelect: (label: string) => void }) => {
+    const [selectedPackId, setSelectedPackId] = useState<string>("");
+    const [packs, setPacks] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const currentPack = packs.find(p => p.id === selectedPackId);
+    const activePackName = currentPack ? currentPack.name : (loading ? "Loading..." : "Stickers");
+    const currentStickers = currentPack ? (currentPack.id === "character-custom" ? undefined : currentPack.stickers) : [];
+
+    // Determine which character to use for generation
+    // If it's the custom pack, use the passed character (User or AI)
+    // If it's a public pack, use the pack's identity
+    const targetCharacter = useMemo(() => {
+        if (!currentPack || currentPack.id === "character-custom") {
+            return character;
+        }
+        // Create a temporary character profile for the pack theme
+        return {
+            id: currentPack.id,
+            name: currentPack.name,
+            tag: "Original",
+            description: currentPack.description || `A cute ${currentPack.name} character.`,
+            longDescription: "",
+            tags: ["kawaii", "sticker", currentPack.icon],
+            personality: "Cute, expressive",
+            greeting: "",
+            image: ""
+        } as Character;
+    }, [currentPack, character]);
+
+    useEffect(() => {
+        fetch("/api/sticker/packs")
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    // Add Character Specific Pack
+                    const charPack = {
+                        id: "character-custom",
+                        name: "My Stickers", // Renamed for clarity since it's "Me"
+                        icon: "✨", // Special icon
+                        stickers: [] // Will trigger default emotions
+                    };
+                    const allPacks = [charPack, ...data];
+                    setPacks(allPacks);
+                    setSelectedPackId(charPack.id);
+                }
+            })
+            .catch(err => console.error("Failed to load packs", err))
+            .finally(() => setLoading(false));
+    }, [character.name]);
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
+
+            <div style={{
+                padding: "12px 16px",
+                borderBottom: "1px solid rgba(0,0,0,0.05)",
+                marginBottom: "8px",
+                flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "space-between"
+            }}>
+                <span style={{ fontSize: "14px", fontWeight: 600, opacity: 0.8 }}>{activePackName}</span>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", paddingBottom: "8px", position: "relative" }}>
+                {loading ? (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: "12px", opacity: 0.6 }}>
+                        <div style={{ width: "24px", height: "24px", border: "3px solid #000", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }}></div>
+                        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                        <span style={{ fontSize: "12px" }}>Fetching packs...</span>
+                    </div>
+                ) : (
+                    <StickerGrid
+                        character={targetCharacter}
+                        onSelect={(label) => {
+                            if (currentPack && currentPack.id !== "character-custom") {
+                                // Encode pack info into the prompt for consistent generation
+                                onSelect(`PACK:${currentPack.id}:${currentPack.name}:${label}`);
+                            } else {
+                                onSelect(label);
+                            }
+                        }}
+                        prompts={currentStickers && currentStickers.length > 0 ? currentStickers : undefined}
+                    />
+                )}
+            </div>
+
+            <div style={{
+                height: "64px",
+                borderTop: "1px solid rgba(0,0,0,0.05)",
+                display: "flex",
+                alignItems: "center",
+                overflowX: "auto",
+                gap: "12px",
+                padding: "0 16px",
+                background: "rgba(240,242,245,0.9)", // slightly more opaque
+                backdropFilter: "blur(10px)",
+                flexShrink: 0
+            }} className="no-scrollbar">
+
+                {packs.map(pack => (
+                    <button
+                        key={pack.id}
+                        onClick={() => setSelectedPackId(pack.id)}
+                        style={{
+                            width: "44px", height: "44px", flexShrink: 0,
+                            borderRadius: "12px",
+                            border: selectedPackId === pack.id ? "2px solid #000" : "2px solid transparent",
+                            background: selectedPackId === pack.id ? "rgba(0,0,0,0.05)" : "transparent",
+                            fontSize: "24px", display: "flex", alignItems: "center", justifyContent: "center",
+                            cursor: "pointer", transition: "all 0.2s",
+                            transform: selectedPackId === pack.id ? "scale(1.05)" : "scale(1)"
+                        }}
+                        title={pack.name}
+                    >
+                        {pack.icon || "📦"}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 export default function ChatRoom({ character, onBack }: ChatRoomProps) {
+
+
     const [input, setInput] = useState("");
     const [isTyping, setIsTyping] = useState(false);
     const [showCharInfo, setShowCharInfo] = useState(false);
+    const [showStickerPicker, setShowStickerPicker] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { sendMessage, addReply, markAsSeen } = useChatStore.getState();
 
@@ -109,6 +554,78 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
         const convo = useChatStore.getState().conversations[character.id];
         return convo?.messages || [];
     });
+
+    const triggerAiResponse = async (userMessageText: string) => {
+        // 1. Realistic Reading Delay (1.5s - 3s)
+        const readingDelay = 1500 + Math.random() * 1500;
+        await new Promise((resolve) => setTimeout(resolve, readingDelay));
+
+        // 2. Mark as Seen
+        markAsSeen(character.id);
+
+        // 3. Reaction Delay (Thinking before typing)
+        const reactionDelay = 500 + Math.random() * 1000;
+        await new Promise((resolve) => setTimeout(resolve, reactionDelay));
+
+        setIsTyping(true);
+
+        try {
+            const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
+            const history = currentMessages.map((m) => ({
+                role: m.role,
+                content: m.content || (m.attachment ? "[Image]" : ""),
+            }));
+
+            const res = await fetch("/api/roleplay", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    message: userMessageText,
+                    characterName: character.name,
+                    characterPersonality: character.personality,
+                    characterTag: character.tag,
+                    history: history.slice(-10),
+                    context: "reply",
+                }),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (data.action === "ignore") {
+                    await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 2500));
+                    setIsTyping(false);
+                } else {
+                    await processAiResponse(data.reply || "...");
+                }
+            } else {
+                addReply(character.id, "Hmm, I lost my train of thought.");
+                setIsTyping(false);
+            }
+        } catch {
+            addReply(character.id, "Something went wrong.");
+            setIsTyping(false);
+        }
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result as string;
+            sendMessage(character.id, "", { type: "image", url: base64 });
+            triggerAiResponse("[User sent an image]");
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleStickerClick = (label: string) => {
+        setShowStickerPicker(false);
+        const text = `[[STICKER: ${label}]]`;
+        sendMessage(character.id, text);
+        triggerAiResponse(`[User sent a sticker: ${label}]`);
+    };
 
     useEffect(() => {
         const unsub = useChatStore.subscribe((state) => {
@@ -165,67 +682,33 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
 
         setInput("");
         sendMessage(character.id, text);
-
-        // 1. Realistic Reading Delay (1.5s - 3s)
-        const readingDelay = 1500 + Math.random() * 1500;
-        await new Promise((resolve) => setTimeout(resolve, readingDelay));
-
-        // 2. Mark as Seen
-        markAsSeen(character.id);
-
-        // 3. Reaction Delay (Thinking before typing)
-        const reactionDelay = 500 + Math.random() * 1000;
-        await new Promise((resolve) => setTimeout(resolve, reactionDelay));
-
-        setIsTyping(true);
         setTimeout(() => inputRef.current?.focus(), 50);
 
-        try {
-            const history = messages.map((m) => ({
-                role: m.role,
-                content: m.content,
-            }));
-
-            const res = await fetch("/api/roleplay", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    message: text,
-                    characterName: character.name,
-                    characterPersonality: character.personality,
-                    characterTag: character.tag,
-                    history: history.slice(-10),
-                    context: "reply",
-                }),
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                // Handle "ignore" action (Seen but no reply)
-                if (data.action === "ignore") {
-                    // Simulate typing for a bit then stopping (Ghosting/Decided not to send)
-                    await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 2500));
-                    setIsTyping(false);
-                } else {
-                    await processAiResponse(data.reply || "...");
-                }
-            } else {
-                addReply(character.id, "Hmm, I lost my train of thought. Can you try again?");
-                setIsTyping(false);
-            }
-        } catch {
-            addReply(character.id, "Something went wrong. Let's try again!");
-            setIsTyping(false);
-        }
+        await triggerAiResponse(text);
     };
 
     // Process AI response and handle splitting
     const processAiResponse = async (responseText: string) => {
-        const parts = responseText
+        // First split by explicit pipe separator
+        const initialParts = responseText
             .split("|")
             .map((p) => p.trim().replace(/^["']+|["']+$/g, "").trim())
             .filter((p) => p);
-        await sendAiSequence(parts);
+
+        // Then split any part that contains both text and sticker so they become separate bubbles
+        const finalParts: string[] = [];
+        // Robust regex: case insensitive, allows spaces
+        const stickerRegex = /(\[\[\s*STICKER\s*:[^\]]+\]\])/gi;
+
+        for (const part of initialParts) {
+            const subParts = part
+                .split(stickerRegex)
+                .map((p) => p.trim())
+                .filter((p) => p);
+            finalParts.push(...subParts);
+        }
+
+        await sendAiSequence(finalParts);
     };
 
     // Send AI messages sequentially with typing delay
@@ -399,8 +882,7 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
                             <MessageBubble
                                 key={msg.id}
                                 message={msg}
-                                characterImage={character.image}
-                                characterName={character.name}
+                                character={character}
                                 isFirst={i === 0 || messages[i - 1]?.role !== msg.role}
                                 isLast={i === messages.length - 1 || messages[i + 1]?.role !== msg.role}
                             />
@@ -444,11 +926,48 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
                 transition={{ duration: 0.3, delay: 0.15 }}
             >
                 <div className="chatroom-input-wrap">
-                    <button className="chatroom-input-attach" aria-label="Attach">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </button>
+                    <AnimatePresence mode="popLayout">
+                        {input.length === 0 && (
+                            <motion.div
+                                className="chatroom-input-actions"
+                                initial={{ width: "auto", opacity: 1, scale: 1 }}
+                                exit={{ width: 0, opacity: 0, scale: 0 }}
+                                transition={{ duration: 0.2 }}
+                                style={{ display: "flex", alignItems: "center", overflow: "hidden" }}
+                            >
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    style={{ display: "none" }}
+                                    accept="image/*"
+                                    onChange={handleFileChange}
+                                />
+                                <button
+                                    className="chatroom-input-attach"
+                                    aria-label="Attach Image"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    style={{ flexShrink: 0 }}
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                </button>
+                                <button
+                                    className="chatroom-input-attach"
+                                    aria-label="Send Sticker"
+                                    onClick={() => setShowStickerPicker(!showStickerPicker)}
+                                    style={{ marginLeft: 8, marginRight: 8, flexShrink: 0 }}
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="1.5" />
+                                        <path d="M8 14C8 14 9.5 16 12 16C14.5 16 16 14 16 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M9 9H9.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                     <textarea
                         ref={inputRef}
                         className="chatroom-input"
@@ -458,8 +977,10 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
                         onKeyDown={handleKeyDown}
                         disabled={isTyping}
                         rows={1}
+                        style={{ paddingLeft: input.length > 0 ? "12px" : "0" }}
                     />
                 </div>
+
                 <AnimatePresence>
                     {input.trim() && (
                         <motion.button
@@ -483,7 +1004,41 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
                 </AnimatePresence>
             </motion.div>
 
-            {/* ── Character Info Drawer ────────── */}
+            {/* ── Sticker Drawer (Bottom Sheet) ────────── */}
+            <AnimatePresence>
+                {showStickerPicker && (
+                    <motion.div
+                        className="sticker-drawer"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "420px", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, type: "spring", damping: 25, stiffness: 200 }}
+                        style={{
+                            overflow: "hidden",
+                            background: "rgba(255,255,255,0.95)",
+                            backdropFilter: "blur(20px)",
+                            borderTop: "1px solid rgba(0,0,0,0.05)",
+                            display: "flex",
+                            flexDirection: "column",
+                            width: "100%",
+                            flexShrink: 0
+                        }}
+                    >
+                        {/* Close Button Only - Absolute Positioned */}
+                        <div style={{ position: "absolute", top: "12px", right: "12px", zIndex: 10 }}>
+                            <button onClick={() => setShowStickerPicker(false)} style={{ background: "rgba(0,0,0,0.05)", borderRadius: "50%", padding: "4px", border: "none", cursor: "pointer", display: "flex" }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+
+                        <div style={{ flex: 1, overflowY: "hidden", display: "flex", flexDirection: "column" }}>
+                            {/* Pass USER_CHARACTER to StickerPicker so user generates THEIR OWN stickers */}
+                            <StickerPicker character={USER_CHARACTER} onSelect={handleStickerClick} />
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* ── Character Profile Page ────────── */}
             <AnimatePresence>
                 {showCharInfo && (
@@ -494,21 +1049,19 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
                     />
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 }
 
 /* ── Message Bubble ─────────────────────────────────── */
 function MessageBubble({
     message,
-    characterImage,
-    characterName,
+    character,
     isFirst,
     isLast,
 }: {
     message: ChatMessage;
-    characterImage: string;
-    characterName: string;
+    character: Character;
     isFirst: boolean;
     isLast: boolean;
 }) {
@@ -529,7 +1082,7 @@ function MessageBubble({
         >
             {!isUser && isLast && (
                 <div className="chatroom-msg-avatar">
-                    <img src={characterImage} alt="" />
+                    <img src={character.image} alt="" />
                 </div>
             )}
             {!isUser && !isLast && <div className="chatroom-msg-avatar-spacer" />}
@@ -539,10 +1092,22 @@ function MessageBubble({
                     style={isStickerOnly ? { background: "transparent", boxShadow: "none", padding: 0, border: "none" } : undefined}
                 >
                     {!isUser && isFirst && (
-                        <span className="chatroom-bubble-sender">{characterName}</span>
+                        <span className="chatroom-bubble-sender">{character.name}</span>
                     )}
                     <div className="chatroom-message-content">
-                        {renderMessageContent(message.content)}
+                        {message.attachment?.type === "image" && (
+                            <img
+                                src={message.attachment.url}
+                                alt="Attachment"
+                                style={{
+                                    maxWidth: "100%",
+                                    maxHeight: "300px",
+                                    borderRadius: "8px",
+                                    marginBottom: message.content ? "8px" : "0"
+                                }}
+                            />
+                        )}
+                        {renderMessageContent(message.content, isUser ? USER_CHARACTER : character)}
                     </div>
                     <div className="chatroom-bubble-meta">
                         <span className="chatroom-bubble-time">

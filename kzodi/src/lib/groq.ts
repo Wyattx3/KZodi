@@ -76,6 +76,10 @@ class LRUCache {
   get size(): number {
     return this.map.size;
   }
+
+  clear(): void {
+    this.map.clear();
+  }
 }
 
 // ─── Request Queue ───────────────────────────────────────────────────────────

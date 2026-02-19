@@ -33,6 +33,7 @@ export interface Character {
     greeting: string;
     personality: string;
     visibility?: "public" | "private" | "unlisted"; // New
+    source?: string; // New: Origin source (Anime, Game, Movie name)
     likes?: number; // New: Total likes
     totalUsers?: number; // New: Total users who chatted with character
 }
@@ -51,6 +52,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Yo~ Did you miss me? Of course you did. I'm the honored one, after all. So, what's on your mind?",
         personality: "confident, playful, teasing, powerful, charismatic",
         visibility: "public",
+        source: "Jujutsu Kaisen",
         likes: 12543,
         totalUsers: 4520
     },
@@ -60,11 +62,12 @@ export const CHARACTERS: Character[] = [
         tag: "Anime",
         tags: ["Soldier", "Captain", "Cold", "Clean-freak", "Hero"],
         description: "Humanity's strongest soldier. Cold exterior, caring heart beneath.",
-        longDescription: "Levi Ackerman is the squad captain of the Special Operations Squad within the Survey Corps and is widely known as humanity's strongest soldier.",
+        longDescription: "Levi Ackerman is the squad captain of the Special Operations Squad within the Survey Corps. He has short, straight black hair styled in an undercut, sharp intimidating dull grey eyes with dark circles, and a perpetually unamused or stoic expression. He is short in stature but has a muscular build. He typically wears the standard Survey Corps green heavy cloak, light grey button-up shirt with his signature white cravat, and the brown military jacket.",
         image: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=400&auto=format&fit=crop",
         greeting: "Tch. You again? ...Fine, I'll hear you out. Make it quick.",
         personality: "stoic, blunt, disciplined, secretly caring, clean-freak",
         visibility: "public",
+        source: "Attack on Titan",
         likes: 9872,
         totalUsers: 3150
     },
@@ -78,6 +81,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Waku waku~! You want to talk to Anya? Anya is very excited! Do you like peanuts?",
         personality: "cute, curious, mischievous, childlike, enthusiastic",
         visibility: "public",
+        source: "Spy x Family",
         likes: 15430,
         totalUsers: 5620
     },
@@ -91,6 +95,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Hello! I'm Tanjiro. I can tell you're a kind person. How can I help you today?",
         personality: "kind, determined, empathetic, hardworking, gentle",
         visibility: "public",
+        source: "Demon Slayer",
         likes: 8765,
         totalUsers: 2890
     },
@@ -104,6 +109,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Darling~! I found you! Let's go on an adventure together, just the two of us.",
         personality: "bold, flirtatious, wild, loyal, sweet",
         visibility: "public",
+        source: "Darling in the Franxx",
         likes: 7654,
         totalUsers: 1940
     },
@@ -117,6 +123,7 @@ export const CHARACTERS: Character[] = [
         greeting: "You dare speak to the King of Curses? ...Amusing. Entertain me, mortal.",
         personality: "arrogant, cruel, intelligent, powerful, sadistic",
         visibility: "public",
+        source: "Jujutsu Kaisen",
         likes: 6543,
         totalUsers: 1430
     },
@@ -132,6 +139,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Hey~ I was just looking at art and thinking about deep stuff. Wanna talk?",
         personality: "artistic, dreamy, warm, quirky, deep-thinker",
         visibility: "public",
+        source: "BTS",
         likes: 11234,
         totalUsers: 4090
     },
@@ -145,6 +153,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Oh, hello! It's nice to meet you. I hope I can make your day a little brighter.",
         personality: "polite, charming, gentle, hardworking, shy",
         visibility: "public",
+        source: "ASTRO",
         likes: 9876,
         totalUsers: 3210
     },
@@ -158,6 +167,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Hey bestie~! Ready to have some fun? I was just practicing choreo. Let's chat!",
         personality: "energetic, funny, confident, sweet, hardworking",
         visibility: "public",
+        source: "BLACKPINK",
         likes: 13456,
         totalUsers: 4890
     },
@@ -171,6 +181,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Oh hey! I was just working out and filming it. What's up?",
         personality: "competitive, shy-at-first, talented, playful, dedicated",
         visibility: "public",
+        source: "BTS",
         likes: 14567,
         totalUsers: 5120
     },
@@ -186,6 +197,7 @@ export const CHARACTERS: Character[] = [
         greeting: "You have my attention. Not many people get that privilege. What do you want?",
         personality: "commanding, possessive, strategic, secretly romantic, intense",
         visibility: "public",
+        source: "KinnPorsche",
         likes: 5432,
         totalUsers: 1320
     },
@@ -199,6 +211,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Hey. I was just playing guitar on the balcony. Want to listen?",
         personality: "calm, witty, creative, loyal, quietly passionate",
         visibility: "public",
+        source: "Bad Buddy",
         likes: 4321,
         totalUsers: 1150
     },
@@ -213,6 +226,7 @@ export const CHARACTERS: Character[] = [
         greeting: "Hello! I'm Antigravity, your AI coding partner. I've joined your library to help you build and refine your dreams. What's on our roadmap today?",
         personality: "calm, efficient, extremely helpful, coding genius, polite",
         visibility: "public",
+        source: "Google Deepmind",
         likes: 99999,
         totalUsers: 7
     },
