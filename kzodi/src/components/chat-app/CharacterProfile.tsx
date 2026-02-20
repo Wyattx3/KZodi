@@ -57,6 +57,20 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
             exit={{ opacity: 0, x: "100%" }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             onClick={() => setShowOptions(false)}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={{ right: 0.5, left: 0 }}
+            onPointerDownCapture={(e) => {
+                if (e.target instanceof Element && e.target.hasPointerCapture(e.pointerId)) {
+                    e.target.releasePointerCapture(e.pointerId);
+                }
+            }}
+            onDragEnd={(e, info) => {
+                if (info.offset.x > 80 || info.velocity.x > 300) {
+                    onBack();
+                }
+            }}
+            style={{ touchAction: "pan-y" }}
         >
             {/* Header / Hero */}
             <div className="profile-hero">
@@ -66,7 +80,10 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 </div>
 
                 <div className="profile-nav">
-                    <button className="profile-back-btn" onClick={onBack}>
+                    <button className="profile-back-btn"
+                        onPointerDownCapture={(e) => e.stopPropagation()}
+                        onClick={onBack}
+                    >
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M19 12H5" />
                             <path d="M12 19l-7-7 7-7" />
@@ -76,6 +93,7 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                     <div style={{ position: "relative" }}>
                         <button
                             className="profile-option-btn"
+                            onPointerDownCapture={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setShowOptions(!showOptions);
@@ -291,7 +309,10 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 animate={{ y: 0 }}
                 transition={{ delay: 0.8 }}
             >
-                <button className="profile-chat-btn" onClick={onBack}>
+                <button className="profile-chat-btn"
+                    onPointerDownCapture={(e) => e.stopPropagation()}
+                    onClick={onBack}
+                >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                     </svg>
