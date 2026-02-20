@@ -1021,15 +1021,36 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
                     </div>
 
                     <AnimatePresence initial={false}>
-                        {messages.map((msg, i) => (
-                            <MessageBubble
-                                key={msg.id}
-                                message={msg}
-                                character={character}
-                                isFirst={i === 0 || messages[i - 1]?.role !== msg.role}
-                                isLast={i === messages.length - 1 || messages[i + 1]?.role !== msg.role}
-                            />
-                        ))}
+                        {messages.map((msg, i) => {
+                            const prevMsg = messages[i - 1];
+                            // Show divider if it's been more than 15 minutes since the last message
+                            const isNewConversation = prevMsg && (msg.timestamp - prevMsg.timestamp > 15 * 60 * 1000);
+
+                            return (
+                                <React.Fragment key={msg.id}>
+                                    {isNewConversation && (
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.9 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            className="chatroom-date-sep"
+                                            style={{ marginTop: 24, marginBottom: 8 }}
+                                        >
+                                            <span style={{
+                                                background: "rgba(56, 163, 253, 0.1)",
+                                                color: "#38a3fd",
+                                                fontWeight: 600
+                                            }}>New message</span>
+                                        </motion.div>
+                                    )}
+                                    <MessageBubble
+                                        message={msg}
+                                        character={character}
+                                        isFirst={i === 0 || prevMsg?.role !== msg.role || Boolean(isNewConversation)}
+                                        isLast={i === messages.length - 1 || messages[i + 1]?.role !== msg.role}
+                                    />
+                                </React.Fragment>
+                            );
+                        })}
                     </AnimatePresence>
 
                     {/* Typing indicator */}
