@@ -133,7 +133,7 @@ export default function ChatsTab({ onSelectCharacter }: ChatsTabProps) {
                         if (!char) return null;
                         const lastMsg = convo.messages[convo.messages.length - 1];
                         const isAiLast = lastMsg?.role === "assistant";
-                        const msgCount = convo.messages.length;
+                        const unreadCount = convo.messages.filter(m => m.role === "assistant" && m.status !== "seen").length;
                         return (
                             <motion.div
                                 key={convo.characterId}
@@ -162,8 +162,8 @@ export default function ChatsTab({ onSelectCharacter }: ChatsTabProps) {
                                                 : convo.lastMessage}
                                         </p>
                                         <div className="chats-item-meta">
-                                            <span className="chats-item-msg-count">{msgCount}</span>
-                                            {isAiLast && <span className="chats-item-unread" />}
+                                            {unreadCount > 0 && <span className="chats-item-msg-count">{unreadCount}</span>}
+                                            {isAiLast && unreadCount > 0 && <span className="chats-item-unread" />}
                                         </div>
                                     </div>
                                 </div>

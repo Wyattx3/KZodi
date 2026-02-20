@@ -772,6 +772,13 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
     }, [character.id]);
 
     useEffect(() => {
+        const hasUnseen = messages.some(m => m.role === "assistant" && m.status !== "seen");
+        if (hasUnseen) {
+            markAsSeen(character.id);
+        }
+    }, [messages, character.id, markAsSeen]);
+
+    useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages.length, isTyping]);
 
