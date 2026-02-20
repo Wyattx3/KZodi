@@ -60,10 +60,8 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={{ right: 0.5, left: 0 }}
-            onPointerDownCapture={(e) => {
-                if (e.target instanceof Element && e.target.hasPointerCapture(e.pointerId)) {
-                    e.target.releasePointerCapture(e.pointerId);
-                }
+            onPointerDown={(e) => {
+                // Ensure drag doesn't conflict with button clicks
             }}
             onDragEnd={(e, info) => {
                 if (info.offset.x > 80 || info.velocity.x > 300) {
@@ -81,7 +79,7 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
 
                 <div className="profile-nav">
                     <button className="profile-back-btn"
-                        onPointerDownCapture={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
                         onClick={onBack}
                     >
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -93,7 +91,7 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                     <div style={{ position: "relative" }}>
                         <button
                             className="profile-option-btn"
-                            onPointerDownCapture={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setShowOptions(!showOptions);
@@ -310,7 +308,7 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 transition={{ delay: 0.8 }}
             >
                 <button className="profile-chat-btn"
-                    onPointerDownCapture={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={onBack}
                 >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
