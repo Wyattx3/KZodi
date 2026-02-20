@@ -11,7 +11,7 @@ interface ChatRoomProps {
 }
 
 
-// Sticker Options (30 items)
+// Sticker Options (20 items - reduced to prevent Too Many Requests and save costs)
 const STICKER_OPTIONS = [
     { label: "Happy", emoji: "😊" },
     { label: "Love", emoji: "😍" },
@@ -23,26 +23,16 @@ const STICKER_OPTIONS = [
     { label: "Scared", emoji: "😱" },
     { label: "Shy", emoji: "😳" },
     { label: "Wink", emoji: "😉" },
+    { label: "Thinking", emoji: "🤔" },
     { label: "Cool", emoji: "😎" },
     { label: "Sleepy", emoji: "😴" },
-    { label: "Sick", emoji: "😷" },
-    { label: "Angel", emoji: "😇" },
-    { label: "Devil", emoji: "😈" },
-    { label: "Thinking", emoji: "🤔" },
     { label: "Thumbs Up", emoji: "👍" },
-    { label: "Thumbs Down", emoji: "👎" },
-    { label: "Clap", emoji: "👏" },
-    { label: "Pray", emoji: "🙏" },
-    { label: "Muscle", emoji: "💪" },
-    { label: "Wave", emoji: "👋" },
-    { label: "Ok", emoji: "👌" },
-    { label: "Peace", emoji: "✌️" },
     { label: "Celebrate", emoji: "🎉" },
-    { label: "Fire", emoji: "🔥" },
+    { label: "Wave", emoji: "👋" },
     { label: "Heart", emoji: "❤️" },
     { label: "Broken Heart", emoji: "💔" },
-    { label: "Star", emoji: "⭐" },
     { label: "Sparkles", emoji: "✨" },
+    { label: "Sick", emoji: "😷" },
 ];
 
 // User Character Definition for Stickers
@@ -80,27 +70,44 @@ if (typeof window !== "undefined") {
 const STICKER_LS_PREFIX = "kzodi-sticker-";
 const STICKER_PROCESSED_PREFIX = "kzodi-sticker-proc-";
 
+// In-memory cache protects against LocalStorage Quota Exceeded (5MB Limit)
+const memStickerCache = new Map<string, any>();
+const memProcessedCache = new Map<string, string>();
+
 function getStickerFromCache(key: string): { image?: string; svg?: string; type?: string } | null {
+    if (memStickerCache.has(key)) return memStickerCache.get(key);
     try {
         const raw = localStorage.getItem(STICKER_LS_PREFIX + key);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+            const data = JSON.parse(raw);
+            memStickerCache.set(key, data); // promote to mem
+            return data;
+        }
     } catch { /* ignore parse errors */ }
     return null;
 }
 
 function saveStickerToCache(key: string, data: { image?: string; svg?: string; type?: string }) {
+    memStickerCache.set(key, data);
     try {
         localStorage.setItem(STICKER_LS_PREFIX + key, JSON.stringify(data));
     } catch { /* quota exceeded — silently ignore */ }
 }
 
 function getProcessedFromCache(key: string): string | null {
+    if (memProcessedCache.has(key)) return memProcessedCache.get(key) || null;
     try {
-        return localStorage.getItem(STICKER_PROCESSED_PREFIX + key);
+        const raw = localStorage.getItem(STICKER_PROCESSED_PREFIX + key);
+        if (raw) {
+            memProcessedCache.set(key, raw);
+            return raw;
+        }
     } catch { return null; }
+    return null;
 }
 
 function saveProcessedToCache(key: string, dataUrl: string) {
+    memProcessedCache.set(key, dataUrl);
     try {
         localStorage.setItem(STICKER_PROCESSED_PREFIX + key, dataUrl);
     } catch { /* quota exceeded */ }
@@ -137,7 +144,38 @@ function removeWhiteBackground(canvas: HTMLCanvasElement, ctx: CanvasRenderingCo
     ctx.putImageData(imageData, 0, 0);
 }
 
-const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; character: Character; fallbackEmoji?: string }) => {
+// Global Sticker queue to prevent Too Many Requests (429) from Fireworks AI
+let activeStickerRequests = 0;
+const stickerRequestQueue: (() => void)[] = [];
+
+async function enqueueStickerRequest<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+        const execute = async () => {
+            activeStickerRequests++;
+            try {
+                const res = await task();
+                resolve(res);
+            } catch (err) {
+                reject(err);
+            } finally {
+                activeStickerRequests--;
+                if (stickerRequestQueue.length > 0) {
+                    const next = stickerRequestQueue.shift();
+                    if (next) next();
+                }
+            }
+        };
+
+        if (activeStickerRequests < 1) {
+            execute();
+        } else {
+            console.log(`[StickerQueue] Queuing request... (${stickerRequestQueue.length + 1} waiting)`);
+            stickerRequestQueue.push(execute);
+        }
+    });
+}
+
+const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: string; character: Character; fallbackEmoji?: string; smallMode?: boolean }) => {
     // Check for Pack Override (PACK:id:name:prompt)
     const packMatch = prompt.match(/^PACK:(.+?):(.+?):(.+)$/);
     let targetChar = character;
@@ -159,7 +197,7 @@ const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; charact
         };
     }
 
-    const cacheKey = `${targetChar.id}-${effectivePrompt}`;
+    const cacheKey = `${targetChar.id}-${effectivePrompt.trim().toLowerCase()}`;
     const cached = getStickerFromCache(cacheKey);
     const cachedProcessed = getProcessedFromCache(cacheKey);
 
@@ -186,6 +224,8 @@ const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; charact
         setError(null);
         const delay = Math.random() * 500;
 
+        const abortController = new AbortController();
+
         const fetchSticker = async () => {
             await new Promise(r => setTimeout(r, delay));
             if (!mounted) return;
@@ -200,19 +240,25 @@ const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; charact
             }
 
             try {
-                const res = await fetch("/api/sticker", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        prompt: effectivePrompt,
-                        characterName: targetChar.name,
-                        characterDescription: targetChar.description,
-                        characterLongDescription: targetChar.longDescription || "",
-                        characterTags: targetChar.tags || [],
-                        characterPersonality: targetChar.personality || "",
-                        characterImage: targetChar.image,
-                        characterSource: targetChar.source || ""
-                    }),
+                const res = await enqueueStickerRequest(() => {
+                    if (abortController.signal.aborted) {
+                        return Promise.reject(new Error("aborted"));
+                    }
+                    return fetch("/api/sticker", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            prompt: effectivePrompt,
+                            characterName: targetChar.name,
+                            characterDescription: targetChar.description,
+                            characterLongDescription: targetChar.longDescription || "",
+                            characterTags: targetChar.tags || [],
+                            characterPersonality: targetChar.personality || "",
+                            characterImage: targetChar.image,
+                            characterSource: targetChar.source || ""
+                        }),
+                        signal: abortController.signal
+                    });
                 });
 
                 if (!res.ok) {
@@ -230,16 +276,28 @@ const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; charact
                     }
                 }
             } catch (e: any) {
+                if (!mounted) return; // Completely silence all errors if component unmounted
+
+                const errMsg = typeof e === "string" ? e : (e?.message || "");
+                if (
+                    e?.name === "AbortError" ||
+                    errMsg.includes("aborted")
+                ) {
+                    return; // Silently exit on abort
+                }
                 console.error("Sticker load failed", e);
                 if (mounted) {
                     setLoading(false);
-                    setError(e.message === "QUOTA" ? "quota" : "generic");
+                    setError(errMsg === "QUOTA" ? "quota" : "generic");
                 }
             }
         };
 
-        fetchSticker();
-        return () => { mounted = false; };
+        fetchSticker().catch(() => { });
+        return () => {
+            mounted = false;
+            abortController.abort();
+        };
     }, [prompt, character.id, cacheKey, stickerData, processedImage]);
 
     // ... (Chroma Key Effect remains same) ...
@@ -290,7 +348,9 @@ const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; charact
         maxHeight: "100%",
         width: "auto",
         height: "auto",
-        filter: "drop-shadow(0px 0px 3px rgba(255,255,255,0.8)) drop-shadow(0px 1px 2px rgba(0,0,0,0.15))",
+        filter: smallMode
+            ? "drop-shadow(0px 1px 2px rgba(0,0,0,0.15))"
+            : "drop-shadow(0px 0px 3px rgba(255,255,255,0.8)) drop-shadow(0px 1px 2px rgba(0,0,0,0.15))",
         transition: "transform 0.2s ease",
         cursor: "pointer",
         objectFit: "contain"
@@ -302,7 +362,7 @@ const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; charact
                 width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
                 position: "relative"
             }}>
-                <div style={{ fontSize: "40px", opacity: 0.5, filter: "blur(2px)" }}>{fallbackEmoji || "✨"}</div>
+                <div style={{ fontSize: smallMode ? "20px" : "40px", opacity: 0.5, filter: "blur(2px)" }}>{fallbackEmoji || "✨"}</div>
                 <motion.div
                     style={{ position: "absolute", width: 20, height: 20, border: "2px solid rgba(0,0,0,0.5)", borderTop: "2px solid transparent", borderRadius: "50%" }}
                     animate={{ rotate: 360 }}
@@ -334,7 +394,7 @@ const Sticker = ({ prompt, character, fallbackEmoji }: { prompt: string; charact
     }
 
     return (
-        <div style={{ fontSize: "48px", textAlign: "center", lineHeight: "1" }} title="Sticker generation failed">
+        <div style={{ fontSize: smallMode ? "20px" : "48px", textAlign: "center", lineHeight: "1" }} title="Sticker generation failed">
             {fallbackEmoji || "❓"}
         </div>
     );
@@ -514,24 +574,51 @@ const StickerPicker = ({ character, onSelect }: { character: Character, onSelect
                 flexShrink: 0
             }} className="no-scrollbar">
 
-                {packs.map(pack => (
-                    <button
-                        key={pack.id}
-                        onClick={() => setSelectedPackId(pack.id)}
-                        style={{
-                            width: "44px", height: "44px", flexShrink: 0,
-                            borderRadius: "12px",
-                            border: selectedPackId === pack.id ? "2px solid #000" : "2px solid transparent",
-                            background: selectedPackId === pack.id ? "rgba(0,0,0,0.05)" : "transparent",
-                            fontSize: "24px", display: "flex", alignItems: "center", justifyContent: "center",
-                            cursor: "pointer", transition: "all 0.2s",
-                            transform: selectedPackId === pack.id ? "scale(1.05)" : "scale(1)"
-                        }}
-                        title={pack.name}
-                    >
-                        {pack.icon || "📦"}
-                    </button>
-                ))}
+                {packs.map(pack => {
+                    const isCustom = pack.id === "character-custom";
+                    const isActive = selectedPackId === pack.id;
+
+                    return (
+                        <button
+                            key={pack.id}
+                            onClick={() => setSelectedPackId(pack.id)}
+                            style={{
+                                width: "40px", height: "40px", flexShrink: 0,
+                                borderRadius: "8px",
+                                border: "none",
+                                background: isActive ? "rgba(0,0,0,0.08)" : "transparent",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                cursor: "pointer", transition: "all 0.2s ease",
+                                padding: "4px",
+                                opacity: isActive ? 1 : 0.4,
+                                transform: isActive ? "scale(1.1)" : "scale(1)",
+                                overflow: "hidden"
+                            }}
+                            title={pack.name}
+                        >
+                            {isCustom ? (
+                                <img
+                                    src={character.image || `https://api.dicebear.com/7.x/fun-emoji/svg?seed=Me&backgroundColor=transparent`}
+                                    alt={pack.name}
+                                    style={{
+                                        width: "100%", height: "100%",
+                                        objectFit: "cover",
+                                        borderRadius: "6px"
+                                    }}
+                                />
+                            ) : (
+                                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <Sticker
+                                        prompt={`PACK:${pack.id}:${pack.name}:${pack.stickers?.[0] || pack.name}`}
+                                        character={character}
+                                        fallbackEmoji={pack.icon || "📦"}
+                                        smallMode={true}
+                                    />
+                                </div>
+                            )}
+                        </button>
+                    );
+                })}
             </div>
         </div>
     );

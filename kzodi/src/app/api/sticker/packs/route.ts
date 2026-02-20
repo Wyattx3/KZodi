@@ -42,8 +42,10 @@ export async function GET(req: NextRequest) {
 
             // Save back
             await fs.writeFile(DB_PATH, JSON.stringify(packs, null, 2));
+            return NextResponse.json([dailyPack]);
         }
 
+        // Return all available packs, limited to newest 20.
         return NextResponse.json(packs);
     } catch (error) {
         console.error("Failed to fetch sticker packs", error);

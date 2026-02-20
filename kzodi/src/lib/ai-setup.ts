@@ -3,15 +3,20 @@ import { Groq } from 'groq-sdk';
 import * as cheerio from 'cheerio';
 const pdf = require('pdf-parse');
 import EPub from 'epub2';
-// import { pipeline } from '@xenova/transformers'; // Moved to dynamic import
 import { v4 as uuidv4 } from 'uuid';
 
-// Initialize Clients
-const pinecone = new Pinecone({
-    apiKey: process.env.PINECONE_API_KEY || ''
-});
-// Using 'kzodi-characters' as the index name, create if not exists
-const INDEX_NAME = 'kzodi-characters';
+let pineconeInstance: Pinecone | null = null;
+function getPinecone() {
+    if (!pineconeInstance && process.env.PINECONE_API_KEY) {
+        try {
+            pineconeInstance = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+        } catch (e) { console.error("Pinecone init fail:", e); }
+    }
+    return pineconeInstance;
+}
+
+// 1024-dimension index for Pinecone Multilingual AI embeddings
+const INDEX_NAME = 'kzodi-multi';
 
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY || ''
@@ -65,27 +70,26 @@ export async function extractTextFromUrl(url: string): Promise<string> {
     return text.substring(0, 50000); // Limit context
 }
 
-// -- AI Analysis & Embedding --
-
-// Singleton for embedding pipeline
-let embeddingPipeline: any = null;
-async function getEmbeddingPipeline() {
-    if (!embeddingPipeline) {
-        try {
-            const { pipeline } = await import('@xenova/transformers');
-            embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-        } catch (e) {
-            console.error("Failed to load @xenova/transformers pipeline:", e);
-            throw e;
-        }
-    }
-    return embeddingPipeline;
-}
+// -- AI Analysis & Embedding (Pinecone Inference Multilingual) --
 
 export async function generateEmbeddings(text: string) {
-    const pipe = await getEmbeddingPipeline();
-    const output = await pipe(text, { pooling: 'mean', normalize: true });
-    return Array.from(output.data);
+    const pc = getPinecone();
+    if (!pc) {
+        console.warn("Pinecone not initialized. Cannot embed.");
+        return [];
+    }
+    try {
+        // Using Pinecone's multilingual model (1024 dimensions)
+        const e = await pc.inference.embed({
+            model: 'multilingual-e5-large',
+            inputs: [text],
+            parameters: { inputType: 'passage', truncate: 'END' }
+        });
+        return (e.data[0] as any).values;
+    } catch (err) {
+        console.error("Failed to fetch multilingual embeddings from Pinecone:", err);
+        return [];
+    }
 }
 
 // Analyze text with Groq to get Character JSON
@@ -119,8 +123,11 @@ export async function analyzeCharacterSource(text: string, name: string) {
 
 // Index into Pinecone
 export async function indexCharacterData(charId: string, text: string, metadata: any) {
+    const pc = getPinecone();
+    if (!pc) return;
+
     const chunks = text.match(/.{1,1000}/g) || [];
-    const index = pinecone.index(INDEX_NAME);
+    const index = pc.index(INDEX_NAME);
 
     const vectorData = [];
 
@@ -128,22 +135,25 @@ export async function indexCharacterData(charId: string, text: string, metadata:
         const chunk = chunks[i];
         const embedding = await generateEmbeddings(chunk);
 
-        vectorData.push({
-            id: `${charId}-${i}`,
-            values: embedding as number[],
-            metadata: {
-                ...metadata,
-                text: chunk,
-                chunkIndex: i
-            }
-        });
+        if (embedding.length > 0) {
+            vectorData.push({
+                id: `${charId}-${i}`,
+                values: embedding as number[],
+                metadata: {
+                    ...metadata,
+                    text: chunk,
+                    chunkIndex: i
+                }
+            });
+        }
     }
 
     try {
-        await index.upsert(vectorData as any);
+        if (vectorData.length > 0) {
+            await index.upsert({ records: vectorData as any });
+        }
     } catch (e) {
         console.error("Pinecone indexing error:", e);
-        // Maybe index doesn't exist, create it? (Requires control plane api, slower)
-        // Ignoring create for now, assuming index exists or auto-creation on upsert is available (unlikely).
+        // Might need explicit index creation for new dimensions before upserting.
     }
 }
