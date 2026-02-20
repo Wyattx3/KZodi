@@ -23,6 +23,14 @@ function formatTime(ts: number): string {
 export default function ChatsTab({ onSelectCharacter }: ChatsTabProps) {
     const [conversations, setConversations] = React.useState<Conversation[]>([]);
     const [searchQuery, setSearchQuery] = React.useState("");
+    const [actionConvo, setActionConvo] = React.useState<string | null>(null);
+    const pressTimer = React.useRef<NodeJS.Timeout | null>(null);
+
+    React.useEffect(() => {
+        const handleClick = () => setActionConvo(null);
+        window.addEventListener("click", handleClick);
+        return () => window.removeEventListener("click", handleClick);
+    }, []);
 
     React.useEffect(() => {
         const update = () => {
@@ -138,12 +146,29 @@ export default function ChatsTab({ onSelectCharacter }: ChatsTabProps) {
                             <motion.div
                                 key={convo.characterId}
                                 className="chats-item"
-                                onClick={() => onSelectCharacter(char)}
+                                onClick={() => {
+                                    if (actionConvo) setActionConvo(null);
+                                    else onSelectCharacter(char);
+                                }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setActionConvo(convo.characterId);
+                                }}
+                                onTouchStart={() => {
+                                    if (pressTimer.current) clearTimeout(pressTimer.current);
+                                    pressTimer.current = setTimeout(() => {
+                                        setActionConvo(convo.characterId);
+                                    }, 600);
+                                }}
+                                onTouchEnd={() => pressTimer.current && clearTimeout(pressTimer.current)}
+                                onTouchMove={() => pressTimer.current && clearTimeout(pressTimer.current)}
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 exit={{ opacity: 0, x: 20 }}
                                 transition={{ duration: 0.3, delay: i * 0.05 }}
-                                whileTap={{ scale: 0.98 }}
+                                whileTap={{ scale: actionConvo ? 1 : 0.98 }}
+                                style={{ position: "relative" }}
                             >
                                 <div className="chats-item-avatar">
                                     <img src={char.image} alt={char.name} />
@@ -167,6 +192,53 @@ export default function ChatsTab({ onSelectCharacter }: ChatsTabProps) {
                                         </div>
                                     </div>
                                 </div>
+
+                                <AnimatePresence>
+                                    {actionConvo === convo.characterId && (
+                                        <motion.div
+                                            initial={{ opacity: 0, scale: 0.95 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.95 }}
+                                            transition={{ duration: 0.15 }}
+                                            style={{
+                                                position: "absolute",
+                                                inset: 0,
+                                                background: "rgba(255, 255, 255, 0.92)",
+                                                backdropFilter: "blur(8px)",
+                                                borderRadius: "20px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "space-evenly",
+                                                zIndex: 10,
+                                                boxShadow: "0 4px 15px rgba(0,0,0,0.05)"
+                                            }}
+                                            onClick={(e) => { e.stopPropagation(); setActionConvo(null); }}
+                                        >
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setActionConvo(null); onSelectCharacter(char); }}
+                                                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", background: "none", border: "none", cursor: "pointer", color: "#4A3728", padding: "10px" }}
+                                            >
+                                                <div style={{ width: 44, height: 44, background: "rgba(0,0,0,0.05)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 11c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v3h16v-3c0-2.66-5.33-4-8-4z" fill="currentColor" /></svg>
+                                                </div>
+                                                <span style={{ fontSize: "13px", fontWeight: 600 }}>Profile</span>
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    useChatStore.getState().clearConversation(convo.characterId);
+                                                    setActionConvo(null);
+                                                }}
+                                                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", background: "none", border: "none", cursor: "pointer", color: "#EF4444", padding: "10px" }}
+                                            >
+                                                <div style={{ width: 44, height: 44, background: "rgba(239, 68, 68, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" /></svg>
+                                                </div>
+                                                <span style={{ fontSize: "13px", fontWeight: 600 }}>Delete</span>
+                                            </button>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </motion.div>
                         );
                     })}
