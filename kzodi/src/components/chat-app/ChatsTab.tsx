@@ -196,46 +196,52 @@ export default function ChatsTab({ onSelectCharacter }: ChatsTabProps) {
                                 <AnimatePresence>
                                     {actionConvo === convo.characterId && (
                                         <motion.div
-                                            initial={{ opacity: 0, scale: 0.95 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            exit={{ opacity: 0, scale: 0.95 }}
-                                            transition={{ duration: 0.15 }}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            transition={{ duration: 0.2 }}
                                             style={{
                                                 position: "absolute",
                                                 inset: 0,
-                                                background: "rgba(255, 255, 255, 0.92)",
-                                                backdropFilter: "blur(8px)",
-                                                borderRadius: "20px",
+                                                background: "rgba(255, 255, 255, 0.85)",
+                                                backdropFilter: "blur(12px)",
+                                                WebkitBackdropFilter: "blur(12px)",
+                                                borderRadius: "inherit",
                                                 display: "flex",
                                                 alignItems: "center",
-                                                justifyContent: "space-evenly",
+                                                justifyContent: "flex-end",
+                                                padding: "0 16px",
+                                                gap: "10px",
                                                 zIndex: 10,
-                                                boxShadow: "0 4px 15px rgba(0,0,0,0.05)"
                                             }}
                                             onClick={(e) => { e.stopPropagation(); setActionConvo(null); }}
                                         >
-                                            <button
+                                            <motion.button
+                                                initial={{ opacity: 0, x: 20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 10 }}
+                                                transition={{ duration: 0.2, delay: 0.05 }}
                                                 onClick={(e) => { e.stopPropagation(); setActionConvo(null); onSelectCharacter(char); }}
-                                                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", background: "none", border: "none", cursor: "pointer", color: "#4A3728", padding: "10px" }}
+                                                style={{ display: "flex", alignItems: "center", gap: "6px", background: "white", border: "1px solid rgba(0,0,0,0.06)", cursor: "pointer", color: "#4A3728", padding: "8px 16px", borderRadius: "20px", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", fontWeight: 600, fontSize: "14px" }}
                                             >
-                                                <div style={{ width: 44, height: 44, background: "rgba(0,0,0,0.05)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 11c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v3h16v-3c0-2.66-5.33-4-8-4z" fill="currentColor" /></svg>
-                                                </div>
-                                                <span style={{ fontSize: "13px", fontWeight: 600 }}>Profile</span>
-                                            </button>
-                                            <button
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 11c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v3h16v-3c0-2.66-5.33-4-8-4z" fill="currentColor" /></svg>
+                                                Profile
+                                            </motion.button>
+                                            <motion.button
+                                                initial={{ opacity: 0, x: 20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 10 }}
+                                                transition={{ duration: 0.2, delay: 0.1 }}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     useChatStore.getState().clearConversation(convo.characterId);
                                                     setActionConvo(null);
                                                 }}
-                                                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", background: "none", border: "none", cursor: "pointer", color: "#EF4444", padding: "10px" }}
+                                                style={{ display: "flex", alignItems: "center", gap: "6px", background: "#EF4444", border: "none", cursor: "pointer", color: "white", padding: "8px 16px", borderRadius: "20px", boxShadow: "0 2px 10px rgba(239,68,68,0.25)", fontWeight: 600, fontSize: "14px" }}
                                             >
-                                                <div style={{ width: 44, height: 44, background: "rgba(239, 68, 68, 0.1)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" /></svg>
-                                                </div>
-                                                <span style={{ fontSize: "13px", fontWeight: 600 }}>Delete</span>
-                                            </button>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" /></svg>
+                                                Delete
+                                            </motion.button>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
