@@ -49,68 +49,106 @@ const USER_CHARACTER: Character = {
 };
 
 // Sticker cache version — bump this to force re-processing of all stickers
-const STICKER_CACHE_VERSION = "v9-STRICT-XAI";
+const STICKER_CACHE_VERSION = "v10-IDB-CACHE";
+
+// IDB Native Wrapper for unlimited Base64 caching
+const IDB_NAME = "KzodiStickerCache";
+const IDB_RAW = "raw";
+const IDB_PROC = "processed";
+
+let idbPromise: Promise<IDBDatabase> | null = null;
+function getDB() {
+    if (typeof window === "undefined") return Promise.reject("SSR");
+    if (!idbPromise) {
+        idbPromise = new Promise((resolve, reject) => {
+            const req = indexedDB.open(IDB_NAME, 1);
+            req.onupgradeneeded = () => {
+                req.result.createObjectStore(IDB_RAW);
+                req.result.createObjectStore(IDB_PROC);
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    return idbPromise;
+}
+
+async function idbGet(store: string, key: string): Promise<any> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction(store, "readonly");
+            const req = tx.objectStore(store).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => resolve(null);
+        });
+    } catch { return null; }
+}
+
+async function idbSet(store: string, key: string, val: any): Promise<void> {
+    try {
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction(store, "readwrite");
+            const req = tx.objectStore(store).put(val, key);
+            req.onsuccess = () => resolve();
+            req.onerror = () => resolve();
+        });
+    } catch { }
+}
+
 if (typeof window !== "undefined") {
     const currentVer = localStorage.getItem("kzodi-sticker-cache-ver");
     if (currentVer !== STICKER_CACHE_VERSION) {
-        // Clear ALL sticker caches — both raw and processed — so new white-bg stickers get generated
-        const keysToRemove: string[] = [];
+        // Clear old caches
         for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i);
-            if (k && (k.startsWith("kzodi-sticker-proc-") || k.startsWith("kzodi-sticker-"))) keysToRemove.push(k);
+            if (k && (k.startsWith("kzodi-sticker-proc-") || k.startsWith("kzodi-sticker-"))) localStorage.removeItem(k);
         }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
         localStorage.setItem("kzodi-sticker-cache-ver", STICKER_CACHE_VERSION);
-        console.log(`[Sticker] Cache version updated to ${STICKER_CACHE_VERSION}, cleared ${keysToRemove.length} sticker entries`);
+
+        // Clear IDB
+        getDB().then(db => {
+            const tx = db.transaction([IDB_RAW, IDB_PROC], "readwrite");
+            tx.objectStore(IDB_RAW).clear();
+            tx.objectStore(IDB_PROC).clear();
+        }).catch(() => { });
+        console.log(`[Sticker] Cache version updated to ${STICKER_CACHE_VERSION}`);
     }
 }
 
-// Sticker Component
-// localStorage-backed sticker cache — survives page refresh, no extra API calls!
-const STICKER_LS_PREFIX = "kzodi-sticker-";
-const STICKER_PROCESSED_PREFIX = "kzodi-sticker-proc-";
-
-// In-memory cache protects against LocalStorage Quota Exceeded (5MB Limit)
+// Memory Cache provides instant, synchronous loading after first hit
 const memStickerCache = new Map<string, any>();
 const memProcessedCache = new Map<string, string>();
 
-function getStickerFromCache(key: string): { image?: string; svg?: string; type?: string } | null {
+async function getStickerFromCache(key: string): Promise<{ image?: string; svg?: string; type?: string } | null> {
     if (memStickerCache.has(key)) return memStickerCache.get(key);
-    try {
-        const raw = localStorage.getItem(STICKER_LS_PREFIX + key);
-        if (raw) {
-            const data = JSON.parse(raw);
-            memStickerCache.set(key, data); // promote to mem
-            return data;
-        }
-    } catch { /* ignore parse errors */ }
+    const data = await idbGet(IDB_RAW, key);
+    if (data) {
+        memStickerCache.set(key, data);
+        return data;
+    }
     return null;
 }
 
-function saveStickerToCache(key: string, data: { image?: string; svg?: string; type?: string }) {
+async function saveStickerToCache(key: string, data: { image?: string; svg?: string; type?: string }) {
     memStickerCache.set(key, data);
-    try {
-        localStorage.setItem(STICKER_LS_PREFIX + key, JSON.stringify(data));
-    } catch { /* quota exceeded — silently ignore */ }
+    await idbSet(IDB_RAW, key, data);
 }
 
-function getProcessedFromCache(key: string): string | null {
+async function getProcessedFromCache(key: string): Promise<string | null> {
     if (memProcessedCache.has(key)) return memProcessedCache.get(key) || null;
-    try {
-        const raw = localStorage.getItem(STICKER_PROCESSED_PREFIX + key);
-        if (raw) {
-            memProcessedCache.set(key, raw);
-            return raw;
-        }
-    } catch { return null; }
+    const data = await idbGet(IDB_PROC, key);
+    if (data) {
+        memProcessedCache.set(key, data);
+        return data;
+    }
     return null;
 }
 
-function saveProcessedToCache(key: string, dataUrl: string) {
+async function saveProcessedToCache(key: string, dataUrl: string) {
     memProcessedCache.set(key, dataUrl);
-    try {
-        localStorage.setItem(STICKER_PROCESSED_PREFIX + key, dataUrl);
-    } catch { /* quota exceeded */ }
+    await idbSet(IDB_PROC, key, dataUrl);
 }
 
 // White background removal — removes white/near-white pixels with smooth edge transition
@@ -166,7 +204,7 @@ async function enqueueStickerRequest<T>(task: () => Promise<T>): Promise<T> {
             }
         };
 
-        if (activeStickerRequests < 1) {
+        if (activeStickerRequests < 5) { // increased to 5 for 2x/5x faster bulk loading
             execute();
         } else {
             console.log(`[StickerQueue] Queuing request... (${stickerRequestQueue.length + 1} waiting)`);
@@ -198,21 +236,21 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
     }
 
     const cacheKey = `${targetChar.id}-${effectivePrompt.trim().toLowerCase()}`;
-    const cached = getStickerFromCache(cacheKey);
-    const cachedProcessed = getProcessedFromCache(cacheKey);
+    const [stickerData, setStickerData] = useState<{ image?: string; svg?: string; type?: string } | null>(memStickerCache.get(cacheKey) || null);
+    const [processedImage, setProcessedImage] = useState<string | null>(memProcessedCache.get(cacheKey) || null);
 
-    const [stickerData, setStickerData] = useState<{ image?: string; svg?: string; type?: string } | null>(cached);
-    const [processedImage, setProcessedImage] = useState<string | null>(cachedProcessed);
-    const [loading, setLoading] = useState(!cached && !cachedProcessed);
+    // Sync UI to memory cache instantly
+    const initialCached = memStickerCache.has(cacheKey) || memProcessedCache.has(cacheKey);
+    const [loading, setLoading] = useState(!initialCached);
     const [error, setError] = useState<string | null>(null);
 
     // Reset state when cacheKey changes
     useEffect(() => {
-        const c = getStickerFromCache(cacheKey);
-        const p = getProcessedFromCache(cacheKey);
-        setStickerData(c);
-        setProcessedImage(p);
-        setLoading(!c && !p);
+        const sData = memStickerCache.get(cacheKey) || null;
+        const pData = memProcessedCache.get(cacheKey) || null;
+        setStickerData(sData);
+        setProcessedImage(pData);
+        setLoading(!sData && !pData);
         setError(null);
     }, [cacheKey]);
 
@@ -222,7 +260,8 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
         let mounted = true;
         setLoading(true);
         setError(null);
-        const delay = Math.random() * 500;
+        // Reduce UI lock contention by waiting a tiny bit
+        const delay = Math.random() * 50;
 
         const abortController = new AbortController();
 
@@ -230,10 +269,20 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
             await new Promise(r => setTimeout(r, delay));
             if (!mounted) return;
 
-            const recheck = getStickerFromCache(cacheKey);
-            if (recheck) {
+            // First check IDB (Async)
+            const pData = await getProcessedFromCache(cacheKey);
+            if (pData) {
                 if (mounted) {
-                    setStickerData(recheck);
+                    setProcessedImage(pData);
+                    setLoading(false);
+                }
+                return;
+            }
+
+            const sData = await getStickerFromCache(cacheKey);
+            if (sData) {
+                if (mounted) {
+                    setStickerData(sData);
                     setLoading(false);
                 }
                 return;
