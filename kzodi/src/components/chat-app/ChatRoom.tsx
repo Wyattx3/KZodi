@@ -8,6 +8,7 @@ import CharacterProfile from "./CharacterProfile";
 interface ChatRoomProps {
     character: Character;
     onBack: () => void;
+    initialShowProfile?: boolean;
 }
 
 
@@ -673,12 +674,12 @@ const StickerPicker = ({ character, onSelect }: { character: Character, onSelect
     );
 };
 
-export default function ChatRoom({ character, onBack }: ChatRoomProps) {
+export default function ChatRoom({ character, onBack, initialShowProfile = false }: ChatRoomProps) {
 
 
     const [input, setInput] = useState("");
     const [isTyping, setIsTyping] = useState(false);
-    const [showCharInfo, setShowCharInfo] = useState(false);
+    const [showCharInfo, setShowCharInfo] = useState(initialShowProfile);
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);

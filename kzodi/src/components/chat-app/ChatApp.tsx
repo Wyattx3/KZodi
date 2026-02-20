@@ -15,6 +15,7 @@ export default function ChatApp() {
     const [mounted, setMounted] = useState(false);
     const [activeTab, setActiveTab] = useState<Tab>("explore");
     const [activeCharacter, setActiveCharacter] = useState<Character | null>(null);
+    const [showProfileOnLoad, setShowProfileOnLoad] = useState<boolean>(false);
     const [myCharacters, setMyCharacters] = useState<Character[]>(CHARACTERS.slice(0, 3));
 
     // Proactive Messaging Hook (Background — when user is NOT in a chat)
@@ -89,12 +90,14 @@ export default function ChatApp() {
     }, []);
     // ... rest of component
 
-    const handleSelectCharacter = (char: Character) => {
+    const handleSelectCharacter = (char: Character, openProfile = false) => {
+        setShowProfileOnLoad(openProfile);
         setActiveCharacter(char);
     };
 
     const handleBack = () => {
         setActiveCharacter(null);
+        setShowProfileOnLoad(false);
     };
 
     if (!mounted) {
@@ -113,7 +116,7 @@ export default function ChatApp() {
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                     >
-                        <ChatRoom character={activeCharacter} onBack={handleBack} />
+                        <ChatRoom character={activeCharacter} onBack={handleBack} initialShowProfile={showProfileOnLoad} />
                     </motion.div>
                 ) : (
                     <motion.div

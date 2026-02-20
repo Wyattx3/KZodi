@@ -5,7 +5,7 @@ import { useChatStore, type Conversation } from "@/lib/chatStore";
 import { CHARACTERS, type Character } from "@/data/characters";
 
 interface ChatsTabProps {
-    onSelectCharacter: (character: Character) => void;
+    onSelectCharacter: (character: Character, openProfile?: boolean) => void;
 }
 
 function formatTime(ts: number): string {
@@ -221,7 +221,7 @@ export default function ChatsTab({ onSelectCharacter }: ChatsTabProps) {
                                                 animate={{ opacity: 1, x: 0 }}
                                                 exit={{ opacity: 0, x: 10 }}
                                                 transition={{ duration: 0.2, delay: 0.05 }}
-                                                onClick={(e) => { e.stopPropagation(); setActionConvo(null); onSelectCharacter(char); }}
+                                                onClick={(e) => { e.stopPropagation(); setActionConvo(null); onSelectCharacter(char, true); }}
                                                 style={{ display: "flex", alignItems: "center", gap: "6px", background: "white", border: "1px solid rgba(0,0,0,0.06)", cursor: "pointer", color: "#4A3728", padding: "8px 16px", borderRadius: "20px", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", fontWeight: 600, fontSize: "14px" }}
                                             >
                                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 11c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v3h16v-3c0-2.66-5.33-4-8-4z" fill="currentColor" /></svg>
