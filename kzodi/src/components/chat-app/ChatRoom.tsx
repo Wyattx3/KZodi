@@ -693,6 +693,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         return convo?.messages || [];
     });
 
+    const isBlocked = useChatStore(state => state.conversations[character.id]?.isBlocked) || false;
+
     // Close menu when clicking anywhere else
     useEffect(() => {
         const handleClick = () => setShowMenu(false);
@@ -903,7 +905,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
     // Proactive messaging (Double texting)
     useEffect(() => {
-        if (messages.length === 0) return;
+        if (messages.length === 0 || isBlocked) return;
 
         const lastMsg = messages[messages.length - 1];
 
@@ -1099,8 +1101,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 <div style={{ height: "1px", background: "rgba(0,0,0,0.06)", margin: "2px 0" }} />
                                 <button
                                     onClick={() => {
-                                        alert("User blocked.");
-                                        onBack();
+                                        useChatStore.getState().toggleBlock(character.id);
+                                        setShowMenu(false);
                                     }}
                                     style={{
                                         display: "flex", alignItems: "center", gap: "8px",
@@ -1112,8 +1114,17 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.1)"}
                                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                                 >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9l11.21 11.21C15.55 19.37 13.85 20 12 20zm6.31-3.1l-11.21-11.21C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z" fill="currentColor" /></svg>
-                                    Block
+                                    {isBlocked ? (
+                                        <>
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z" fill="currentColor" /></svg>
+                                            Unblock
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9l11.21 11.21C15.55 19.37 13.85 20 12 20zm6.31-3.1l-11.21-11.21C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z" fill="currentColor" /></svg>
+                                            Block
+                                        </>
+                                    )}
                                 </button>
                             </motion.div>
                         )}
@@ -1206,91 +1217,110 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 </div>
             </div>
 
-            {/* ── Input Bar ──────────────────────── */}
-            <motion.div
-                className="chatroom-input-bar"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.15 }}
-            >
-                <div className="chatroom-input-wrap">
-                    <AnimatePresence mode="popLayout">
-                        {input.length === 0 && (
-                            <motion.div
-                                className="chatroom-input-actions"
-                                initial={{ width: "auto", opacity: 1, scale: 1 }}
-                                exit={{ width: 0, opacity: 0, scale: 0 }}
-                                transition={{ duration: 0.2 }}
-                                style={{ display: "flex", alignItems: "center", overflow: "hidden" }}
+            {/* ── Input Bar / Blocked State ──────────────────────── */}
+            {isBlocked ? (
+                <motion.div
+                    className="chatroom-input-bar"
+                    style={{ justifyContent: "center", padding: "16px", background: "rgba(255,255,255,0.8)", borderTop: "1px solid rgba(0,0,0,0.05)" }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                >
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                        <span style={{ color: "#8B8680", fontSize: "14px" }}>You blocked this account. You cannot send or receive messages.</span>
+                        <button
+                            onClick={() => useChatStore.getState().toggleBlock(character.id)}
+                            style={{ background: "none", border: "none", color: "#38a3fd", fontWeight: 600, fontSize: "15px", cursor: "pointer" }}
+                        >
+                            Unblock
+                        </button>
+                    </div>
+                </motion.div>
+            ) : (
+                <motion.div
+                    className="chatroom-input-bar"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.15 }}
+                >
+                    <div className="chatroom-input-wrap">
+                        <AnimatePresence mode="popLayout">
+                            {input.length === 0 && (
+                                <motion.div
+                                    className="chatroom-input-actions"
+                                    initial={{ width: "auto", opacity: 1, scale: 1 }}
+                                    exit={{ width: 0, opacity: 0, scale: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    style={{ display: "flex", alignItems: "center", overflow: "hidden" }}
+                                >
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        style={{ display: "none" }}
+                                        accept="image/*"
+                                        onChange={handleFileChange}
+                                    />
+                                    <button
+                                        className="chatroom-input-attach"
+                                        aria-label="Attach Image"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        style={{ flexShrink: 0 }}
+                                    >
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        className="chatroom-input-attach"
+                                        aria-label="Send Sticker"
+                                        onClick={() => setShowStickerPicker(!showStickerPicker)}
+                                        style={{ marginLeft: 8, marginRight: 8, flexShrink: 0 }}
+                                    >
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="1.5" />
+                                            <path d="M8 14C8 14 9.5 16 12 16C14.5 16 16 14 16 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                            <path d="M9 9H9.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                    </button>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                        <textarea
+                            ref={inputRef}
+                            className="chatroom-input"
+                            placeholder={`Message ${character.name.split(" ")[0]}...`}
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            disabled={isTyping}
+                            rows={1}
+                            style={{ paddingLeft: input.length > 0 ? "12px" : "0" }}
+                        />
+                    </div>
+
+                    <AnimatePresence>
+                        {input.trim() && (
+                            <motion.button
+                                key="send-button"
+                                className="chatroom-send chatroom-send-active"
+                                onClick={handleSend}
+                                disabled={isTyping}
+                                initial={{ opacity: 1, scale: 1 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                transition={{ duration: 0 }}
+                                aria-label="Send message"
+                                whileTap={{ scale: 0.95 }}
                             >
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    style={{ display: "none" }}
-                                    accept="image/*"
-                                    onChange={handleFileChange}
-                                />
-                                <button
-                                    className="chatroom-input-attach"
-                                    aria-label="Attach Image"
-                                    onClick={() => fileInputRef.current?.click()}
-                                    style={{ flexShrink: 0 }}
-                                >
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                </button>
-                                <button
-                                    className="chatroom-input-attach"
-                                    aria-label="Send Sticker"
-                                    onClick={() => setShowStickerPicker(!showStickerPicker)}
-                                    style={{ marginLeft: 8, marginRight: 8, flexShrink: 0 }}
-                                >
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="1.5" />
-                                        <path d="M8 14C8 14 9.5 16 12 16C14.5 16 16 14 16 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                        <path d="M9 9H9.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                </button>
-                            </motion.div>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                    <path d="M22 2L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </motion.button>
                         )}
                     </AnimatePresence>
-                    <textarea
-                        ref={inputRef}
-                        className="chatroom-input"
-                        placeholder={`Message ${character.name.split(" ")[0]}...`}
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        disabled={isTyping}
-                        rows={1}
-                        style={{ paddingLeft: input.length > 0 ? "12px" : "0" }}
-                    />
-                </div>
-
-                <AnimatePresence>
-                    {input.trim() && (
-                        <motion.button
-                            key="send-button"
-                            className="chatroom-send chatroom-send-active"
-                            onClick={handleSend}
-                            disabled={isTyping}
-                            initial={{ opacity: 1, scale: 1 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            transition={{ duration: 0 }}
-                            aria-label="Send message"
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                                <path d="M22 2L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                        </motion.button>
-                    )}
-                </AnimatePresence>
-            </motion.div>
+                </motion.div>
+            )}
 
             {/* ── Sticker Drawer (Bottom Sheet) ────────── */}
             <AnimatePresence>

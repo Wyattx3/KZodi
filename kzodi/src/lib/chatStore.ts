@@ -18,6 +18,7 @@ export interface Conversation {
     messages: ChatMessage[];
     lastMessage: string;
     lastTimestamp: number;
+    isBlocked?: boolean;
 }
 
 interface ChatStore {
@@ -29,6 +30,7 @@ interface ChatStore {
     addReply: (characterId: string, content: string, attachment?: ChatMessage["attachment"]) => void;
     markAsSeen: (characterId: string) => void;
     clearConversation: (characterId: string) => void;
+    toggleBlock: (characterId: string) => void;
     getConversation: (characterId: string) => Conversation | undefined;
     getConversationList: () => Conversation[];
 }
@@ -46,6 +48,36 @@ export const useChatStore = create<ChatStore>()(
                     const newConvos = { ...state.conversations };
                     delete newConvos[characterId];
                     return { conversations: newConvos };
+                });
+            },
+
+            toggleBlock: (characterId) => {
+                set((state) => {
+                    const existing = state.conversations[characterId];
+                    if (!existing) {
+                        return {
+                            conversations: {
+                                ...state.conversations,
+                                [characterId]: {
+                                    characterId,
+                                    messages: [],
+                                    lastMessage: "",
+                                    lastTimestamp: Date.now(),
+                                    isBlocked: true,
+                                }
+                            }
+                        };
+                    }
+
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: {
+                                ...existing,
+                                isBlocked: !existing.isBlocked,
+                            }
+                        }
+                    };
                 });
             },
 
