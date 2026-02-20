@@ -691,6 +691,13 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
         return convo?.messages || [];
     });
 
+    const [unreadMarkerId, setUnreadMarkerId] = useState<string | null>(() => {
+        const convo = useChatStore.getState().conversations[character.id];
+        const msgs = convo?.messages || [];
+        const firstUnread = msgs.find(m => m.role === "assistant" && m.status !== "seen");
+        return firstUnread ? firstUnread.id : null;
+    });
+
     const triggerAiResponse = async (userMessageText: string) => {
         // 1. Realistic Reading Delay (1.5s - 3s)
         const readingDelay = 1500 + Math.random() * 1500;
@@ -750,6 +757,7 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
         const reader = new FileReader();
         reader.onloadend = () => {
             const base64 = reader.result as string;
+            setUnreadMarkerId(null);
             sendMessage(character.id, "", { type: "image", url: base64 });
             triggerAiResponse("[User sent an image]");
         };
@@ -759,6 +767,7 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
     const handleStickerClick = (label: string) => {
         setShowStickerPicker(false);
         const text = `[[STICKER: ${label}]]`;
+        setUnreadMarkerId(null);
         sendMessage(character.id, text);
         triggerAiResponse(`[User sent a sticker: ${label}]`);
     };
@@ -824,6 +833,7 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
         if (!text) return;
 
         setInput("");
+        setUnreadMarkerId(null);
         sendMessage(character.id, text);
         setTimeout(() => inputRef.current?.focus(), 50);
 
@@ -1023,29 +1033,43 @@ export default function ChatRoom({ character, onBack }: ChatRoomProps) {
                     <AnimatePresence initial={false}>
                         {messages.map((msg, i) => {
                             const prevMsg = messages[i - 1];
-                            // Show divider if it's been more than 15 minutes since the last message
                             const isNewConversation = prevMsg && (msg.timestamp - prevMsg.timestamp > 15 * 60 * 1000);
+                            const isUnreadMarker = msg.id === unreadMarkerId;
 
                             return (
                                 <React.Fragment key={msg.id}>
-                                    {isNewConversation && (
+                                    {(isNewConversation || isUnreadMarker) && (
                                         <motion.div
                                             initial={{ opacity: 0, scale: 0.9 }}
                                             animate={{ opacity: 1, scale: 1 }}
-                                            className="chatroom-date-sep"
-                                            style={{ marginTop: 24, marginBottom: 8 }}
+                                            style={{
+                                                marginTop: 24,
+                                                marginBottom: 8,
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                width: "100%",
+                                                position: "relative"
+                                            }}
                                         >
+                                            <div style={{ position: "absolute", left: -16, right: -16, height: 1, background: "rgba(56, 163, 253, 0.2)" }} />
                                             <span style={{
-                                                background: "rgba(56, 163, 253, 0.1)",
+                                                background: "rgba(56, 163, 253, 0.15)",
                                                 color: "#38a3fd",
-                                                fontWeight: 600
+                                                fontWeight: 600,
+                                                fontSize: "12px",
+                                                padding: "4px 12px",
+                                                borderRadius: "12px",
+                                                position: "relative",
+                                                zIndex: 1,
+                                                backdropFilter: "blur(4px)"
                                             }}>New message</span>
                                         </motion.div>
                                     )}
                                     <MessageBubble
                                         message={msg}
                                         character={character}
-                                        isFirst={i === 0 || prevMsg?.role !== msg.role || Boolean(isNewConversation)}
+                                        isFirst={i === 0 || prevMsg?.role !== msg.role || Boolean(isNewConversation || isUnreadMarker)}
                                         isLast={i === messages.length - 1 || messages[i + 1]?.role !== msg.role}
                                     />
                                 </React.Fragment>
