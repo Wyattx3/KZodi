@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
             filter: { characterId, userId },
             includeMetadata: true
         });
-        if (existing.matches.length > 0 && (existing.matches[0].score || 0) > 0.92) {
+        if (existing.matches.length > 0 && (existing.matches[0].score || 0) > 0.96) {
             return NextResponse.json({ added: false, message: "Near-duplicate memory already exists" });
         }
 

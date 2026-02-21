@@ -13,7 +13,7 @@ interface CharacterProfileProps {
 
 export default function CharacterProfile({ character, onBack, messageCount }: CharacterProfileProps) {
     const [showOptions, setShowOptions] = useState(false);
-    const { clearConversation } = useChatStore();
+    const { deleteConversation } = useChatStore();
     const { likedCharacters, toggleLike } = useInteractionStore();
 
     const isLiked = likedCharacters[character.id] || false;
@@ -27,11 +27,18 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
     };
 
 
-    const handleResetChat = () => {
+    const handleResetChat = async () => {
         if (window.confirm(`Are you sure you want to reset your conversation with ${character.name}?`)) {
-            clearConversation(character.id);
+            deleteConversation(character.id);
             setShowOptions(false);
             onBack();
+            try {
+                await fetch("/api/memory", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ characterId: character.id })
+                });
+            } catch (err) { }
         }
     };
 

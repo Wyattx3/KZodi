@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { motion, LayoutGroup } from "framer-motion";
 import ExploreTab from "./ExploreTab";
 import ChatsTab from "./ChatsTab";
 import CreateTab from "./CreateTab";
@@ -18,6 +18,14 @@ export default function ChatApp() {
     const [showProfileOnLoad, setShowProfileOnLoad] = useState<boolean>(false);
     const [myCharacters, setMyCharacters] = useState<Character[]>(CHARACTERS.slice(0, 3));
     const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+
+    // Compute total unread count across all conversations
+    const conversations = useChatStore((s) => s.conversations);
+    const totalUnread = React.useMemo(() => {
+        return Object.values(conversations).reduce((sum, convo) => {
+            return sum + convo.messages.filter((m) => m.role === "assistant" && m.status !== "seen").length;
+        }, 0);
+    }, [conversations]);
 
     // Proactive Messaging Hook (Background — when user is NOT in a chat)
     useEffect(() => {
@@ -47,10 +55,14 @@ export default function ChatApp() {
             if (activeCharacter?.id === char.id) return;
 
             const convo = conversations[char.id];
-            const lastTime = convo?.lastTimestamp || 0;
+
+            // 3. Deleted Check — don't send if conversation was deleted / doesn't exist
+            if (!convo) return;
+
+            const lastTime = convo.lastTimestamp || 0;
             const now = Date.now();
 
-            // 3. Cooldown Check
+            // 4. Cooldown Check
             if (lastTime > 0 && now - lastTime < minCooldown) return;
 
             try {
@@ -74,7 +86,31 @@ export default function ChatApp() {
                     const data = await res.json();
                     if (data.reply && data.reply !== "...") {
                         const cleanReply = data.reply.replace(/\|/g, " ");
-                        addReply(char.id, cleanReply);
+
+                        // Match ChatRoom's splitting logic
+                        const reactRegex = /\[\[\s*REACT\s*:\s*([^:]+)\s*:\s*([^\]]+)\s*\]\]/gi;
+                        let text = cleanReply.replace(reactRegex, "");
+                        const replyRegex = /\[\[\s*REPLY\s*:\s*([^\]]+)\s*\]\]/i;
+                        text = text.replace(replyRegex, "");
+
+                        const initialParts = text.split("|").map((p: string) => p.trim().replace(/^["']+|["']+$/g, "").trim()).filter(Boolean);
+
+                        // Robust sticker split using non-greedy match to handle ']' inside stickers
+                        const stickerRegex = /(\[\[\s*STICKER\s*:.*?\]\])/gi;
+                        const finalParts: string[] = [];
+
+                        for (const part of initialParts) {
+                            const subParts = part.split(stickerRegex).map((p: string) => p.trim()).filter(Boolean);
+                            finalParts.push(...subParts);
+                        }
+
+                        if (finalParts.length > 0) {
+                            for (const p of finalParts) {
+                                addReply(char.id, p);
+                            }
+                        } else {
+                            addReply(char.id, "...");
+                        }
                     }
                 }
             } catch (error) {
@@ -142,71 +178,37 @@ export default function ChatApp() {
                     />
                 </div>
             ) : (
-                <motion.div
+                <div
                     key="tabs"
                     className="chat-app-view"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0, x: -30 }}
-                    transition={{ duration: 0.25 }}
                 >
                     {/* Tab content */}
                     <div className="chat-app-content no-scrollbar">
-                        <AnimatePresence mode="wait">
-                            {activeTab === "explore" && (
-                                <motion.div
-                                    key="explore"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    style={{ width: "100%" }}
-                                >
-                                    <ExploreTab onSelectCharacter={handleSelectCharacter} />
-                                </motion.div>
-                            )}
-                            {activeTab === "chats" && (
-                                <motion.div
-                                    key="chats"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    style={{ width: "100%" }}
-                                >
-                                    <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} />
-                                </motion.div>
-                            )}
-                            {activeTab === "create" && (
-                                <motion.div
-                                    key="create"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    style={{ width: "100%" }}
-                                >
-                                    <CreateTab
-                                        onNavigate={(tab: Tab) => setActiveTab(tab)}
-                                        onSelectCharacter={handleSelectCharacter}
-                                        myCharacters={myCharacters}
-                                        setMyCharacters={setMyCharacters}
-                                    />
-                                </motion.div>
-                            )}
-                            {activeTab === "profile" && (
-                                <motion.div
-                                    key="profile"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    style={{ width: "100%" }}
-                                >
-                                    <ProfileTab />
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                        {activeTab === "explore" && (
+                            <div style={{ width: "100%" }}>
+                                <ExploreTab onSelectCharacter={handleSelectCharacter} />
+                            </div>
+                        )}
+                        {activeTab === "chats" && (
+                            <div style={{ width: "100%" }}>
+                                <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} />
+                            </div>
+                        )}
+                        {activeTab === "create" && (
+                            <div style={{ width: "100%" }}>
+                                <CreateTab
+                                    onNavigate={(tab: Tab) => setActiveTab(tab)}
+                                    onSelectCharacter={handleSelectCharacter}
+                                    myCharacters={myCharacters}
+                                    setMyCharacters={setMyCharacters}
+                                />
+                            </div>
+                        )}
+                        {activeTab === "profile" && (
+                            <div style={{ width: "100%" }}>
+                                <ProfileTab />
+                            </div>
+                        )}
                     </div>
 
                     {/* Premium bottom tab bar */}
@@ -263,6 +265,7 @@ export default function ChatApp() {
                                 className={`chat-tab-item ${activeTab === "chats" ? "chat-tab-active" : ""}`}
                                 onClick={() => setActiveTab("chats")}
                                 whileTap={{ scale: 0.9 }}
+                                style={{ position: "relative" }}
                             >
                                 {activeTab === "chats" && (
                                     <motion.div
@@ -275,6 +278,7 @@ export default function ChatApp() {
                                     className="chat-tab-icon-wrap"
                                     animate={activeTab === "chats" ? { scale: 1.1 } : { scale: 1 }}
                                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                                    style={{ position: "relative" }}
                                 >
                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                                         <path
@@ -285,6 +289,17 @@ export default function ChatApp() {
                                             strokeLinejoin="round"
                                         />
                                     </svg>
+                                    {totalUnread > 0 && (
+                                        <motion.span
+                                            className="chat-tab-badge"
+                                            initial={{ scale: 0 }}
+                                            animate={{ scale: 1 }}
+                                            exit={{ scale: 0 }}
+                                            transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                                        >
+                                            {totalUnread > 99 ? "99+" : totalUnread}
+                                        </motion.span>
+                                    )}
                                 </motion.div>
                             </motion.button>
 
@@ -313,7 +328,7 @@ export default function ChatApp() {
                             </motion.button>
                         </div>
                     </LayoutGroup>
-                </motion.div>
+                </div>
             )}
         </div>
     );

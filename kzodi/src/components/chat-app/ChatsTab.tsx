@@ -649,20 +649,27 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
                                         position: "absolute", top: 0, right: 0, bottom: 0,
                                         width: "60px", display: "flex", alignItems: "center",
                                         justifyContent: "center", zIndex: 0,
-                                        opacity: draggingConvo === convo.characterId ? 1 : 0,
-                                        transition: "opacity 0.15s", pointerEvents: draggingConvo === convo.characterId ? "auto" : "none"
+                                        opacity: (draggingConvo === convo.characterId || actionConvo === convo.characterId) ? 1 : 0,
+                                        transition: "opacity 0.15s", pointerEvents: (draggingConvo === convo.characterId || actionConvo === convo.characterId) ? "auto" : "none"
                                     }}>
                                         <button
-                                            onClick={(e) => {
+                                            onClick={async (e) => {
                                                 e.stopPropagation();
-                                                useChatStore.getState().clearConversation(convo.characterId);
+                                                useChatStore.getState().deleteConversation(convo.characterId);
+                                                try {
+                                                    await fetch("/api/memory", {
+                                                        method: "DELETE",
+                                                        headers: { "Content-Type": "application/json" },
+                                                        body: JSON.stringify({ characterId: convo.characterId })
+                                                    });
+                                                } catch (err) { }
                                             }}
                                             aria-label="Delete"
                                             style={{
                                                 width: "42px", height: "42px", borderRadius: "50%",
                                                 border: "none", background: "#EF4444", color: "#fff",
                                                 display: "flex", alignItems: "center", justifyContent: "center",
-                                                cursor: "pointer"
+                                                cursor: "pointer", boxShadow: "0 2px 8px rgba(239,68,68,0.3)"
                                             }}
                                         >
                                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -678,14 +685,19 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
                                         dragConstraints={{ left: -60, right: 0 }}
                                         dragElastic={0.05}
                                         initial={false}
+                                        animate={{ x: actionConvo === convo.characterId ? -60 : 0 }}
+                                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
                                         onDragStart={() => setDraggingConvo(convo.characterId)}
                                         onDragEnd={(e, info) => {
-                                            if (info.offset.x < -35) {
-                                                setActionConvo(convo.characterId);
-                                            }
+                                            const isSwiped = info.offset.x < -35 || info.velocity.x < -80;
+                                            if (isSwiped) setActionConvo(convo.characterId);
+                                            else setActionConvo(null);
                                             setTimeout(() => setDraggingConvo(null), 200);
                                         }}
-                                        onClick={() => onSelectGroup?.(convo.characterId)}
+                                        onClick={(e) => {
+                                            if (actionConvo) { e.stopPropagation(); setActionConvo(null); }
+                                            else onSelectGroup?.(convo.characterId);
+                                        }}
                                         style={{
                                             position: "relative", zIndex: 1,
                                             background: "#FFFDF5",
@@ -771,7 +783,8 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
                                             border: "none", background: "#4A3728", color: "#fff",
                                             display: "flex", alignItems: "center", justifyContent: "center",
                                             cursor: "pointer", boxShadow: "0 2px 8px rgba(74,55,40,0.25)",
-                                            transition: "transform 0.15s ease"
+                                            transition: "transform 0.15s ease",
+                                            flexShrink: 0
                                         }}
                                     >
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -780,10 +793,17 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
                                         </svg>
                                     </button>
                                     <button
-                                        onClick={(e) => {
+                                        onClick={async (e) => {
                                             e.stopPropagation();
-                                            useChatStore.getState().clearConversation(convo.characterId);
+                                            useChatStore.getState().deleteConversation(convo.characterId);
                                             setActionConvo(null);
+                                            try {
+                                                await fetch("/api/memory", {
+                                                    method: "DELETE",
+                                                    headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ characterId: convo.characterId })
+                                                });
+                                            } catch (err) { }
                                         }}
                                         aria-label="Delete"
                                         style={{
@@ -791,7 +811,8 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
                                             border: "none", background: "#EF4444", color: "#fff",
                                             display: "flex", alignItems: "center", justifyContent: "center",
                                             cursor: "pointer", boxShadow: "0 2px 8px rgba(239,68,68,0.3)",
-                                            transition: "transform 0.15s ease"
+                                            transition: "transform 0.15s ease",
+                                            flexShrink: 0
                                         }}
                                     >
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">

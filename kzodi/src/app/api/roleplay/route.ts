@@ -106,20 +106,44 @@ function classifyMemoryImportance(text: string): "high" | "medium" | "low" {
     const lower = text.toLowerCase();
     // High importance: personal info, emotional moments, promises, preferences
     const highPatterns = [
-        /my (name|birthday|favorite|hobby|pet|job|school|family)/i,
-        /i (love|hate|prefer|always|never)/i,
+        /my (name|birthday|favorite|hobby|pet|job|school|family|age|phone|address|email)/i,
+        /i (love|hate|prefer|always|never|want|need|wish)/i,
+        /i('m| am) (a |an |the )?\w+/i, // "I'm a student", "I am 18", etc.
         /promise/i, /remember (this|that|when)/i,
         /important to me/i, /secret/i, /first time/i,
-        /anniversary/i, /dream/i
+        /anniversary/i, /dream/i, /goal/i, /plan/i,
+        /i live in/i, /i work (at|as|in)/i, /i study/i, /i go to/i,
+        /my (mom|dad|brother|sister|friend|bf|gf|boyfriend|girlfriend|wife|husband)/i,
+        /i have (a |an )?/i, /i don't have/i,
+        /allergic/i, /afraid of/i, /scared of/i,
+        /i like/i, /i dislike/i, /i enjoy/i,
+        // Burmese patterns
+        /ကျွန်(တော်|မ)/i, /ငါ့?(နာမည်|အမည်|အလုပ်|ကျောင်း|အသက်|မိသားစု)/i,
+        /ကြိုက်/i, /မကြိုက်/i, /ချစ်/i, /မုန်း/i,
+        /ကတိ/i, /မှတ်ထား/i, /အိပ်မက်/i, /ရည်ရွယ်/i,
+        /နေထိုင်/i, /အလုပ်လုပ်/i, /ကျောင်းတက်/i
     ];
     if (highPatterns.some(p => p.test(lower))) return "high";
 
-    // Medium: opinions, stories, questions
+    // Medium: opinions, stories, questions, experiences, emotions
     const mediumPatterns = [
-        /i think/i, /i feel/i, /today i/i, /yesterday/i,
-        /what do you think/i, /tell me about/i
+        /i think/i, /i feel/i, /today i/i, /yesterday/i, /tomorrow/i,
+        /what do you think/i, /tell me about/i,
+        /i went/i, /i saw/i, /i did/i, /i made/i, /i bought/i,
+        /happened/i, /because/i, /actually/i,
+        /really/i, /honestly/i, /tbh/i,
+        /miss you/i, /miss (him|her|them)/i,
+        /excited/i, /nervous/i, /worried/i, /happy/i, /sad/i,
+        /good (morning|night|evening|afternoon)/i,
+        /guess what/i, /you know what/i, /btw/i,
+        // Burmese patterns
+        /ထင်/i, /ခံစား/i, /ဒီနေ့/i, /မနေ့က/i, /မနက်ဖြန်/i,
+        /ပြော(ပြ|ပါ)/i, /သိလား/i, /ဗျာ/i, /ဟေ့/i
     ];
     if (mediumPatterns.some(p => p.test(lower))) return "medium";
+
+    // Even "low" importance gets a chance if the message is long enough
+    if (text.length > 50) return "medium";
 
     return "low";
 }
@@ -134,7 +158,7 @@ async function retrieveContext(query: string, characterId: string, userId: strin
 
         const results = await index.query({
             vector: vector as number[],
-            topK: 8,
+            topK: 12,
             filter: {
                 characterId: characterId,
                 userId: userId
@@ -144,7 +168,7 @@ async function retrieveContext(query: string, characterId: string, userId: strin
 
         // Relevance-scored deduplication
         const seen = new Set<string>();
-        const uniqueContexts: { text: string; score: number }[] = [];
+        const uniqueContexts: { text: string; score: number; importance: string }[] = [];
 
         for (const m of results.matches) {
             const text = (m.metadata as any)?.text || "";
@@ -155,16 +179,24 @@ async function retrieveContext(query: string, characterId: string, userId: strin
             if (seen.has(fingerprint)) continue;
             seen.add(fingerprint);
 
-            uniqueContexts.push({ text, score: m.score || 0 });
+            uniqueContexts.push({
+                text,
+                score: m.score || 0,
+                importance: (m.metadata as any)?.importance || "medium"
+            });
         }
 
-        // Sort by relevance and take top 5
-        uniqueContexts.sort((a, b) => b.score - a.score);
-        const topContexts = uniqueContexts.slice(0, 5);
+        // Sort by relevance, boost high-importance memories
+        uniqueContexts.sort((a, b) => {
+            const boostA = a.importance === "high" ? 0.05 : 0;
+            const boostB = b.importance === "high" ? 0.05 : 0;
+            return (b.score + boostB) - (a.score + boostA);
+        });
+        const topContexts = uniqueContexts.slice(0, 7);
 
-        // Only include contexts with decent relevance
+        // Only include contexts with decent relevance (lowered from 0.3)
         return topContexts
-            .filter(c => c.score > 0.3)
+            .filter(c => c.score > 0.2)
             .map(c => c.text)
             .join("\n---\n");
     } catch (e) {
@@ -178,14 +210,14 @@ async function saveContext(text: string, characterId: string, userId: string, im
         const pc = getPinecone();
         if (!pc) return;
 
-        // Skip saving low-importance memories to avoid noise
-        if (importance === "low" && text.length < 30) return;
+        // Only skip very short, low-importance messages (greetings like "hi", "ok")
+        if (importance === "low" && text.length < 15) return;
 
         const index = pc.index(INDEX_NAME);
         const vector = await generateEmbeddings(text);
         if (!vector || vector.length === 0) return;
 
-        // Check for near-duplicate before saving
+        // Check for near-duplicate before saving (higher threshold = save more)
         try {
             const existing = await index.query({
                 vector: vector as number[],
@@ -193,7 +225,7 @@ async function saveContext(text: string, characterId: string, userId: string, im
                 filter: { characterId, userId },
                 includeMetadata: true
             });
-            if (existing.matches.length > 0 && (existing.matches[0].score || 0) > 0.92) {
+            if (existing.matches.length > 0 && (existing.matches[0].score || 0) > 0.96) {
                 console.log("[RAG] Skipping near-duplicate memory");
                 return;
             }
@@ -213,6 +245,7 @@ async function saveContext(text: string, characterId: string, userId: string, im
                 }
             }]
         });
+        console.log(`[RAG] Memory saved (${importance}): ${text.slice(0, 80)}...`);
     } catch (e) {
         console.error("Context save failed:", e);
     }
@@ -532,10 +565,24 @@ ${promptContext}
 
         // 💾 SAVE TO MEMORY with importance classification
         if (content && message) {
-            const cleanContent = content.replace(/\|/g, " ");
-            const interactionText = `User: ${message}\n${characterName}: ${cleanContent}`;
+            const cleanContent = content.replace(/\|/g, " ").replace(/\[\[STICKER:.*?\]\]/gi, "[sticker]").replace(/\[\[REACT:.*?\]\]/gi, "").trim();
             const importance = classifyMemoryImportance(message);
+
+            // 1. Save the full interaction (user + AI) for conversation context
+            const interactionText = `User: ${message}\n${characterName}: ${cleanContent}`;
             saveContext(interactionText, effectiveCharacterId, userId, importance).catch(err => console.error("Async memory save failed", err));
+
+            // 2. Save user message separately if it contains personal/important info
+            if (importance === "high") {
+                const userFact = `User said: ${message}`;
+                saveContext(userFact, effectiveCharacterId, userId, "high").catch(err => console.error("Async user fact save failed", err));
+            }
+        } else if (message && !content) {
+            // Even if AI didn't respond, save the user's message if important
+            const importance = classifyMemoryImportance(message);
+            if (importance !== "low") {
+                saveContext(`User said: ${message}`, effectiveCharacterId, userId, importance).catch(err => console.error("Async user-only memory save failed", err));
+            }
         }
 
         if (content.includes("{{IGNORE}}")) {

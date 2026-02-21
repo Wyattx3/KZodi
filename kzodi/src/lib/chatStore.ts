@@ -41,6 +41,8 @@ interface ChatStore {
     addReply: (characterId: string, content: string, attachment?: ChatMessage["attachment"], replyToId?: string) => void;
     markAsSeen: (characterId: string) => void;
     clearConversation: (characterId: string) => void;
+    deleteConversation: (characterId: string) => void;
+    ensureConversation: (characterId: string) => void;
     toggleBlock: (characterId: string) => void;
     getConversation: (characterId: string) => Conversation | undefined;
     getConversationList: () => Conversation[];
@@ -69,8 +71,38 @@ export const useChatStore = create<ChatStore>()(
             clearConversation: (characterId) => {
                 set((state) => {
                     const newConvos = { ...state.conversations };
+                    if (newConvos[characterId]) {
+                        newConvos[characterId] = {
+                            ...newConvos[characterId],
+                            messages: [],
+                            lastMessage: ""
+                        };
+                    }
+                    return { conversations: newConvos };
+                });
+            },
+            deleteConversation: (characterId) => {
+                set((state) => {
+                    const newConvos = { ...state.conversations };
                     delete newConvos[characterId];
                     return { conversations: newConvos };
+                });
+            },
+
+            ensureConversation: (characterId) => {
+                set((state) => {
+                    if (state.conversations[characterId]) return state;
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: {
+                                characterId,
+                                messages: [],
+                                lastMessage: "",
+                                lastTimestamp: Date.now(),
+                            }
+                        }
+                    };
                 });
             },
 
@@ -163,13 +195,15 @@ export const useChatStore = create<ChatStore>()(
 
                 set((state) => {
                     const existing = state.conversations[characterId];
-                    const messages = existing ? [...existing.messages, msg] : [msg];
+                    // Don't create a new conversation if one doesn't exist (e.g., was deleted)
+                    if (!existing) return state;
+                    const messages = [...existing.messages, msg];
 
                     return {
                         conversations: {
                             ...state.conversations,
                             [characterId]: {
-                                ...(existing || { characterId }),
+                                ...existing,
                                 characterId,
                                 messages,
                                 lastMessage: content || (attachment ? "[Image]" : ""),
