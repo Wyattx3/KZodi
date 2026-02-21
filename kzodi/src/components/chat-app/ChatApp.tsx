@@ -17,6 +17,7 @@ export default function ChatApp() {
     const [activeCharacter, setActiveCharacter] = useState<Character | null>(null);
     const [showProfileOnLoad, setShowProfileOnLoad] = useState<boolean>(false);
     const [myCharacters, setMyCharacters] = useState<Character[]>(CHARACTERS.slice(0, 3));
+    const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
 
     // Proactive Messaging Hook (Background — when user is NOT in a chat)
     useEffect(() => {
@@ -97,202 +98,223 @@ export default function ChatApp() {
 
     const handleBack = () => {
         setActiveCharacter(null);
+        setActiveGroupId(null);
         setShowProfileOnLoad(false);
+    };
+
+    const handleSelectGroup = (groupId: string) => {
+        setActiveGroupId(groupId);
     };
 
     if (!mounted) {
         return <div className="chat-app" style={{ background: "#FFFDF5" }} />;
     }
 
+    let effectiveCharacter = activeCharacter;
+    if (!effectiveCharacter && activeGroupId) {
+        const convo = useChatStore.getState().conversations[activeGroupId];
+        if (convo) {
+            effectiveCharacter = {
+                id: activeGroupId,
+                name: convo.groupName || "Group Chat",
+                tag: "Original",
+                description: "Group Conversation",
+                longDescription: "A group conversation",
+                tags: ["group"],
+                personality: "Mixed",
+                greeting: "",
+                image: convo.groupImage || `https://api.dicebear.com/7.x/identicon/svg?seed=${activeGroupId}`
+            };
+        }
+    }
+
     return (
         <div className="chat-app">
-            <AnimatePresence mode="wait">
-                {activeCharacter ? (
-                    <motion.div
-                        key={`chatroom-${activeCharacter.id}`}
-                        className="chat-app-view"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                    >
-                        <ChatRoom character={activeCharacter} onBack={handleBack} initialShowProfile={showProfileOnLoad} />
-                    </motion.div>
-                ) : (
-                    <motion.div
-                        key="tabs"
-                        className="chat-app-view"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0, x: -30 }}
-                        transition={{ duration: 0.25 }}
-                    >
-                        {/* Tab content */}
-                        <div className="chat-app-content no-scrollbar">
-                            <AnimatePresence mode="wait">
+            {effectiveCharacter ? (
+                <div
+                    key={`chatroom-${effectiveCharacter.id}`}
+                    className="chat-app-view"
+                >
+                    <ChatRoom
+                        character={effectiveCharacter}
+                        onBack={handleBack}
+                        initialShowProfile={showProfileOnLoad}
+                    />
+                </div>
+            ) : (
+                <motion.div
+                    key="tabs"
+                    className="chat-app-view"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0, x: -30 }}
+                    transition={{ duration: 0.25 }}
+                >
+                    {/* Tab content */}
+                    <div className="chat-app-content no-scrollbar">
+                        <AnimatePresence mode="wait">
+                            {activeTab === "explore" && (
+                                <motion.div
+                                    key="explore"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    style={{ width: "100%" }}
+                                >
+                                    <ExploreTab onSelectCharacter={handleSelectCharacter} />
+                                </motion.div>
+                            )}
+                            {activeTab === "chats" && (
+                                <motion.div
+                                    key="chats"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    style={{ width: "100%" }}
+                                >
+                                    <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} />
+                                </motion.div>
+                            )}
+                            {activeTab === "create" && (
+                                <motion.div
+                                    key="create"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    style={{ width: "100%" }}
+                                >
+                                    <CreateTab
+                                        onNavigate={(tab: Tab) => setActiveTab(tab)}
+                                        onSelectCharacter={handleSelectCharacter}
+                                        myCharacters={myCharacters}
+                                        setMyCharacters={setMyCharacters}
+                                    />
+                                </motion.div>
+                            )}
+                            {activeTab === "profile" && (
+                                <motion.div
+                                    key="profile"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    style={{ width: "100%" }}
+                                >
+                                    <ProfileTab />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
+                    {/* Premium bottom tab bar */}
+                    <LayoutGroup>
+                        <div className="chat-tab-bar">
+                            <motion.button
+                                className={`chat-tab-item ${activeTab === "explore" ? "chat-tab-active" : ""}`}
+                                onClick={() => setActiveTab("explore")}
+                                whileTap={{ scale: 0.9 }}
+                            >
                                 {activeTab === "explore" && (
                                     <motion.div
-                                        key="explore"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.2 }}
-                                        style={{ width: "100%" }}
-                                    >
-                                        <ExploreTab onSelectCharacter={handleSelectCharacter} />
-                                    </motion.div>
+                                        className="chat-tab-indicator"
+                                        layoutId="activeTab"
+                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                    />
                                 )}
-                                {activeTab === "chats" && (
-                                    <motion.div
-                                        key="chats"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.2 }}
-                                        style={{ width: "100%" }}
-                                    >
-                                        <ChatsTab onSelectCharacter={handleSelectCharacter} />
-                                    </motion.div>
-                                )}
+                                <motion.div
+                                    className="chat-tab-icon-wrap"
+                                    animate={activeTab === "explore" ? { scale: 1.1 } : { scale: 1 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                        <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                                        <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                    </svg>
+                                </motion.div>
+                            </motion.button>
+
+                            <motion.button
+                                className={`chat-tab-item ${activeTab === "create" ? "chat-tab-active" : ""}`}
+                                onClick={() => setActiveTab("create")}
+                                whileTap={{ scale: 0.9 }}
+                            >
                                 {activeTab === "create" && (
                                     <motion.div
-                                        key="create"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.2 }}
-                                        style={{ width: "100%" }}
-                                    >
-                                        <CreateTab
-                                            onNavigate={(tab: Tab) => setActiveTab(tab)}
-                                            onSelectCharacter={handleSelectCharacter}
-                                            myCharacters={myCharacters}
-                                            setMyCharacters={setMyCharacters}
-                                        />
-                                    </motion.div>
+                                        className="chat-tab-indicator"
+                                        layoutId="activeTab"
+                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                    />
                                 )}
+                                <motion.div
+                                    className="chat-tab-icon-wrap"
+                                    animate={activeTab === "create" ? { scale: 1.1, rotate: 90 } : { scale: 1, rotate: 0 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                        <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                </motion.div>
+                            </motion.button>
+
+                            <motion.button
+                                className={`chat-tab-item ${activeTab === "chats" ? "chat-tab-active" : ""}`}
+                                onClick={() => setActiveTab("chats")}
+                                whileTap={{ scale: 0.9 }}
+                            >
+                                {activeTab === "chats" && (
+                                    <motion.div
+                                        className="chat-tab-indicator"
+                                        layoutId="activeTab"
+                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                    />
+                                )}
+                                <motion.div
+                                    className="chat-tab-icon-wrap"
+                                    animate={activeTab === "chats" ? { scale: 1.1 } : { scale: 1 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                        <path
+                                            d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
+                                </motion.div>
+                            </motion.button>
+
+                            <motion.button
+                                className={`chat-tab-item ${activeTab === "profile" ? "chat-tab-active" : ""}`}
+                                onClick={() => setActiveTab("profile")}
+                                whileTap={{ scale: 0.9 }}
+                            >
                                 {activeTab === "profile" && (
                                     <motion.div
-                                        key="profile"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ duration: 0.2 }}
-                                        style={{ width: "100%" }}
-                                    >
-                                        <ProfileTab />
-                                    </motion.div>
+                                        className="chat-tab-indicator"
+                                        layoutId="activeTab"
+                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                    />
                                 )}
-                            </AnimatePresence>
+                                <motion.div
+                                    className="chat-tab-icon-wrap"
+                                    animate={activeTab === "profile" ? { scale: 1.1 } : { scale: 1 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                                >
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                        <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
+                                        <path d="M20 21C20 16.5817 16.4183 13 12 13C7.58172 13 4 16.5817 4 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                    </svg>
+                                </motion.div>
+                            </motion.button>
                         </div>
-
-                        {/* Premium bottom tab bar */}
-                        <LayoutGroup>
-                            <div className="chat-tab-bar">
-                                <motion.button
-                                    className={`chat-tab-item ${activeTab === "explore" ? "chat-tab-active" : ""}`}
-                                    onClick={() => setActiveTab("explore")}
-                                    whileTap={{ scale: 0.9 }}
-                                >
-                                    {activeTab === "explore" && (
-                                        <motion.div
-                                            className="chat-tab-indicator"
-                                            layoutId="activeTab"
-                                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                                        />
-                                    )}
-                                    <motion.div
-                                        className="chat-tab-icon-wrap"
-                                        animate={activeTab === "explore" ? { scale: 1.1 } : { scale: 1 }}
-                                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                                    >
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                                            <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                        </svg>
-                                    </motion.div>
-                                </motion.button>
-
-                                <motion.button
-                                    className={`chat-tab-item ${activeTab === "create" ? "chat-tab-active" : ""}`}
-                                    onClick={() => setActiveTab("create")}
-                                    whileTap={{ scale: 0.9 }}
-                                >
-                                    {activeTab === "create" && (
-                                        <motion.div
-                                            className="chat-tab-indicator"
-                                            layoutId="activeTab"
-                                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                                        />
-                                    )}
-                                    <motion.div
-                                        className="chat-tab-icon-wrap"
-                                        animate={activeTab === "create" ? { scale: 1.1, rotate: 90 } : { scale: 1, rotate: 0 }}
-                                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                                    >
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                            <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                    </motion.div>
-                                </motion.button>
-
-                                <motion.button
-                                    className={`chat-tab-item ${activeTab === "chats" ? "chat-tab-active" : ""}`}
-                                    onClick={() => setActiveTab("chats")}
-                                    whileTap={{ scale: 0.9 }}
-                                >
-                                    {activeTab === "chats" && (
-                                        <motion.div
-                                            className="chat-tab-indicator"
-                                            layoutId="activeTab"
-                                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                                        />
-                                    )}
-                                    <motion.div
-                                        className="chat-tab-icon-wrap"
-                                        animate={activeTab === "chats" ? { scale: 1.1 } : { scale: 1 }}
-                                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                                    >
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                            <path
-                                                d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            />
-                                        </svg>
-                                    </motion.div>
-                                </motion.button>
-
-                                <motion.button
-                                    className={`chat-tab-item ${activeTab === "profile" ? "chat-tab-active" : ""}`}
-                                    onClick={() => setActiveTab("profile")}
-                                    whileTap={{ scale: 0.9 }}
-                                >
-                                    {activeTab === "profile" && (
-                                        <motion.div
-                                            className="chat-tab-indicator"
-                                            layoutId="activeTab"
-                                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                                        />
-                                    )}
-                                    <motion.div
-                                        className="chat-tab-icon-wrap"
-                                        animate={activeTab === "profile" ? { scale: 1.1 } : { scale: 1 }}
-                                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                                    >
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                            <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
-                                            <path d="M20 21C20 16.5817 16.4183 13 12 13C7.58172 13 4 16.5817 4 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                        </svg>
-                                    </motion.div>
-                                </motion.button>
-                            </div>
-                        </LayoutGroup>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                    </LayoutGroup>
+                </motion.div>
+            )}
         </div>
     );
 }

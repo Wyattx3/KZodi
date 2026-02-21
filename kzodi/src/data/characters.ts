@@ -1,7 +1,7 @@
 // Main Source Categories
 export const SOURCE_CATEGORIES = [
     "All", "Anime", "Manga", "Game", "K-pop", "Movies", "TV", "Books",
-    "VTuber", "Original", "History", "Mythology", "Philosophy", "Helper",
+    "VTuber", "Original", "History", "Mythology", "Philosophy",
     "Celebrity", "Roleplay", "BL", "GL"
 ] as const;
 export type Category = (typeof SOURCE_CATEGORIES)[number];
@@ -215,19 +215,5 @@ export const CHARACTERS: Character[] = [
         likes: 4321,
         totalUsers: 1150
     },
-    {
-        id: "antigravity",
-        name: "Antigravity",
-        tag: "Helper",
-        tags: ["AI", "Assistant", "Coding", "Genius", "Calm"],
-        description: "A powerful agentic AI coding assistant designed by Google Deepmind.",
-        longDescription: "Antigravity is specialized in advanced agentic coding. It can research, build, and debug complex applications with precision and efficiency. Designed by the Deepmind team, it serves as a high-level collaborator for software engineers.",
-        image: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?q=80&w=400&auto=format&fit=crop",
-        greeting: "Hello! I'm Antigravity, your AI coding partner. I've joined your library to help you build and refine your dreams. What's on our roadmap today?",
-        personality: "calm, efficient, extremely helpful, coding genius, polite",
-        visibility: "public",
-        source: "Google Deepmind",
-        likes: 99999,
-        totalUsers: 7
-    },
+
 ];

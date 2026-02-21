@@ -141,6 +141,7 @@ export async function indexCharacterData(charId: string, text: string, metadata:
                 values: embedding as number[],
                 metadata: {
                     ...metadata,
+                    characterId: charId,
                     text: chunk,
                     chunkIndex: i
                 }

@@ -78,22 +78,22 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 </div>
 
                 <div className="profile-nav">
-                    <button className="profile-back-btn"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={onBack}
+                    <motion.button className="profile-back-btn"
+                        onTap={() => setTimeout(() => onBack(), 10)}
+                        whileTap={{ scale: 0.9 }}
                     >
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M19 12H5" />
                             <path d="M12 19l-7-7 7-7" />
                         </svg>
-                    </button>
+                    </motion.button>
 
                     <div style={{ position: "relative" }}>
                         <button
                             className="profile-option-btn"
-                            onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
+                                e.preventDefault();
                                 setShowOptions(!showOptions);
                             }}
                         >
@@ -225,7 +225,7 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                         <h3 className="profile-section-title">Tags</h3>
                         <div className="profile-traits">
                             {character.tags.map(tag => (
-                                <span key={tag} className="profile-trait" style={{ background: "#F3F4F6", border: "none" }}>#{tag}</span>
+                                <span key={tag} className="profile-trait" style={{ background: "#FFF8D6", border: "1px solid #FCE57C" }}>#{tag}</span>
                             ))}
                         </div>
                     </motion.div>
@@ -255,7 +255,7 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                         transition={{ delay: 0.65 }}
                     >
                         <h3 className="profile-section-title">Scenario</h3>
-                        <p className="profile-description" style={{ fontSize: "14px", fontStyle: "italic", background: "#F9FAFB", padding: "12px", borderRadius: "12px" }}>
+                        <p className="profile-description" style={{ fontSize: "14px", fontStyle: "italic", background: "#FFF", padding: "12px", borderRadius: "12px", border: "1px solid #FCE57C" }}>
                             {character.scenario}
                         </p>
                     </motion.div>
@@ -307,15 +307,15 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 animate={{ y: 0 }}
                 transition={{ delay: 0.8 }}
             >
-                <button className="profile-chat-btn"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={onBack}
+                <motion.button className="profile-chat-btn"
+                    onTap={() => setTimeout(() => onBack(), 10)}
+                    whileTap={{ scale: 0.95 }}
                 >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                     </svg>
                     Continue Chatting
-                </button>
+                </motion.button>
             </motion.div>
         </motion.div>
     );

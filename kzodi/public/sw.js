@@ -1,4 +1,4 @@
-const CACHE_NAME = "kzodi-v1";
+const CACHE_NAME = "kzodi-v2";
 const PRECACHE_URLS = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -21,18 +21,29 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  const url = new URL(event.request.url);
+
+  // Do not cache API routes and hot-reloads
+  if (url.pathname.startsWith("/api/") || url.pathname.includes("/_next/webpack")) {
+    return;
+  }
+
+  // Network First, falling back to cache
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch((error) => {
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          throw error;
+        });
+      })
   );
 });

@@ -22,7 +22,6 @@ export default function ProfileTab() {
                         className="explore-hero-subtitle"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
                     >
                         Your identity and settings
                     </motion.p>
@@ -33,7 +32,6 @@ export default function ProfileTab() {
                 className="explore-section"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2 }}
             >
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", padding: "32px 0" }}>
                     {session?.user ? (

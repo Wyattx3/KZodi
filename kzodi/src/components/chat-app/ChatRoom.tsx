@@ -2,8 +2,9 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChatStore, type ChatMessage } from "@/lib/chatStore";
-import { type Character } from "@/data/characters";
+import { CHARACTERS, type Character } from "@/data/characters";
 import CharacterProfile from "./CharacterProfile";
+import { ThumbsUp, Heart, Laugh, Sparkles, Frown } from "lucide-react";
 
 interface ChatRoomProps {
     character: Character;
@@ -679,14 +680,28 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
     const [input, setInput] = useState("");
     const [isTyping, setIsTyping] = useState(false);
+    const [typingMemberName, setTypingMemberName] = useState<string | null>(null);
     const [showCharInfo, setShowCharInfo] = useState(initialShowProfile);
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
+    const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+    const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const groupIntroTriggered = useRef(false);
 
-    const { sendMessage, addReply, markAsSeen } = useChatStore.getState();
+    const { sendMessage, addReply, markAsSeen, addGroupReply } = useChatStore.getState();
+
+    const isGroupChat = character.id.startsWith("group-");
+    const groupMemberChars = useMemo(() => {
+        if (!isGroupChat) return [];
+        const convo = useChatStore.getState().conversations[character.id];
+        if (!convo?.groupMemberIds) return [];
+        return convo.groupMemberIds
+            .map(id => CHARACTERS.find(c => c.id === id))
+            .filter(Boolean) as Character[];
+    }, [character.id, isGroupChat]);
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => {
         const convo = useChatStore.getState().conversations[character.id];
@@ -694,10 +709,14 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     });
 
     const isBlocked = useChatStore(state => state.conversations[character.id]?.isBlocked) || false;
+    const conversationTheme = useChatStore(state => state.conversations[character.id]?.theme) || "theme-default";
 
     // Close menu when clicking anywhere else
     useEffect(() => {
-        const handleClick = () => setShowMenu(false);
+        const handleClick = () => {
+            setShowMenu(false);
+            setActiveActionMenuId(null);
+        };
         window.addEventListener("click", handleClick);
         return () => window.removeEventListener("click", handleClick);
     }, []);
@@ -709,7 +728,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         return firstUnread ? firstUnread.id : null;
     });
 
-    const triggerAiResponse = async (userMessageText: string) => {
+    const triggerAiResponse = async (userMessageText: string, repliedMessageContent?: string, repliedId?: string) => {
         // 1. Realistic Reading Delay (1.5s - 3s)
         const readingDelay = 1500 + Math.random() * 1500;
         await new Promise((resolve) => setTimeout(resolve, readingDelay));
@@ -721,25 +740,106 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         const reactionDelay = 500 + Math.random() * 1000;
         await new Promise((resolve) => setTimeout(resolve, reactionDelay));
 
+        // Include the message ID of the replied-to message for the AI context
+        let finalMessageText = userMessageText;
+        if (repliedMessageContent && repliedId) {
+            finalMessageText = `[MessageID: ${repliedId}] (Replying to your message: "${repliedMessageContent}")\n\n${userMessageText}`;
+        } else if (repliedMessageContent) {
+            finalMessageText = `(Replying to your message: "${repliedMessageContent}")\n\n${userMessageText}`;
+        }
+
+        // ─── GROUP CHAT: Each member responds individually ───
+        if (isGroupChat && groupMemberChars.length > 0) {
+            const groupMemberNames = groupMemberChars.map(c => c.name);
+
+            // Shuffle members so the order varies each time
+            const shuffled = [...groupMemberChars].sort(() => Math.random() - 0.5);
+
+            for (const member of shuffled) {
+                // Random chance some members don't reply (30% skip)
+                if (shuffled.length > 2 && Math.random() < 0.3) continue;
+
+                // Pause between members (like real people reading + typing)
+                const memberDelay = 1500 + Math.random() * 2500;
+                await new Promise((resolve) => setTimeout(resolve, memberDelay));
+
+                // Update typing indicator for this specific member
+                setIsTyping(false);
+                await new Promise((resolve) => setTimeout(resolve, 100)); // Let React render
+                setTypingMemberName(member.name);
+                setIsTyping(true);
+
+                // Simulate reading/thinking delay
+                await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 1200));
+
+                try {
+                    const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
+                    const history = currentMessages.map((m) => ({
+                        id: m.id,
+                        role: m.role,
+                        content: m.senderName
+                            ? `[${m.senderName}]: ${m.content || ""}`
+                            : (m.role === "user" ? `[User]: ${m.content || ""}` : (m.content || "")),
+                    }));
+
+                    const res = await fetch("/api/roleplay", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            message: finalMessageText,
+                            characterId: member.id,
+                            characterName: member.name,
+                            characterPersonality: member.personality,
+                            characterTag: member.tag,
+                            history: history.slice(-15),
+                            context: "reply",
+                            isGroupChat: true,
+                            groupMembers: groupMemberNames,
+                        }),
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.action !== "ignore" && data.reply && data.reply !== "...") {
+                            // Process response with correct member attribution
+                            await processAiResponse(data.reply, member.id, member.name);
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Group member ${member.name} response failed:`, err);
+                }
+            }
+
+            setIsTyping(false);
+            setTypingMemberName(null);
+            return;
+        }
+
+        // ─── NORMAL 1:1 CHAT ───
         setIsTyping(true);
 
         try {
             const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
             const history = currentMessages.map((m) => ({
+                id: m.id,
                 role: m.role,
-                content: m.content || (m.attachment ? "[Image]" : ""),
+                content: m.content || "",
+                attachment: m.attachment || undefined,
             }));
 
             const res = await fetch("/api/roleplay", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    message: userMessageText,
+                    message: finalMessageText,
+                    characterId: character.id,
                     characterName: character.name,
                     characterPersonality: character.personality,
                     characterTag: character.tag,
                     history: history.slice(-10),
                     context: "reply",
+                    isGroupChat: false,
+                    groupMembers: [],
                 }),
             });
 
@@ -750,6 +850,52 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     setIsTyping(false);
                 } else {
                     await processAiResponse(data.reply || "...");
+
+                    // 🔥 Comfort Follow-up: If user is upset/angry/sad, AI sends a second wave of comfort messages
+                    if (data.needsComfort && data.detectedEmotion) {
+                        const comfortDelay = 3000 + Math.random() * 4000;
+                        await new Promise((resolve) => setTimeout(resolve, comfortDelay));
+
+                        setIsTyping(true);
+
+                        const updatedMessages = useChatStore.getState().conversations[character.id]?.messages || [];
+                        const updatedHistory = updatedMessages.map((m) => ({
+                            id: m.id,
+                            role: m.role,
+                            content: m.content || (m.attachment ? "[Image]" : ""),
+                        }));
+
+                        try {
+                            const comfortRes = await fetch("/api/roleplay", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    message: "",
+                                    characterId: character.id,
+                                    characterName: character.name,
+                                    characterPersonality: character.personality,
+                                    characterTag: character.tag,
+                                    history: updatedHistory.slice(-15),
+                                    context: "comfort",
+                                    isGroupChat: false,
+                                    groupMembers: [],
+                                }),
+                            });
+
+                            if (comfortRes.ok) {
+                                const comfortData = await comfortRes.json();
+                                if (comfortData.reply && comfortData.reply !== "..." && comfortData.action !== "ignore") {
+                                    await processAiResponse(comfortData.reply);
+                                } else {
+                                    setIsTyping(false);
+                                }
+                            } else {
+                                setIsTyping(false);
+                            }
+                        } catch {
+                            setIsTyping(false);
+                        }
+                    }
                 }
             } else {
                 addReply(character.id, "Hmm, I lost my train of thought.");
@@ -760,6 +906,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             setIsTyping(false);
         }
     };
+
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -795,8 +942,13 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         const hasUnseen = messages.some(m => m.role === "assistant" && m.status !== "seen");
         if (hasUnseen) {
             markAsSeen(character.id);
+        } else if (unreadMarkerId) {
+            const timer = setTimeout(() => {
+                setUnreadMarkerId(null);
+            }, 3000);
+            return () => clearTimeout(timer);
         }
-    }, [messages, character.id, markAsSeen]);
+    }, [messages, character.id, markAsSeen, unreadMarkerId]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -805,8 +957,83 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     useEffect(() => {
         const convo = useChatStore.getState().conversations[character.id];
         if (!convo || convo.messages.length === 0) {
-            // No conversation yet — add the greeting once
-            addReply(character.id, character.greeting);
+            if (isGroupChat) {
+                // Guard: only trigger once
+                if (groupIntroTriggered.current) return;
+                groupIntroTriggered.current = true;
+
+                // No welcome message — characters start interacting immediately like an anime group chat
+                const groupMemberNames = groupMemberChars.map(c => c.name);
+                const shuffled = [...groupMemberChars].sort(() => Math.random() - 0.5);
+
+                // Each character introduces themselves / reacts to being in the group
+                (async () => {
+                    for (let i = 0; i < shuffled.length; i++) {
+                        const member = shuffled[i];
+
+                        // Natural delay between each character
+                        const delay = i === 0 ? 800 : (1500 + Math.random() * 2500);
+                        await new Promise(r => setTimeout(r, delay));
+
+                        // Clear and re-set typing for this specific member
+                        setIsTyping(false);
+                        await new Promise(r => setTimeout(r, 100)); // Let React render
+                        setTypingMemberName(member.name);
+                        setIsTyping(true);
+
+                        // Typing delay
+                        await new Promise(r => setTimeout(r, 1000 + Math.random() * 1500));
+
+                        try {
+                            const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
+                            const history = currentMessages.map((m) => ({
+                                id: m.id,
+                                role: m.role,
+                                content: m.senderName
+                                    ? `[${m.senderName}]: ${m.content || ""}`
+                                    : (m.role === "user" ? `[User]: ${m.content || ""}` : (m.content || "")),
+                            }));
+
+                            // Build a context-aware prompt for each character
+                            const isFirst = i === 0;
+                            const previousNames = shuffled.slice(0, i).map(m => m.name).join(", ");
+                            const introPrompt = isFirst
+                                ? `System: A new group chat was just created with ${groupMemberNames.join(", ")} and the user. You are ${member.name}. Be the FIRST to speak! React naturally — you might be excited, confused, annoyed, or curious about who's in this group. Stay 100% in character. Keep it short (1-2 messages max). Do NOT greet formally. Act like your anime character would when randomly thrown into a group chat.`
+                                : `System: A group chat was just created. ${previousNames} already said something above. You are ${member.name}. React to what they said OR introduce yourself in your own way. You can tease them, argue, agree, or be dramatic — whatever fits your personality. Stay 100% in character. Keep it short. Think anime group dynamics.`;
+
+                            const res = await fetch("/api/roleplay", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    message: introPrompt,
+                                    characterId: member.id,
+                                    characterName: member.name,
+                                    characterPersonality: member.personality,
+                                    characterTag: member.tag,
+                                    history: history.slice(-15),
+                                    context: "reply",
+                                    isGroupChat: true,
+                                    groupMembers: groupMemberNames,
+                                }),
+                            });
+
+                            if (res.ok) {
+                                const data = await res.json();
+                                if (data.reply && data.reply !== "..." && data.action !== "ignore") {
+                                    await processAiResponse(data.reply, member.id, member.name);
+                                }
+                            }
+                        } catch (err) {
+                            console.error(`Group intro for ${member.name} failed:`, err);
+                        }
+                    }
+
+                    setIsTyping(false);
+                    setTypingMemberName(null);
+                })();
+            } else {
+                addReply(character.id, character.greeting);
+            }
         } else {
             // Clean up duplicate greetings left over from the previous bug
             const msgs = convo.messages;
@@ -845,16 +1072,59 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
         setInput("");
         setUnreadMarkerId(null);
-        sendMessage(character.id, text);
+
+        const repliedId = replyingTo?.id;
+        const repliedContent = replyingTo?.content;
+        setReplyingTo(null);
+
+        sendMessage(character.id, text, undefined, repliedId);
         setTimeout(() => inputRef.current?.focus(), 50);
 
-        await triggerAiResponse(text);
+        await triggerAiResponse(text, repliedContent, repliedId);
     };
 
     // Process AI response and handle splitting
-    const processAiResponse = async (responseText: string) => {
+    const processAiResponse = async (responseText: string, groupSenderId?: string, groupSenderName?: string) => {
+        let cleanText = responseText;
+
+        // 1. Extract and process REACT tags
+        const emojiToReactionId: Record<string, string> = {
+            "\uD83D\uDC4D": "like", "\uD83D\uDC4D\uFE0F": "like", "thumbs up": "like", "thumbsup": "like",
+            "\u2764\uFE0F": "love", "\u2764": "love", "heart": "love",
+            "\uD83D\uDE02": "haha", "laughing": "haha", "lol": "haha",
+            "\uD83D\uDE2E": "wow", "surprised": "wow", "shock": "wow",
+            "\uD83D\uDE22": "sad", "crying": "sad", "cry": "sad",
+        };
+        const validReactionIds = ["like", "love", "haha", "wow", "sad"];
+        const reactRegex = /\[\[\s*REACT\s*:\s*([^:]+)\s*:\s*([^\]]+)\s*\]\]/gi;
+        let reactMatch;
+        while ((reactMatch = reactRegex.exec(cleanText)) !== null) {
+            const msgId = reactMatch[1].trim();
+            let reactionId = reactMatch[2].trim().toLowerCase();
+            // Normalize: if AI sent emoji or variant text, map it to our text ID
+            if (emojiToReactionId[reactionId]) {
+                reactionId = emojiToReactionId[reactionId];
+            } else if (emojiToReactionId[reactMatch[2].trim()]) {
+                reactionId = emojiToReactionId[reactMatch[2].trim()];
+            }
+            // Only store valid reaction IDs
+            if (validReactionIds.includes(reactionId)) {
+                useChatStore.getState().addReaction(character.id, msgId, reactionId, character.id);
+            }
+        }
+        cleanText = cleanText.replace(reactRegex, "");
+
+        // 2. Extract REPLY tag
+        let replyToId: string | undefined = undefined;
+        const replyRegex = /\[\[\s*REPLY\s*:\s*([^\]]+)\s*\]\]/i;
+        const replyMatch = replyRegex.exec(cleanText);
+        if (replyMatch) {
+            replyToId = replyMatch[1].trim();
+            cleanText = cleanText.replace(replyRegex, "");
+        }
+
         // First split by explicit pipe separator
-        const initialParts = responseText
+        const initialParts = cleanText
             .split("|")
             .map((p) => p.trim().replace(/^["']+|["']+$/g, "").trim())
             .filter((p) => p);
@@ -872,11 +1142,16 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             finalParts.push(...subParts);
         }
 
-        await sendAiSequence(finalParts);
+        // SAFETY: If AI only sent a react/reply tag with no actual text, force a fallback
+        if (finalParts.length === 0) {
+            finalParts.push("...");
+        }
+
+        await sendAiSequence(finalParts, replyToId, groupSenderId, groupSenderName);
     };
 
     // Send AI messages sequentially with typing delay
-    const sendAiSequence = async (parts: string[]) => {
+    const sendAiSequence = async (parts: string[], replyToId?: string, groupSenderId?: string, groupSenderName?: string) => {
         if (parts.length === 0) {
             setIsTyping(false);
             return;
@@ -891,7 +1166,13 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
             await new Promise((resolve) => setTimeout(resolve, typingTime));
 
-            addReply(character.id, part);
+            // Use group-specific reply method if sender info is provided
+            if (groupSenderId && groupSenderName) {
+                addGroupReply(character.id, part, groupSenderId, groupSenderName, undefined, i === 0 ? replyToId : undefined);
+            } else {
+                // Only attach replyToId to the FIRST message in the sequence
+                addReply(character.id, part, undefined, i === 0 ? replyToId : undefined);
+            }
 
             // If there are more messages, keep "typing" or briefly pause
             if (i < parts.length - 1) {
@@ -978,7 +1259,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     };
 
     return (
-        <div className="chatroom">
+        <div className={`chatroom ${conversationTheme}`}>
             <div className="chatroom-bg-pattern" />
             {/* ── Header ─────────────────────────── */}
             <motion.div
@@ -987,11 +1268,16 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3 }}
             >
-                <button className="chatroom-back" onClick={onBack} aria-label="Go back">
+                <motion.button
+                    className="chatroom-back"
+                    onTap={() => setTimeout(() => onBack(), 10)}
+                    whileTap={{ scale: 0.9 }}
+                    aria-label="Go back"
+                >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                         <path d="M15 4L7 12L15 20" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                </button>
+                </motion.button>
                 <div
                     className="chatroom-header-center"
                     onClick={() => setShowCharInfo(true)}
@@ -1080,25 +1366,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z" fill="currentColor" /></svg>
                                     Clear Chat
                                 </button>
-                                <button
-                                    onClick={() => {
-                                        alert("User reported.");
-                                        setShowMenu(false);
-                                    }}
-                                    style={{
-                                        display: "flex", alignItems: "center", gap: "8px",
-                                        background: "transparent", border: "none", padding: "10px 12px",
-                                        borderRadius: "10px", cursor: "pointer",
-                                        color: "#4A3728", fontSize: "14px", fontWeight: 500,
-                                        transition: "background 0.2s"
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                                >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6zm3.6 8h-3.36l-.4-2H7V6h5.36l.4 2H18v6z" fill="currentColor" /></svg>
-                                    Report
-                                </button>
-                                <div style={{ height: "1px", background: "rgba(0,0,0,0.06)", margin: "2px 0" }} />
+
                                 <button
                                     onClick={() => {
                                         useChatStore.getState().toggleBlock(character.id);
@@ -1126,6 +1394,49 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                         </>
                                     )}
                                 </button>
+                                <div style={{ height: "1px", background: "rgba(0,0,0,0.06)", margin: "4px 0" }} />
+                                <div style={{ padding: "4px 12px 2px", fontSize: "11px", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase" }}>Theme</div>
+                                <div style={{ display: "flex", gap: "10px", padding: "8px 12px", justifyContent: "space-between" }}>
+                                    {[
+                                        { id: "theme-default", color: "#FFFDF5", border: "#EAE6D6" },
+                                        { id: "theme-blue", color: "#EBF4FF", border: "#D1E3FD" },
+                                        { id: "theme-pink", color: "#FDF2F8", border: "#FCE7F3" },
+                                        { id: "theme-green", color: "#F0FDF4", border: "#DCFCE7" },
+                                        { id: "theme-purple", color: "#F5F3FF", border: "#EDE9FE" }
+                                    ].map(t => {
+                                        const isActive = conversationTheme === t.id;
+                                        return (
+                                            <button
+                                                key={t.id}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    useChatStore.getState().setTheme(character.id, t.id);
+                                                    setShowMenu(false);
+                                                }}
+                                                style={{
+                                                    width: 32, height: 32, borderRadius: "50%",
+                                                    border: `1.5px solid ${isActive ? "#4A3728" : t.border}`,
+                                                    background: t.color,
+                                                    boxShadow: isActive ? "0 2px 8px rgba(0,0,0,0.1) inset" : "0 2px 4px rgba(0,0,0,0.02)",
+                                                    cursor: "pointer",
+                                                    transition: "transform 0.2s, box-shadow 0.2s",
+                                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                                    transform: isActive ? "scale(1.1)" : "scale(1)",
+                                                    position: "relative"
+                                                }}
+                                                onMouseEnter={(e) => { e.currentTarget.style.transform = isActive ? "scale(1.1)" : "scale(1.15)"; }}
+                                                onMouseLeave={(e) => { e.currentTarget.style.transform = isActive ? "scale(1.1)" : "scale(1)"; }}
+                                                aria-label={`Theme ${t.id}`}
+                                            >
+                                                {isActive && (
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ position: "absolute" }}>
+                                                        <path d="M20 6L9 17L4 12" stroke="#4A3728" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                                    </svg>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </motion.div>
                         )}
                     </AnimatePresence>
@@ -1149,10 +1460,27 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
                             return (
                                 <React.Fragment key={msg.id}>
-                                    {(isNewConversation || isUnreadMarker) && (
+                                    {isNewConversation && !isUnreadMarker && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -5 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            style={{
+                                                textAlign: "center",
+                                                margin: "16px 0 8px",
+                                                fontSize: "11px",
+                                                color: "#8B8680",
+                                                fontWeight: 600,
+                                                letterSpacing: "0.5px"
+                                            }}
+                                        >
+                                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </motion.div>
+                                    )}
+                                    {isUnreadMarker && (
                                         <motion.div
                                             initial={{ opacity: 0, scale: 0.9 }}
                                             animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.9, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: 0.3 } }}
                                             style={{
                                                 marginTop: 24,
                                                 marginBottom: 8,
@@ -1180,8 +1508,23 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     <MessageBubble
                                         message={msg}
                                         character={character}
-                                        isFirst={i === 0 || prevMsg?.role !== msg.role || Boolean(isNewConversation || isUnreadMarker)}
-                                        isLast={i === messages.length - 1 || messages[i + 1]?.role !== msg.role}
+                                        isFirst={i === 0 || prevMsg?.role !== msg.role || prevMsg?.senderId !== msg.senderId || Boolean(isNewConversation || isUnreadMarker)}
+                                        isLast={i === messages.length - 1 || messages[i + 1]?.role !== msg.role || messages[i + 1]?.senderId !== msg.senderId}
+                                        onReply={(msg) => {
+                                            setReplyingTo(msg);
+                                            setTimeout(() => inputRef.current?.focus(), 50);
+                                        }}
+                                        replyMessage={msg.replyToId ? messages.find(m => m.id === msg.replyToId) : undefined}
+                                        onReaction={(msgId, emoji) => {
+                                            const hasReacted = msg.reactions?.[emoji]?.includes(USER_CHARACTER.id);
+                                            if (hasReacted) {
+                                                useChatStore.getState().removeReaction(character.id, msgId, emoji, USER_CHARACTER.id);
+                                            } else {
+                                                useChatStore.getState().addReaction(character.id, msgId, emoji, USER_CHARACTER.id);
+                                            }
+                                        }}
+                                        activeActionMenuId={activeActionMenuId}
+                                        setActiveActionMenuId={setActiveActionMenuId}
                                     />
                                 </React.Fragment>
                             );
@@ -1199,10 +1542,14 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 transition={{ duration: 0.2 }}
                             >
                                 <div className="chatroom-typing-avatar">
-                                    <img src={character.image} alt="" />
+                                    <img src={
+                                        typingMemberName
+                                            ? (groupMemberChars.find(c => c.name === typingMemberName)?.image || character.image)
+                                            : character.image
+                                    } alt="" />
                                 </div>
                                 <div className="chatroom-typing-bubble">
-                                    <span className="chatroom-typing-name">{character.name.split(" ")[0]}</span>
+                                    <span className="chatroom-typing-name">{typingMemberName || character.name.split(" ")[0]}</span>
                                     <div className="typing-dots">
                                         <span />
                                         <span />
@@ -1242,60 +1589,81 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: 0.15 }}
                 >
-                    <div className="chatroom-input-wrap">
-                        <AnimatePresence mode="popLayout">
-                            {input.length === 0 && (
-                                <motion.div
-                                    className="chatroom-input-actions"
-                                    initial={{ width: "auto", opacity: 1, scale: 1 }}
-                                    exit={{ width: 0, opacity: 0, scale: 0 }}
-                                    transition={{ duration: 0.2 }}
-                                    style={{ display: "flex", alignItems: "center", overflow: "hidden" }}
-                                >
-                                    <input
-                                        type="file"
-                                        ref={fileInputRef}
-                                        style={{ display: "none" }}
-                                        accept="image/*"
-                                        onChange={handleFileChange}
-                                    />
-                                    <button
-                                        className="chatroom-input-attach"
-                                        aria-label="Attach Image"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        style={{ flexShrink: 0 }}
+                    <div className="chatroom-input-wrap" style={replyingTo ? { flexDirection: "column", padding: 0 } : undefined}>
+                        {replyingTo && (
+                            <div style={{
+                                width: "100%", padding: "10px 14px", background: "rgba(0,0,0,0.03)",
+                                borderBottom: "1px solid rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "space-between",
+                                fontSize: "13px", borderRadius: "20px 20px 0 0"
+                            }}>
+                                <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                                    <span style={{ fontWeight: 600, color: "#38a3fd", fontSize: "11px", textTransform: "uppercase", marginBottom: "2px" }}>
+                                        Replying to {replyingTo.role === "user" ? "You" : character.name}
+                                    </span>
+                                    <span style={{ WebkitLineClamp: 1, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", opacity: 0.7 }}>
+                                        {replyingTo.content || "[Attachment]"}
+                                    </span>
+                                </div>
+                                <button onClick={() => setReplyingTo(null)} style={{ background: "none", border: "none", cursor: "pointer", opacity: 0.5, padding: "4px" }}>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+                        )}
+                        <div style={{ display: "flex", width: "100%", alignItems: "center", padding: replyingTo ? "0" : undefined }}>
+                            <AnimatePresence mode="popLayout">
+                                {input.length === 0 && (
+                                    <motion.div
+                                        className="chatroom-input-actions"
+                                        initial={{ width: "auto", opacity: 1, scale: 1 }}
+                                        exit={{ width: 0, opacity: 0, scale: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                        style={{ display: "flex", alignItems: "center", overflow: "hidden" }}
                                     >
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                    </button>
-                                    <button
-                                        className="chatroom-input-attach"
-                                        aria-label="Send Sticker"
-                                        onClick={() => setShowStickerPicker(!showStickerPicker)}
-                                        style={{ marginLeft: 8, marginRight: 8, flexShrink: 0 }}
-                                    >
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="1.5" />
-                                            <path d="M8 14C8 14 9.5 16 12 16C14.5 16 16 14 16 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M9 9H9.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                    </button>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                        <textarea
-                            ref={inputRef}
-                            className="chatroom-input"
-                            placeholder={`Message ${character.name.split(" ")[0]}...`}
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            disabled={isTyping}
-                            rows={1}
-                            style={{ paddingLeft: input.length > 0 ? "12px" : "0" }}
-                        />
+                                        <input
+                                            type="file"
+                                            ref={fileInputRef}
+                                            style={{ display: "none" }}
+                                            accept="image/*"
+                                            onChange={handleFileChange}
+                                        />
+                                        <button
+                                            className="chatroom-input-attach"
+                                            aria-label="Attach Image"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            style={{ flexShrink: 0 }}
+                                        >
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            className="chatroom-input-attach"
+                                            aria-label="Send Sticker"
+                                            onClick={() => setShowStickerPicker(!showStickerPicker)}
+                                            style={{ marginLeft: 8, marginRight: 8, flexShrink: 0 }}
+                                        >
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="1.5" />
+                                                <path d="M8 14C8 14 9.5 16 12 16C14.5 16 16 14 16 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M9 9H9.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        </button>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                            <textarea
+                                ref={inputRef}
+                                className="chatroom-input no-scrollbar"
+                                placeholder={`Message ${character.name.split(" ")[0]}...`}
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                disabled={isTyping}
+                                rows={1}
+                                style={{ paddingLeft: input.length > 0 ? "12px" : "0", paddingTop: replyingTo ? "12px" : undefined, paddingBottom: replyingTo ? "12px" : undefined }}
+                            />
+                        </div>
                     </div>
 
                     <AnimatePresence>
@@ -1377,40 +1745,99 @@ function MessageBubble({
     character,
     isFirst,
     isLast,
+    onReply,
+    replyMessage,
+    onReaction,
+    activeActionMenuId,
+    setActiveActionMenuId,
 }: {
     message: ChatMessage;
     character: Character;
     isFirst: boolean;
     isLast: boolean;
+    onReply?: (msg: ChatMessage) => void;
+    replyMessage?: ChatMessage;
+    onReaction?: (messageId: string, emoji: string) => void;
+    activeActionMenuId: string | null;
+    setActiveActionMenuId: (id: string | null) => void;
 }) {
     const isUser = message.role === "user";
-    const [showActions, setShowActions] = useState(false);
+    const showActions = activeActionMenuId === message.id;
     const isStickerOnly = /^\[\[STICKER:\s*.+?\]\]$/.test(message.content.trim());
+    const isAttachmentOnly = message.attachment?.type === "image" && (!message.content || message.content.trim() === "");
+    const isTransparentBubble = isStickerOnly || isAttachmentOnly;
+    const rid = message.id.slice(-6); // unique suffix for SVG gradient IDs
+    const emojis = [
+        { id: "like", icon: <ThumbsUp size={20} strokeWidth={2.5} color="#D48806" /> },
+        { id: "love", icon: <Heart size={20} strokeWidth={2.5} color="#FF4D4F" /> },
+        { id: "haha", icon: <Laugh size={20} strokeWidth={2.5} color="#FAAD14" /> },
+        { id: "wow", icon: <Sparkles size={20} strokeWidth={2.5} color="#FFC53D" /> },
+        { id: "sad", icon: <Frown size={20} strokeWidth={2.5} color="#4BC0C8" /> }
+    ];
 
     return (
         <motion.div
             className={`chatroom-msg ${isUser ? "chatroom-msg-user" : "chatroom-msg-ai"} ${isFirst ? "chatroom-msg-first" : ""} ${isLast ? "chatroom-msg-last" : ""}`}
             initial={{ opacity: 0, y: 16, scale: 0.92 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
+            animate={{ opacity: 1, y: 0, scale: 1, x: 0 }}
             transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.2}
+            onDragEnd={(e, info) => {
+                if (Math.abs(info.offset.x) > 50) {
+                    onReply?.(message);
+                }
+            }}
             onContextMenu={(e) => {
                 e.preventDefault();
-                setShowActions(!showActions);
+                e.stopPropagation();
+                setActiveActionMenuId(showActions ? null : message.id);
+            }}
+            onClick={(e) => {
+                // Ensure we don't trigger when clicking images
+                if ((e.target as HTMLElement).tagName.toLowerCase() !== 'img') {
+                    e.stopPropagation();
+                    setActiveActionMenuId(showActions ? null : message.id);
+                }
             }}
         >
             {!isUser && isLast && (
                 <div className="chatroom-msg-avatar">
-                    <img src={character.image} alt="" />
+                    <img src={
+                        message.senderId
+                            ? (CHARACTERS.find(c => c.id === message.senderId)?.image || character.image)
+                            : character.image
+                    } alt="" />
                 </div>
             )}
             {!isUser && !isLast && <div className="chatroom-msg-avatar-spacer" />}
             <div className="chatroom-bubble-wrap">
                 <div
                     className={`chatroom-bubble ${isUser ? "chatroom-bubble-user" : "chatroom-bubble-ai"}`}
-                    style={isStickerOnly ? { background: "transparent", boxShadow: "none", padding: 0, border: "none" } : undefined}
+                    style={isTransparentBubble ? { background: "transparent", boxShadow: "none", padding: 0, border: "none" } : undefined}
                 >
-                    {!isUser && isFirst && (
-                        <span className="chatroom-bubble-sender">{character.name}</span>
+                    {!isUser && isFirst && !isTransparentBubble && (
+                        <span className="chatroom-bubble-sender">{message.senderName || character.name}</span>
+                    )}
+                    {replyMessage && (
+                        <div style={{
+                            fontSize: "13px",
+                            padding: "8px 10px",
+                            background: isUser ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.05)",
+                            borderRadius: "8px",
+                            marginBottom: "8px",
+                            borderLeft: `3px solid ${isUser ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.2)"}`,
+                            opacity: 0.9,
+                            cursor: "pointer"
+                        }}>
+                            <span style={{ fontWeight: 600, fontSize: "11px", display: "block", marginBottom: "2px", color: isUser ? "#ca8a04" : "#4A3728" }}>
+                                {replyMessage.role === "user" ? "You" : character.name}
+                            </span>
+                            <div style={{ WebkitLineClamp: 2, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", opacity: 0.85, fontStyle: "italic", fontSize: "12px", color: isUser ? "#ca8a04" : "inherit" }}>
+                                {replyMessage.content || "[Attachment]"}
+                            </div>
+                        </div>
                     )}
                     <div className="chatroom-message-content">
                         {message.attachment?.type === "image" && (
@@ -1447,6 +1874,43 @@ function MessageBubble({
                         )}
                     </div>
                 </div>
+                {message.reactions && Object.keys(message.reactions).length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "4px", padding: "0 4px", zIndex: 1, position: "relative" }}>
+                        {Object.entries(message.reactions).map(([emoji, users]) => {
+                            const hasReacted = users.includes(USER_CHARACTER.id);
+                            return (
+                                <motion.button
+                                    key={emoji}
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => onReaction?.(message.id, emoji)}
+                                    style={{
+                                        background: hasReacted ? "rgba(56, 163, 253, 0.12)" : "rgba(255,255,255,0.85)",
+                                        border: hasReacted ? "1px solid rgba(56, 163, 253, 0.4)" : "1px solid rgba(0,0,0,0.06)",
+                                        borderRadius: "16px",
+                                        padding: "4px 8px",
+                                        fontSize: "13px",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        cursor: "pointer",
+                                        boxShadow: "0 2px 4px rgba(0,0,0,0.04)",
+                                        backdropFilter: "blur(4px)"
+                                    }}
+                                >
+                                    <span style={{ display: "flex", alignItems: "center", width: "18px", height: "18px" }}>
+                                        {emojis.find(e => e.id === emoji)?.icon || emoji}
+                                    </span>
+                                    {users.length > 1 && (
+                                        <span style={{ fontSize: "12px", color: hasReacted ? "#0284c7" : "#555", fontWeight: 600 }}>
+                                            {users.length}
+                                        </span>
+                                    )}
+                                </motion.button>
+                            );
+                        })}
+                    </div>
+                )}
                 {/* Quick action row on context menu */}
                 <AnimatePresence>
                     {showActions && (
@@ -1454,21 +1918,39 @@ function MessageBubble({
                             className="chatroom-msg-actions"
                             initial={{ opacity: 0, y: -6, scale: 0.9 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: -6, scale: 0.9 }}
+                            exit={{ opacity: 0, transition: { duration: 0 } }}
                             transition={{ duration: 0.15 }}
                         >
-                            <button className="chatroom-msg-action-btn" onClick={() => { navigator.clipboard.writeText(message.content); setShowActions(false); }}>
+                            <div style={{ display: "flex", gap: "4px", padding: "6px 8px", borderBottom: "1px solid rgba(0,0,0,0.05)", marginBottom: "4px" }}>
+                                {emojis.map(e => (
+                                    <button
+                                        key={e.id}
+                                        onClick={() => {
+                                            onReaction?.(message.id, e.id);
+                                            setActiveActionMenuId(null);
+                                        }}
+                                        style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", fontSize: "22px", cursor: "pointer", padding: "4px", borderRadius: "50%", transition: "transform 0.15s ease", width: "40px", height: "40px", backgroundClip: "padding-box" }}
+                                        onMouseEnter={ev => ev.currentTarget.style.transform = "scale(1.2)"}
+                                        onMouseLeave={ev => ev.currentTarget.style.transform = "scale(1)"}
+                                        title={e.id}
+                                    >
+                                        {e.icon}
+                                    </button>
+                                ))}
+                            </div>
+                            <button className="chatroom-msg-action-btn" onClick={() => { onReply?.(message); setActiveActionMenuId(null); }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                    <path d="M3 10h10a5 5 0 015 5v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M7 14L3 10l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                                Reply
+                            </button>
+                            <button className="chatroom-msg-action-btn" onClick={() => { navigator.clipboard.writeText(message.content); setActiveActionMenuId(null); }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                                     <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
                                     <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="1.5" />
                                 </svg>
                                 Copy
-                            </button>
-                            <button className="chatroom-msg-action-btn" onClick={() => setShowActions(false)}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                </svg>
-                                Close
                             </button>
                         </motion.div>
                     )}

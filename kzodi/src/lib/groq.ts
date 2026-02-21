@@ -17,12 +17,13 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // ─── Model Configuration ─────────────────────────────────────────────────────
 
-const MODEL = "moonshotai/kimi-k2-instruct-0905";
+const MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct";
 const FALLBACK_MODEL = "openai/gpt-oss-120b";
 
 export const MODELS = {
   CHAT: MODEL,
   ANALYZE: MODEL,
+  VISION: MODEL, // Fallback to text model since vision model is unavailable
 } as const;
 
 /** Pay-as-you-go TPM limits */

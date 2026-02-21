@@ -71,7 +71,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                 className="explore-search-wrap"
                 initial={{ opacity: 0, scale: 0.98, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
             >
                 <div className="explore-search-glass">
                     <svg className="explore-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -100,7 +100,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                 className="explore-chips no-scrollbar"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.15, duration: 0.4 }}
+                transition={{ duration: 0.4 }}
             >
                 {CATEGORIES.map((cat) => (
                     <button
@@ -124,7 +124,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                     className="explore-featured"
                     initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2, duration: 0.5 }}
+                    transition={{ duration: 0.5 }}
                 >
                     <div className="explore-featured-card" onClick={() => onSelectCharacter(featured)}>
                         <div className="explore-featured-img-wrap">
@@ -164,7 +164,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                 onClick={() => onSelectCharacter(char)}
                                 initial={{ opacity: 0, x: 30 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.15 + i * 0.08, duration: 0.4 }}
+                                transition={{ duration: 0.4 }}
                                 whileTap={{ scale: 0.96 }}
                             >
                                 <div className="explore-fy-img-wrap">
@@ -203,7 +203,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                 initial={{ opacity: 0, y: 24, scale: 0.95 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.9 }}
-                                transition={{ duration: 0.35, delay: i * 0.04, ease: [0.25, 0.46, 0.45, 0.94] }}
+                                transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
                                 whileTap={{ scale: 0.97 }}
                                 layout
                             >
