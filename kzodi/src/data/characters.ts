@@ -34,6 +34,8 @@ export interface Character {
     personality: string;
     visibility?: "public" | "private" | "unlisted"; // New
     source?: string; // New: Origin source (Anime, Game, Movie name)
+    zodiac_sign?: string; // New
+    birthday?: string; // New
     likes?: number; // Old unused property, use likesCount
     totalUsers?: number; // Old unused property, use chatterCount
 

@@ -17,6 +17,7 @@
     "celestine": "^0.2.1",
     "cheerio": "^1.2.0",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.3.1",
     "epub2": "^3.0.2",
     "framer-motion": "^12.6.2",
     "geo-tz": "^8.1.5",
@@ -30,6 +31,7 @@
     "pg": "^8.18.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "sentiment": "^5.0.2",
     "sharp": "^0.34.5",
     "uuid": "^13.0.0",
     "zustand": "^5.0.5"
@@ -38,6 +40,7 @@
     "@tailwindcss/postcss": "^4.1.4",
     "@types/node": "^22.15.3",
     "@types/react": "^19.1.2",
+    "@types/sentiment": "^5.0.4",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.27.0",
     "postcss": "^8.5.3",

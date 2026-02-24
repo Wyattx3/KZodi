@@ -20,6 +20,9 @@ interface CreateCharacterFormProps {
         voice?: string;
         tags?: string[];
         image?: string;
+        visibility?: "public" | "private";
+        zodiac_sign?: string;
+        birthday?: string;
     };
 }
 
@@ -136,8 +139,10 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
     const [greeting, setGreeting] = useState(initialData?.greeting || "");
     const [exampleDialogue, setExampleDialogue] = useState(initialData?.exampleDialogue || "");
     const [image, setImage] = useState("");
-    const [visibility, setVisibility] = useState<"public" | "unlisted" | "private">("public");
+    const [visibility, setVisibility] = useState<"public" | "private">("public");
     const [voice, setVoice] = useState(initialData?.voice || "Sweet");
+    const [zodiacSign, setZodiacSign] = useState(initialData?.zodiac_sign || "Aries");
+    const [birthday, setBirthday] = useState(initialData?.birthday || "");
 
     useEffect(() => {
         if (initialData) {
@@ -152,6 +157,9 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
             setGreeting(initialData.greeting || "");
             setExampleDialogue(initialData.exampleDialogue || "");
             setVoice(initialData.voice || "Sweet");
+            setVisibility(initialData.visibility || "public");
+            setZodiacSign(initialData.zodiac_sign || "Aries");
+            setBirthday(initialData.birthday || "");
             if (initialData.image) setImage(initialData.image);
         } else {
             // Reset form if no initial data
@@ -166,6 +174,9 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
             setGreeting("");
             setExampleDialogue("");
             setVoice("Sweet");
+            setVisibility("public");
+            setZodiacSign("Aries");
+            setBirthday("");
             setImage("");
         }
     }, [initialData]);
@@ -210,6 +221,8 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
             exampleDialogue,
             image,
             visibility: visibility as any,
+            zodiac_sign: zodiacSign,
+            birthday: birthday,
             creatorId: "temp", // Usually filled on backend
             // Default base stats
             msgCount: 0,
@@ -345,6 +358,27 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
                     </div>
                 </div>
 
+                <div className="form-grid-2">
+                    <div className="form-section" style={{ marginTop: "16px" }}>
+                        <label className="label-sm">Zodiac Sign</label>
+                        <CustomSelect
+                            options={["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]}
+                            value={zodiacSign}
+                            onChange={setZodiacSign}
+                        />
+                    </div>
+                    <div className="form-section" style={{ marginTop: "16px" }}>
+                        <label className="label-sm">Birthday</label>
+                        <input
+                            type="text"
+                            className="input-field"
+                            placeholder="e.g. October 31"
+                            value={birthday}
+                            onChange={(e) => setBirthday(e.target.value)}
+                        />
+                    </div>
+                </div>
+
                 <div className="form-section">
                     <label className="label-sm">Tags <span style={{ fontSize: "11px", fontWeight: "400", opacity: 0.6 }}>(Max 10)</span></label>
                     <div className="category-chips-wrap" style={{ maxHeight: '140px', overflowY: 'auto', padding: '4px' }}>
@@ -447,7 +481,7 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
                     <div className="form-section" style={{ marginTop: "20px" }}>
                         <label className="label-sm">Visibility</label>
                         <div className="visibility-options" style={{ display: "flex", gap: "10px" }}>
-                            {(["public", "unlisted", "private"] as const).map(v => (
+                            {(["public", "private"] as const).map(v => (
                                 <button
                                     key={v}
                                     type="button"

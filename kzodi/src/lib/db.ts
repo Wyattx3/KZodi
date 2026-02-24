@@ -163,6 +163,8 @@ export async function ensureSchema() {
         personality TEXT NOT NULL,
         visibility VARCHAR(50) DEFAULT 'public',
         source VARCHAR(255),
+        zodiac_sign VARCHAR(50),
+        birthday VARCHAR(50),
         creator_id VARCHAR(255),
         likes_count INTEGER DEFAULT 0,
         msg_count INTEGER DEFAULT 0,

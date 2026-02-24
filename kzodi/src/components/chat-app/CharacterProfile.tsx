@@ -244,6 +244,36 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
 
                 <div className="profile-divider" />
 
+                {/* Additional Info Row: Zodiac & Birthday */}
+                {(character.zodiac_sign || character.birthday) && (
+                    <>
+                        <motion.div
+                            className="profile-stats"
+                            style={{ padding: "0 24px", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}
+                            initial={{ y: 20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            transition={{ delay: 0.45 }}
+                        >
+                            {character.zodiac_sign && (
+                                <div className="profile-stat-item" style={{ background: "rgba(255,255,255,0.5)", padding: "8px 16px", borderRadius: "16px" }}>
+                                    <span className="profile-stat-value" style={{ fontSize: "16px" }}>{character.zodiac_sign}</span>
+                                    <span className="profile-stat-label">Zodiac Sign</span>
+                                </div>
+                            )}
+                            {character.zodiac_sign && character.birthday && (
+                                <div className="profile-stat-sep" />
+                            )}
+                            {character.birthday && (
+                                <div className="profile-stat-item" style={{ background: "rgba(255,255,255,0.5)", padding: "8px 16px", borderRadius: "16px" }}>
+                                    <span className="profile-stat-value" style={{ fontSize: "16px" }}>{character.birthday}</span>
+                                    <span className="profile-stat-label">Birthday</span>
+                                </div>
+                            )}
+                        </motion.div>
+                        <div className="profile-divider" />
+                    </>
+                )}
+
                 {/* About Section - Prefer Long Description */}
                 <motion.div
                     className="profile-section"

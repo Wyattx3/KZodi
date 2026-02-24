@@ -46,29 +46,17 @@ export async function POST(req: Request) {
                     msg.senderName || null
                 ]
             );
-
-            // Increment msg_count and chatter_count if the message is from the user
-            if (msg.role === "user") {
-                await query(`
-                    UPDATE characters 
-                    SET msg_count = msg_count + 1
-                    WHERE id = $1
-                `, [conversationId]);
-
-                // Track total unique users chatting with this character
-                // We'll increment chatter_count if this is the first message the user ever sent to this character
-                // A simple heuristic: check if user already has messages with this character
-                const chatterCheck = await query(`
-                    SELECT 1 FROM messages WHERE conversation_id = $1 AND user_id = $2 LIMIT 2
-                `, [conversationId, userId]);
-
-                if (chatterCheck.rowCount === 1) { // It's their first message
-                    await query(`
-                        UPDATE characters SET chatter_count = chatter_count + 1 WHERE id = $1
-                    `, [conversationId]);
-                }
-            }
         }
+
+        // Accurately recalculate the counts based on actual database state
+        // This prevents double-counting if the frontend syncs the same message twice (updates instead of inserts)
+        await query(`
+            UPDATE characters 
+            SET 
+                msg_count = (SELECT COUNT(id) FROM messages WHERE conversation_id = $1),
+                chatter_count = (SELECT COUNT(DISTINCT user_id) FROM messages WHERE conversation_id = $1 AND role = 'user')
+            WHERE id = $1
+        `, [conversationId]);
 
         // Invalidate cache in Valkey
         try {
@@ -153,6 +141,15 @@ export async function DELETE(req: Request) {
             `DELETE FROM messages WHERE conversation_id = $1 AND user_id = $2`,
             [conversationId, userId]
         );
+
+        // Recalculate accurately
+        await query(`
+            UPDATE characters 
+            SET 
+                msg_count = (SELECT COUNT(id) FROM messages WHERE conversation_id = $1),
+                chatter_count = (SELECT COUNT(DISTINCT user_id) FROM messages WHERE conversation_id = $1 AND role = 'user')
+            WHERE id = $1
+        `, [conversationId]);
 
         // Invalidate Valkey cache
         try {

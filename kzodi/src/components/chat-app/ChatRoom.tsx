@@ -806,7 +806,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         const data = await res.json();
                         if (data.action !== "ignore" && data.reply && data.reply !== "...") {
                             // Process response with correct member attribution
-                            await processAiResponse(data.reply, member.id, member.name);
+                            await processAiResponse(data.reply, member.id, member.name, data.delayFactor);
                         }
                     }
                 } catch (err) {
@@ -858,7 +858,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 2500));
                     setIsTyping(false);
                 } else {
-                    await processAiResponse(data.reply || "...");
+                    await processAiResponse(data.reply || "...", undefined, undefined, data.delayFactor);
 
                     // 🔥 Comfort Follow-up: If user is upset/angry/sad, AI sends a second wave of comfort messages
                     if (data.needsComfort && data.detectedEmotion) {
@@ -894,7 +894,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             if (comfortRes.ok) {
                                 const comfortData = await comfortRes.json();
                                 if (comfortData.reply && comfortData.reply !== "..." && comfortData.action !== "ignore") {
-                                    await processAiResponse(comfortData.reply);
+                                    await processAiResponse(comfortData.reply, undefined, undefined, comfortData.delayFactor);
                                 } else {
                                     setIsTyping(false);
                                 }
@@ -1082,7 +1082,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             if (res.ok) {
                                 const data = await res.json();
                                 if (data.reply && data.reply !== "..." && data.action !== "ignore") {
-                                    await processAiResponse(data.reply, member.id, member.name);
+                                    await processAiResponse(data.reply, member.id, member.name, data.delayFactor);
                                 }
                             }
                         } catch (err) {
@@ -1146,7 +1146,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     };
 
     // Process AI response and handle splitting
-    const processAiResponse = async (responseText: string, groupSenderId?: string, groupSenderName?: string) => {
+    const processAiResponse = async (responseText: string, groupSenderId?: string, groupSenderName?: string, delayFactor = 1.0) => {
         let cleanText = responseText;
 
         // 1. Extract and process REACT tags
@@ -1209,11 +1209,11 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             finalParts.push("...");
         }
 
-        await sendAiSequence(finalParts, replyToId, groupSenderId, groupSenderName);
+        await sendAiSequence(finalParts, replyToId, groupSenderId, groupSenderName, delayFactor);
     };
 
     // Send AI messages sequentially with typing delay
-    const sendAiSequence = async (parts: string[], replyToId?: string, groupSenderId?: string, groupSenderName?: string) => {
+    const sendAiSequence = async (parts: string[], replyToId?: string, groupSenderId?: string, groupSenderName?: string, delayFactor = 1.0) => {
         if (parts.length === 0) {
             setIsTyping(false);
             return;
@@ -1224,7 +1224,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
             // Simulate typing time: base 800ms + 30ms per char (capped/randomized)
-            const typingTime = 600 + part.length * 20 + Math.random() * 500;
+            const typingTime = (600 + part.length * 20 + Math.random() * 500) * delayFactor;
 
             await new Promise((resolve) => setTimeout(resolve, typingTime));
 
@@ -1297,7 +1297,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     if (res.ok) {
                         const data = await res.json();
                         if (data.reply && data.reply !== "...") {
-                            await processAiResponse(data.reply);
+                            await processAiResponse(data.reply, undefined, undefined, data.delayFactor);
                         } else {
                             setIsTyping(false);
                         }

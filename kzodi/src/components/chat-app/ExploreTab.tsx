@@ -437,6 +437,22 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                         </div>
                                     </div>
                                 )}
+                                {(selectedPreview.zodiac_sign || selectedPreview.birthday) && (
+                                    <div className="explore-preview-section" style={{ display: "flex", gap: "24px" }}>
+                                        {selectedPreview.zodiac_sign && (
+                                            <div>
+                                                <span className="explore-preview-label">Zodiac</span>
+                                                <div className="explore-preview-text" style={{ fontWeight: 600 }}>{selectedPreview.zodiac_sign}</div>
+                                            </div>
+                                        )}
+                                        {selectedPreview.birthday && (
+                                            <div>
+                                                <span className="explore-preview-label">Birthday</span>
+                                                <div className="explore-preview-text" style={{ fontWeight: 600 }}>{selectedPreview.birthday}</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <div className="explore-preview-section">
                                     <span className="explore-preview-label">Personality</span>
                                     <div className="explore-preview-traits">

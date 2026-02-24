@@ -8,14 +8,22 @@ export async function GET(req: NextRequest) {
         const search = searchParams.get("search") || "";
         const tag = searchParams.get("category") || "All";
         const limit = parseInt(searchParams.get("limit") || "50");
+        const mine = searchParams.get("mine") === "true";
 
         // Base query - only fetch public characters or ones created by the current user
         let queryStr = `
             SELECT c.*, 
                    EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = $1) as user_has_liked
             FROM characters c 
-            WHERE (c.visibility = 'public' OR c.creator_id = $1)
         `;
+
+        // If mine=true, only show characters created by the logged-in user (any visibility)
+        if (mine) {
+            queryStr += ` WHERE c.creator_id = $1`;
+        } else {
+            // Explore page: only show public characters
+            queryStr += ` WHERE c.visibility = 'public'`;
+        }
 
         let params: any[] = [null]; // Placeholder for user ID (can be null if not logged in)
 
@@ -60,6 +68,8 @@ export async function GET(req: NextRequest) {
                 personality: row.personality,
                 visibility: row.visibility,
                 source: row.source,
+                zodiac_sign: row.zodiac_sign,
+                birthday: row.birthday,
                 likes: row.likes_count,        // For backward compatibility
                 totalUsers: row.chatter_count, // For backward compatibility
                 creatorId: row.creator_id,
@@ -94,7 +104,7 @@ export async function POST(req: NextRequest) {
         const {
             id, name, tag, tags = [], description, longDescription = null,
             scenario = null, exampleDialogue = null, image, greeting,
-            personality, visibility = 'public', source = null
+            personality, visibility = 'public', source = null, zodiac_sign = null, birthday = null
         } = body;
 
         if (!id || !name || !tag || !description || !image || !greeting || !personality) {
@@ -104,9 +114,9 @@ export async function POST(req: NextRequest) {
         await pool.query(`
             INSERT INTO characters (
                 id, name, tag, tags, description, long_description, scenario, example_dialogue,
-                image, greeting, personality, visibility, source, creator_id
+                image, greeting, personality, visibility, source, zodiac_sign, birthday, creator_id
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
             ) ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
                 tag = EXCLUDED.tag,
@@ -120,10 +130,12 @@ export async function POST(req: NextRequest) {
                 personality = EXCLUDED.personality,
                 visibility = EXCLUDED.visibility,
                 source = EXCLUDED.source,
+                zodiac_sign = EXCLUDED.zodiac_sign,
+                birthday = EXCLUDED.birthday,
                 updated_at = NOW()
         `, [
             id, name, tag, JSON.stringify(tags), description, longDescription, scenario, exampleDialogue,
-            image, greeting, personality, visibility, source, userId
+            image, greeting, personality, visibility, source, zodiac_sign, birthday, userId
         ]);
 
         return NextResponse.json({ success: true, character: body });

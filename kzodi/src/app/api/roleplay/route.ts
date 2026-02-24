@@ -4,6 +4,9 @@ import { getForbiddenStickerSubjects } from "@/lib/stickerPacks";
 import { Pinecone } from '@pinecone-database/pinecone';
 import { generateEmbeddings } from "@/lib/ai-setup";
 import { auth } from "@/auth";
+import Sentiment from "sentiment";
+
+const sentimentAnalyzer = new Sentiment();
 
 interface RoleplayRequest {
     message: string;
@@ -82,17 +85,24 @@ function detectUserEmotion(message: string, recentHistory: { role: string; conte
         /ချစ်/i
     ];
 
-    if (angryPatterns.some(p => p.test(lower))) return "angry";
+    // Library-based sentiment analysis
+    const sentimentResult = sentimentAnalyzer.analyze(lower);
+    const score = sentimentResult.comparative; // Normalized score (-5 to 5)
+
+    // Combine RegEx with Sentiment Analysis
+    // If it's deeply negative and matches angry
+    if (score < -1.5 || angryPatterns.some(p => p.test(lower))) return "angry";
+    if (score < -0.5 || sadPatterns.some(p => p.test(lower))) return "sad";
     if (sulkingPatterns.some(p => p.test(lower))) return "upset";
-    if (sadPatterns.some(p => p.test(lower))) return "sad";
     if (flirtyPatterns.some(p => p.test(lower))) return "flirty";
-    if (happyPatterns.some(p => p.test(lower))) return "happy";
+    if (score > 1.5 || happyPatterns.some(p => p.test(lower))) return "happy";
 
     // Check recent history for sustained negative emotion
     const recentUserMsgs = recentHistory.filter(h => h.role === "user").slice(-3);
     const negCount = recentUserMsgs.filter(m => {
         const l = m.content.toLowerCase();
-        return angryPatterns.some(p => p.test(l)) || sadPatterns.some(p => p.test(l)) || sulkingPatterns.some(p => p.test(l));
+        const s = sentimentAnalyzer.analyze(l).comparative;
+        return s < -0.5 || angryPatterns.some(p => p.test(l)) || sadPatterns.some(p => p.test(l)) || sulkingPatterns.some(p => p.test(l));
     }).length;
     if (negCount >= 2) return "frustrated";
 
@@ -589,11 +599,22 @@ ${promptContext}
             return NextResponse.json({ reply: null, action: "ignore" });
         }
 
+        // Analyze AI's own sentiment to simulate AI's emotional state
+        const textForSentiment = content.replace(/\|/g, " ").replace(/\[\[STICKER:.*?\]\]/gi, "").replace(/\[\[REACT:.*?\]\]/gi, "").trim();
+        const aiSentimentResult = sentimentAnalyzer.analyze(textForSentiment);
+        // If AI is angry/sad it will reply slower -> delayFactor > 1
+        let delayFactor = 1.0;
+        if (aiSentimentResult.comparative < -0.5) delayFactor = 1.8; // Sulking
+        if (aiSentimentResult.comparative < -1.5) delayFactor = 2.5; // Very angry/upset
+        if (aiSentimentResult.comparative > 1.5) delayFactor = 0.8; // Very happy/excited (fast reply)
+
         return NextResponse.json({
             reply: content,
             action: "reply",
             detectedEmotion: userEmotion,
-            needsComfort: ["angry", "upset", "sad", "frustrated"].includes(userEmotion)
+            needsComfort: ["angry", "upset", "sad", "frustrated"].includes(userEmotion),
+            delayFactor: delayFactor,
+            aiSentiment: aiSentimentResult.comparative
         });
     } catch (error) {
         console.error("Roleplay error:", error);

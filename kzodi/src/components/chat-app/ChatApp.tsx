@@ -16,7 +16,8 @@ export default function ChatApp() {
     const [activeTab, setActiveTab] = useState<Tab>("explore");
     const [activeCharacter, setActiveCharacter] = useState<Character | null>(null);
     const [showProfileOnLoad, setShowProfileOnLoad] = useState<boolean>(false);
-    const [myCharacters, setMyCharacters] = useState<Character[]>(CHARACTERS.slice(0, 3));
+    const [myCharacters, setMyCharacters] = useState<Character[]>([]);
+    const [allCharacters, setAllCharacters] = useState<Character[]>([]);
     const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
 
     // Compute total unread count across all conversations
@@ -34,8 +35,8 @@ export default function ChatApp() {
         const interval = setInterval(async () => {
             const { conversations, addReply } = useChatStore.getState();
 
-            if (myCharacters.length === 0) return;
-            const char = myCharacters[Math.floor(Math.random() * myCharacters.length)];
+            if (allCharacters.length === 0) return;
+            const char = allCharacters[Math.floor(Math.random() * allCharacters.length)];
 
             // Determine Personality
             const isCold = /cold|stoic|tsundere|quiet|mysterious|aloof|shy/i.test(char.tag + char.personality);
@@ -120,7 +121,7 @@ export default function ChatApp() {
         }, 300000); // Check every 5 minutes (300s)
 
         return () => clearInterval(interval);
-    }, [mounted, myCharacters, activeCharacter]);
+    }, [mounted, allCharacters, activeCharacter]);
 
     // Hydrate conversation list from Aiven PostgreSQL on mount
     const loadConversations = async () => {
@@ -143,13 +144,26 @@ export default function ChatApp() {
         }
     };
 
-    // Load available characters for proactive messaging
-    const loadCharacters = async () => {
+    // Load user's own characters for "Your Characters" tab
+    const loadMyCharacters = async () => {
+        try {
+            const res = await fetch("/api/characters?mine=true");
+            if (res.ok) {
+                const data = await res.json();
+                setMyCharacters(data);
+            }
+        } catch (err) {
+            console.error("Failed to load my characters:", err);
+        }
+    };
+
+    // Load all available characters for proactive messaging
+    const loadAllCharacters = async () => {
         try {
             const res = await fetch("/api/characters?limit=10");
             if (res.ok) {
                 const data = await res.json();
-                setMyCharacters(data);
+                setAllCharacters(data);
             }
         } catch (err) {
             console.error("Failed to load characters:", err);
@@ -159,7 +173,8 @@ export default function ChatApp() {
     useEffect(() => {
         setMounted(true);
         loadConversations();
-        loadCharacters();
+        loadMyCharacters();
+        loadAllCharacters();
     }, []);
 
     const handleSelectCharacter = (char: Character, openProfile = false) => {
