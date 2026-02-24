@@ -2662,8 +2662,9 @@ body {
   justify-content: center;
   cursor: pointer;
   color: #6B7280;
-  flex-shrink: 0;
   transition: color 0.15s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .chatroom-input-attach:active {

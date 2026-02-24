@@ -441,10 +441,10 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
                 e.preventDefault();
             }
         };
-        window.addEventListener("click", handleClick, { capture: true });
+        window.addEventListener("click", handleClick);
         window.addEventListener("contextmenu", handleContext, { capture: true });
         return () => {
-            window.removeEventListener("click", handleClick, { capture: true });
+            window.removeEventListener("click", handleClick);
             window.removeEventListener("contextmenu", handleContext, { capture: true });
         }
     }, []);
@@ -460,11 +460,30 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
         return unsub;
     }, []);
 
+    // Fetch all characters to build charMap dynamically
+    const [fetchedCharacters, setFetchedCharacters] = React.useState<Character[]>([]);
+
+    React.useEffect(() => {
+        const fetchAllChars = async () => {
+            try {
+                // Fetch a large limit or we could just fetch the ones we need based on conversations
+                const res = await fetch("/api/characters?limit=200");
+                if (res.ok) {
+                    const data = await res.json();
+                    setFetchedCharacters(data);
+                }
+            } catch (err) {
+                console.error("Failed to load characters for ChatsTab:", err);
+            }
+        };
+        fetchAllChars();
+    }, []);
+
     const charMap = React.useMemo(() => {
         const map: Record<string, Character> = {};
-        CHARACTERS.forEach((c) => (map[c.id] = c));
+        fetchedCharacters.forEach((c) => (map[c.id] = c));
         return map;
-    }, []);
+    }, [fetchedCharacters]);
 
     const filteredConvos = React.useMemo(() => {
         if (!searchQuery.trim()) return conversations.map(convo => ({ convo, matchedMsg: null as any }));

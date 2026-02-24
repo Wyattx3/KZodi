@@ -122,10 +122,45 @@ export default function ChatApp() {
         return () => clearInterval(interval);
     }, [mounted, myCharacters, activeCharacter]);
 
+    // Hydrate conversation list from Aiven PostgreSQL on mount
+    const loadConversations = async () => {
+        try {
+            const res = await fetch("/api/conversations");
+            if (res.ok) {
+                const data = await res.json();
+                if (data.conversations && data.conversations.length > 0) {
+                    const store = useChatStore.getState();
+                    for (const conv of data.conversations) {
+                        // Only create placeholder if conversation doesn't already exist in store
+                        if (!store.conversations[conv.characterId]) {
+                            store.ensureConversation(conv.characterId);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load conversations from DB:", err);
+        }
+    };
+
+    // Load available characters for proactive messaging
+    const loadCharacters = async () => {
+        try {
+            const res = await fetch("/api/characters?limit=10");
+            if (res.ok) {
+                const data = await res.json();
+                setMyCharacters(data);
+            }
+        } catch (err) {
+            console.error("Failed to load characters:", err);
+        }
+    };
+
     useEffect(() => {
         setMounted(true);
+        loadConversations();
+        loadCharacters();
     }, []);
-    // ... rest of component
 
     const handleSelectCharacter = (char: Character, openProfile = false) => {
         setShowProfileOnLoad(openProfile);

@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CreateCharacterForm from "./CreateCharacterForm";
 import AutoSetupForm from "./AutoSetupForm";
-import { CHARACTERS, type Character } from "@/data/characters";
+import type { Character } from "@/data/characters";
 
 interface CreateTabProps {
     onNavigate?: (tab: "explore" | "chats" | "create" | "profile") => void;

@@ -43,6 +43,7 @@ interface ChatStore {
     clearConversation: (characterId: string) => void;
     deleteConversation: (characterId: string) => void;
     ensureConversation: (characterId: string) => void;
+    setMessages: (characterId: string, messages: ChatMessage[]) => void;
     toggleBlock: (characterId: string) => void;
     getConversation: (characterId: string) => Conversation | undefined;
     getConversationList: () => Conversation[];
@@ -80,6 +81,13 @@ export const useChatStore = create<ChatStore>()(
                     }
                     return { conversations: newConvos };
                 });
+
+                // Sync deletion to backend
+                fetch("/api/messages", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ conversationId: characterId })
+                }).catch(err => console.error("Failed to clear conversation in DB", err));
             },
             deleteConversation: (characterId) => {
                 set((state) => {
@@ -87,6 +95,13 @@ export const useChatStore = create<ChatStore>()(
                     delete newConvos[characterId];
                     return { conversations: newConvos };
                 });
+
+                // Sync deletion to backend
+                fetch("/api/messages", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ conversationId: characterId })
+                }).catch(err => console.error("Failed to delete conversation in DB", err));
             },
 
             ensureConversation: (characterId) => {
@@ -100,6 +115,33 @@ export const useChatStore = create<ChatStore>()(
                                 messages: [],
                                 lastMessage: "",
                                 lastTimestamp: Date.now(),
+                            }
+                        }
+                    };
+                });
+            },
+
+            setMessages: (characterId, messages) => {
+                set((state) => {
+                    const existing = state.conversations[characterId] || {
+                        characterId,
+                        messages: [],
+                        lastMessage: "",
+                        lastTimestamp: Date.now(),
+                    };
+
+                    if (messages === existing.messages) return state;
+
+                    const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: {
+                                ...existing,
+                                messages,
+                                lastMessage: lastMessage ? (lastMessage.content || (lastMessage.attachment ? "[Image]" : "")) : "",
+                                lastTimestamp: lastMessage ? lastMessage.timestamp : existing.lastTimestamp,
                             }
                         }
                     };
@@ -180,6 +222,13 @@ export const useChatStore = create<ChatStore>()(
                         },
                     };
                 });
+
+                // Sync new message to backend
+                fetch("/api/messages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ conversationId: characterId, messages: [msg] })
+                }).catch(err => console.error("Failed to sync message", err));
             },
 
             addReply: (characterId, content, attachment, replyToId) => {
@@ -212,6 +261,13 @@ export const useChatStore = create<ChatStore>()(
                         },
                     };
                 });
+
+                // Sync AI reply to backend
+                fetch("/api/messages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ conversationId: characterId, messages: [msg] })
+                }).catch(err => console.error("Failed to sync message", err));
             },
 
             addReaction: (characterId, messageId, emoji, userId) => {
@@ -422,7 +478,15 @@ export const useChatStore = create<ChatStore>()(
         }),
         {
             name: "kzodi-chat-store",
-            partialize: (state) => ({ conversations: state.conversations }),
+            // Only persist group metadata and active char locally.
+            // Message data comes from the database API now.
+            partialize: (state) => ({
+                conversations: Object.fromEntries(
+                    Object.entries(state.conversations)
+                        .filter(([, conv]) => conv.isGroup)
+                        .map(([key, conv]) => [key, { ...conv, messages: [] }])
+                ),
+            }),
         }
     )
 );

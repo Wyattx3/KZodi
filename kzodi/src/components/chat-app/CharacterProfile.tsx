@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Character } from "@/data/characters";
 import { useChatStore } from "@/lib/chatStore";
-import { useInteractionStore } from "@/lib/interactionStore";
+
 
 interface CharacterProfileProps {
     character: Character;
@@ -14,12 +14,48 @@ interface CharacterProfileProps {
 export default function CharacterProfile({ character, onBack, messageCount }: CharacterProfileProps) {
     const [showOptions, setShowOptions] = useState(false);
     const { deleteConversation } = useChatStore();
-    const { likedCharacters, toggleLike } = useInteractionStore();
 
-    const isLiked = likedCharacters[character.id] || false;
+    const [isLiked, setIsLiked] = useState<boolean>(character.userHasLiked || false);
+    const [likesCount, setLikesCount] = useState<number>(character.likesCount || character.likes || 0);
 
-    // Calculate display values
-    const displayLikes = (character.likes || 0) + (isLiked ? 1 : 0);
+    React.useEffect(() => {
+        const handleLikeUpdate = (e: Event) => {
+            const customEvent = e as CustomEvent<{ id: string, likesCount: number, liked: boolean }>;
+            if (customEvent.detail.id === character.id) {
+                setIsLiked(customEvent.detail.liked);
+                setLikesCount(customEvent.detail.likesCount);
+            }
+        };
+        window.addEventListener('characterLikeUpdate', handleLikeUpdate);
+        return () => window.removeEventListener('characterLikeUpdate', handleLikeUpdate);
+    }, [character.id]);
+
+    const handleToggleLike = async () => {
+        const wasLiked = isLiked;
+        const newLikes = likesCount + (wasLiked ? -1 : 1);
+
+        // Optimistic UI
+        setIsLiked(!wasLiked);
+        setLikesCount(Math.max(0, newLikes));
+
+        try {
+            const res = await fetch(`/api/characters/${character.id}/like`, { method: "POST" });
+            if (!res.ok) throw new Error(res.status === 401 ? "unauthorized" : "failed");
+
+            const data = await res.json();
+            if (data.success && typeof data.likesCount === 'number') {
+                setIsLiked(data.liked);
+                setLikesCount(data.likesCount);
+                window.dispatchEvent(new CustomEvent('characterLikeUpdate', {
+                    detail: { id: character.id, likesCount: data.likesCount, liked: data.liked }
+                }));
+            }
+        } catch (err: any) {
+            setIsLiked(wasLiked);
+            setLikesCount(likesCount);
+            if (err.message === "unauthorized") alert("Please log in to like this character.");
+        }
+    };
 
     const formatLikes = (num: number) => {
         if (num >= 1000) return (num / 1000).toFixed(1) + "k";
@@ -186,11 +222,11 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                     <div className="profile-stat-sep" />
                     <button
                         className="profile-stat-item profile-stat-btn"
-                        onClick={() => toggleLike(character.id)}
+                        onClick={handleToggleLike}
                         style={{ background: "none", border: "none", cursor: "pointer" }}
                     >
                         <span className="profile-stat-value" style={{ display: "flex", alignItems: "center", gap: "4px", color: isLiked ? "#EF4444" : "inherit" }}>
-                            {formatLikes(displayLikes)}
+                            {formatLikes(likesCount)}
                             <svg width="16" height="16" viewBox="0 0 24 24" fill={isLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
                             </svg>

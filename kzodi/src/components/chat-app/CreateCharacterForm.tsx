@@ -190,7 +190,7 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!image) {
             alert("Please upload a character image/avatar.");
@@ -209,17 +209,34 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
             greeting,
             exampleDialogue,
             image,
-            visibility: visibility as any
+            visibility: visibility as any,
+            creatorId: "temp", // Usually filled on backend
+            // Default base stats
+            msgCount: 0,
+            likesCount: 0,
+            chatterCount: 0,
+            isPublic: visibility === "public",
+            createdAt: Date.now()
         };
 
-        if (initialData?.id) {
-            console.log("Updating character:", characterData);
-            alert("Character updated! (Simulation)");
-        } else {
-            console.log("Creating character:", characterData);
-            // alert("Character created! (Simulation)");
+        try {
+            const res = await fetch("/api/characters", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(characterData)
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (onSuccess) onSuccess(data.character || characterData);
+            } else {
+                console.error("Failed to create character");
+                alert("Failed to save character to database.");
+            }
+        } catch (error) {
+            console.error("Error creating character:", error);
+            alert("An error occurred while saving the character.");
         }
-        if (onSuccess) onSuccess(characterData);
     };
 
     return (

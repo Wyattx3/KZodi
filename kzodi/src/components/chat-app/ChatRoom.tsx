@@ -359,8 +359,8 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
 
         let mounted = true;
         const img = new Image();
-        if (stickerData.image.startsWith("http")) img.crossOrigin = "Anonymous";
-        img.src = stickerData.image;
+        if (typeof stickerData.image === "string" && stickerData.image.startsWith("http")) img.crossOrigin = "Anonymous";
+        img.src = typeof stickerData.image === "string" ? stickerData.image : "";
 
         img.onload = () => {
             if (!mounted) return;
@@ -680,6 +680,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
     const [input, setInput] = useState("");
     const [isTyping, setIsTyping] = useState(false);
+    const [isFetchingMessages, setIsFetchingMessages] = useState(true);
     const [typingMemberName, setTypingMemberName] = useState<string | null>(null);
     const [showCharInfo, setShowCharInfo] = useState(initialShowProfile);
     const [showStickerPicker, setShowStickerPicker] = useState(false);
@@ -711,9 +712,12 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const isBlocked = useChatStore(state => state.conversations[character.id]?.isBlocked) || false;
     const conversationTheme = useChatStore(state => state.conversations[character.id]?.theme) || "theme-default";
 
-    // Close menu when clicking anywhere else
+    // Close menu when clicking outside
+    const menuRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
-        const handleClick = () => {
+        const handleClick = (e: MouseEvent) => {
+            // Don't close if clicking inside the menu
+            if (menuRef.current && menuRef.current.contains(e.target as Node)) return;
             setShowMenu(false);
             setActiveActionMenuId(null);
         };
@@ -936,11 +940,60 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     };
 
     useEffect(() => {
+        let mounted = true;
+        let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+        const syncFromDB = async (isInitialLoad = false) => {
+            try {
+                const res = await fetch(`/api/messages?conversationId=${character.id}`);
+                if (!res.ok || !mounted) return;
+
+                const data = await res.json();
+                const dbMessages: ChatMessage[] = data.messages || [];
+
+                // DB is the single source of truth.
+                // On EVERY sync, we replace local state with DB state.
+                // The only exception: keep locally-added messages that haven't
+                // been confirmed in the DB yet (optimistic updates).
+                const localMsgs = useChatStore.getState().conversations[character.id]?.messages || [];
+                const dbIds = new Set(dbMessages.map((m: ChatMessage) => m.id));
+
+                // Find messages that exist locally but not in DB — these are pending writes
+                const pendingLocal = localMsgs.filter(m => !dbIds.has(m.id));
+
+                // Combine: DB messages (truth) + pending local messages (optimistic, will appear in DB on next sync)
+                const finalMessages = [...dbMessages, ...pendingLocal].sort((a, b) => a.timestamp - b.timestamp);
+
+                if (mounted) {
+                    useChatStore.getState().setMessages(character.id, finalMessages);
+                    setMessages(finalMessages);
+                }
+            } catch (err) {
+                // Silently fail — we'll retry on next poll
+                if (isInitialLoad) {
+                    console.error("Failed to fetch messages:", err);
+                }
+            } finally {
+                if (isInitialLoad && mounted) setIsFetchingMessages(false);
+            }
+        };
+
+        // Initial load from DB
+        syncFromDB(true);
+
+        // Poll every 3 seconds — DB is always the authority
+        pollTimer = setInterval(() => syncFromDB(false), 3000);
+
         const unsub = useChatStore.subscribe((state) => {
             const convo = state.conversations[character.id];
             setMessages(convo?.messages || []);
         });
-        return unsub;
+
+        return () => {
+            mounted = false;
+            if (pollTimer) clearInterval(pollTimer);
+            unsub();
+        };
     }, [character.id]);
 
     useEffect(() => {
@@ -960,6 +1013,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     }, [messages.length, isTyping]);
 
     useEffect(() => {
+        if (isFetchingMessages) return; // Wait until API finishes loading
+
         const convo = useChatStore.getState().conversations[character.id];
         if (!convo || convo.messages.length === 0) {
             // Ensure the conversation record exists before adding messages
@@ -1005,7 +1060,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             const isFirst = i === 0;
                             const previousNames = shuffled.slice(0, i).map(m => m.name).join(", ");
                             const introPrompt = isFirst
-                                ? `System: A new group chat was just created with ${groupMemberNames.join(", ")} and the user. You are ${member.name}. Be the FIRST to speak! React naturally — you might be excited, confused, annoyed, or curious about who's in this group. Stay 100% in character. Keep it short (1-2 messages max). Do NOT greet formally. Act like your anime character would when randomly thrown into a group chat.`
+                                ? `System: A new group chat was just created with ${groupMemberNames.join(", ")} and the user.You are ${member.name}. Be the FIRST to speak! React naturally — you might be excited, confused, annoyed, or curious about who's in this group. Stay 100% in character. Keep it short (1-2 messages max). Do NOT greet formally. Act like your anime character would when randomly thrown into a group chat.`
                                 : `System: A group chat was just created. ${previousNames} already said something above. You are ${member.name}. React to what they said OR introduce yourself in your own way. You can tease them, argue, agree, or be dramatic — whatever fits your personality. Stay 100% in character. Keep it short. Think anime group dynamics.`;
 
                             const res = await fetch("/api/roleplay", {
@@ -1332,6 +1387,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     <AnimatePresence>
                         {showMenu && (
                             <motion.div
+                                ref={menuRef}
                                 initial={{ opacity: 0, y: -10, scale: 0.95 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -1356,7 +1412,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <button
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
                                         useChatStore.getState().clearConversation(character.id);
                                         setShowMenu(false);
                                     }}
@@ -1375,7 +1433,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 </button>
 
                                 <button
-                                    onClick={async () => {
+                                    onClick={async (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
                                         if (window.confirm(`Are you sure you want to delete this chat with ${character.name}?`)) {
                                             useChatStore.getState().deleteConversation(character.id);
                                             setShowMenu(false);
@@ -1407,7 +1467,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 </button>
 
                                 <button
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
                                         useChatStore.getState().toggleBlock(character.id);
                                         setShowMenu(false);
                                     }}
@@ -1646,29 +1708,22 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             </div>
                         )}
                         <div style={{ display: "flex", width: "100%", alignItems: "center", padding: replyingTo ? "0" : undefined }}>
-                            <input
-                                id="file-upload"
-                                type="file"
-                                ref={fileInputRef}
-                                accept="image/*"
-                                onChange={handleFileChange}
-                                style={{ display: "none", opacity: 0, position: "absolute", zIndex: -100 }}
-                            />
                             {input.length === 0 && (
                                 <div
                                     className="chatroom-input-actions"
-                                    style={{ display: "flex", alignItems: "center", overflow: "hidden" }}
+                                    style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
                                 >
                                     <label
                                         className="chatroom-input-attach"
                                         aria-label="Attach Image"
-                                        style={{ flexShrink: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", margin: 0, padding: 0 }}
+                                        style={{ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", margin: 0, padding: 0 }}
                                     >
                                         <input
                                             type="file"
                                             accept="image/*"
                                             onChange={handleFileChange}
-                                            style={{ display: "none" }}
+                                            style={{ width: 0, height: 0, position: "absolute", visibility: "hidden" }}
+                                            onClick={(e) => e.stopPropagation()}
                                         />
                                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                                             <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />

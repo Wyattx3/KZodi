@@ -1,47 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
 import { Buffer } from "buffer";
-import path from "path";
 import sharp from "sharp";
+import { valkey } from "@/lib/redis";
+import { query } from "@/lib/db";
+import { auth } from "@/auth";
 
 const FIREWORKS_API_KEY = process.env.FIREWORKS_API_KEY || "";
-const CACHE_DIR = path.join(process.cwd(), "src", "data");
-const CACHE_FILE = path.join(CACHE_DIR, "generated_stickers.json");
 
-// Cache implementation
-if (!fs.existsSync(CACHE_DIR)) {
-    fs.mkdirSync(CACHE_DIR, { recursive: true });
-}
-
-function getFromCache(key: string): string | null {
+async function getFromCache(key: string): Promise<string | null> {
     try {
-        if (fs.existsSync(CACHE_FILE)) {
-            const data = fs.readFileSync(CACHE_FILE, "utf-8");
-            const cache = JSON.parse(data);
-            return cache[key] || null;
-        }
+        const cached = await valkey.get(`sticker:${key}`);
+        if (cached) return cached;
     } catch (e) {
-        console.error("Cache read error:", e);
+        console.error("Valkey cache read error:", e);
     }
     return null;
 }
 
-function saveToCache(key: string, dataUrl: string) {
+async function saveToCache(key: string, dataUrl: string, userId?: string, characterName?: string, prompt?: string) {
     try {
-        let cache: Record<string, string> = {};
-        if (fs.existsSync(CACHE_FILE)) {
-            const data = fs.readFileSync(CACHE_FILE, "utf-8");
-            cache = JSON.parse(data);
+        // Save to Redis cache for fast retrieval (expire in 7 days or keep forever)
+        await valkey.set(`sticker:${key}`, dataUrl);
+
+        // Save to PostgreSQL if user is logged in
+        if (userId && characterName && prompt) {
+            await query(
+                `INSERT INTO user_stickers (user_id, character_name, prompt, image_url)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (user_id, character_name, prompt) DO UPDATE SET image_url = EXCLUDED.image_url`,
+                [userId, characterName, prompt, dataUrl]
+            );
         }
-        cache[key] = dataUrl;
-        fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
     } catch (e) {
-        console.error("Cache write error:", e);
+        console.error("Valkey/Postgres cache write error:", e);
     }
 }
 
 export async function POST(request: NextRequest) {
     try {
+        const session = await auth();
+        const userId = session?.user?.id;
+
         const body = await request.json();
         const stickerPrompt = body.prompt || "";
         const characterName = body.characterName || "Character";
@@ -60,7 +59,7 @@ export async function POST(request: NextRequest) {
         // Simplified deterministic key (name + prompt) prevents cache misses on trait re-ordering
         const cacheKey = `${cleanChar}-${cleanPrompt}`;
 
-        const cachedImage = getFromCache(cacheKey);
+        const cachedImage = await getFromCache(cacheKey);
         if (cachedImage) {
             console.log(`Serving cached sticker for: ${cacheKey}`);
             return NextResponse.json({ image: cachedImage, type: "image", cached: true });
@@ -227,7 +226,7 @@ export async function POST(request: NextRequest) {
                 .toBuffer();
 
             const dataUrl = `data:image/png;base64,${processed.toString("base64")}`;
-            saveToCache(cacheKey, dataUrl);
+            saveToCache(cacheKey, dataUrl, userId, characterName, stickerPrompt);
             return NextResponse.json({ image: dataUrl, type: "image" });
         }
 
