@@ -11,8 +11,94 @@
  *   - Request queue (max 2 concurrent) + retry with backoff
  *   - LRU Cache: 500 entries, 30min TTL
  */
+// ─── API Key Pool (Multi-Account Load Balancing) ─────────────────────────────
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+interface KeyState {
+  key: string;
+  label: string;
+  rateLimitedUntil: number; // timestamp when this key becomes usable again
+  requestCount: number;
+}
+
+class KeyPool {
+  private keys: KeyState[] = [];
+  private currentIndex = 0;
+
+  constructor() {
+    // Collect all GROQ_API_KEY* environment variables
+    const envKeys: { key: string; label: string }[] = [];
+    if (process.env.GROQ_API_KEY) envKeys.push({ key: process.env.GROQ_API_KEY, label: "acc1" });
+    if (process.env.GROQ_API_KEY_2) envKeys.push({ key: process.env.GROQ_API_KEY_2, label: "acc2" });
+    if (process.env.GROQ_API_KEY_3) envKeys.push({ key: process.env.GROQ_API_KEY_3, label: "acc3" });
+    if (process.env.GROQ_API_KEY_4) envKeys.push({ key: process.env.GROQ_API_KEY_4, label: "acc4" });
+    if (process.env.GROQ_API_KEY_5) envKeys.push({ key: process.env.GROQ_API_KEY_5, label: "acc5" });
+
+    if (envKeys.length === 0) {
+      console.error("[Groq KeyPool] ⚠️ No API keys found!");
+    } else {
+      console.log(`[Groq KeyPool] 🔑 Loaded ${envKeys.length} API keys`);
+    }
+
+    this.keys = envKeys.map(k => ({
+      key: k.key,
+      label: k.label,
+      rateLimitedUntil: 0,
+      requestCount: 0,
+    }));
+  }
+
+  /** Get the next available API key (round-robin, skipping rate-limited keys) */
+  getKey(): { key: string; label: string } | null {
+    if (this.keys.length === 0) return null;
+
+    const now = Date.now();
+    const totalKeys = this.keys.length;
+
+    // Try each key starting from current index
+    for (let i = 0; i < totalKeys; i++) {
+      const idx = (this.currentIndex + i) % totalKeys;
+      const keyState = this.keys[idx];
+
+      if (keyState.rateLimitedUntil <= now) {
+        // This key is available
+        this.currentIndex = (idx + 1) % totalKeys; // Advance for next call
+        keyState.requestCount++;
+        return { key: keyState.key, label: keyState.label };
+      }
+    }
+
+    // All keys are rate-limited — use the one that expires soonest
+    const soonest = this.keys.reduce((a, b) => a.rateLimitedUntil < b.rateLimitedUntil ? a : b);
+    const waitMs = soonest.rateLimitedUntil - now;
+    console.warn(`[Groq KeyPool] ⚠️ All keys rate-limited! Using ${soonest.label} (wait ${waitMs}ms)`);
+    soonest.requestCount++;
+    return { key: soonest.key, label: soonest.label };
+  }
+
+  /** Mark a key as rate-limited for a duration */
+  markRateLimited(apiKey: string, durationMs: number = 60000): void {
+    const keyState = this.keys.find(k => k.key === apiKey);
+    if (keyState) {
+      keyState.rateLimitedUntil = Date.now() + durationMs;
+      console.log(`[Groq KeyPool] 🚫 ${keyState.label} rate-limited for ${durationMs}ms`);
+    }
+  }
+
+  /** Get pool stats */
+  get stats() {
+    const now = Date.now();
+    return this.keys.map(k => ({
+      label: k.label,
+      available: k.rateLimitedUntil <= now,
+      requests: k.requestCount,
+      rateLimitedFor: Math.max(0, k.rateLimitedUntil - now),
+    }));
+  }
+
+  get size() { return this.keys.length; }
+}
+
+const keyPool = new KeyPool();
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // ─── Model Configuration ─────────────────────────────────────────────────────
@@ -297,8 +383,9 @@ class GroqClient {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        if (!GROQ_API_KEY) {
-          console.error("[Groq] No API key configured");
+        const currentKey = keyPool.getKey();
+        if (!currentKey) {
+          console.error("[Groq] No API key available");
           return { content: "", finish_reason: "error", truncated: false, cached: false };
         }
 
@@ -321,7 +408,7 @@ class GroqClient {
           body.response_format = params.response_format;
         }
 
-        console.log(`[Groq] ${model} attempt ${attempt + 1}/${maxRetries + 1}, TPM: ${this.tpm.getCurrentTPM(model)}/${MODEL_TPM_LIMITS[model] || "??"}`);
+        console.log(`[Groq] ${model} attempt ${attempt + 1}/${maxRetries + 1} [${currentKey.label}], TPM: ${this.tpm.getCurrentTPM(model)}/${MODEL_TPM_LIMITS[model] || "??"}`);
 
         const fetchController = new AbortController();
         const fetchTimeout = setTimeout(() => fetchController.abort(), 60000);
@@ -329,22 +416,21 @@ class GroqClient {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${GROQ_API_KEY}`,
+            Authorization: `Bearer ${currentKey.key}`,
           },
           body: JSON.stringify(body),
           signal: fetchController.signal,
         });
         clearTimeout(fetchTimeout);
 
-        // Handle rate limiting (429)
+        // Handle rate limiting (429) — mark key and switch to another
         if (res.status === 429) {
           const retryAfter = res.headers.get("retry-after");
-          const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : backoffs[attempt] || 8000;
-          console.warn(`[Groq] Rate limited (429) on ${model}. Wait ${waitMs}ms (attempt ${attempt + 1})`);
-          // Record a large token estimate to prevent immediate re-tries
-          this.tpm.record(model, estimatedTotal);
+          const cooldownMs = retryAfter ? parseInt(retryAfter) * 1000 : 60000;
+          console.warn(`[Groq] Rate limited (429) on ${model} [${currentKey.label}]. Marking key for ${cooldownMs}ms`);
+          keyPool.markRateLimited(currentKey.key, cooldownMs);
+          // Don't sleep — just continue to next attempt which picks a different key
           if (attempt < maxRetries) {
-            await sleep(waitMs);
             continue;
           }
           return { content: "", finish_reason: "rate_limited", truncated: false, cached: false };

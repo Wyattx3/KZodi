@@ -29,7 +29,10 @@ export async function POST(req: Request) {
                 (id, conversation_id, user_id, role, content, timestamp, status, reply_to_id, reactions, attachment, sender_id, sender_name)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 ON CONFLICT (id) DO UPDATE SET 
-                status = EXCLUDED.status, 
+                status = CASE 
+                    WHEN messages.status = 'seen' THEN 'seen'
+                    ELSE EXCLUDED.status
+                END, 
                 reactions = EXCLUDED.reactions`,
                 [
                     msg.id,

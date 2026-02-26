@@ -7,6 +7,7 @@ import { CHARACTERS, type Character } from "@/data/characters";
 interface ChatsTabProps {
     onSelectCharacter: (character: Character, openProfile?: boolean) => void;
     onSelectGroup?: (groupId: string) => void;
+    myCharacters?: Character[];
 }
 
 function formatTime(ts: number): string {
@@ -420,7 +421,7 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
 
 // ─── Main ChatsTab ───────────────────────────────────────────────────────────
 
-export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabProps) {
+export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacters = [] }: ChatsTabProps) {
     const [conversations, setConversations] = React.useState<Conversation[]>([]);
     const [searchQuery, setSearchQuery] = React.useState("");
     const [actionConvo, setActionConvo] = React.useState<string | null>(null);
@@ -482,8 +483,10 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
     const charMap = React.useMemo(() => {
         const map: Record<string, Character> = {};
         fetchedCharacters.forEach((c) => (map[c.id] = c));
+        // Override with the most recent edits from the active user's library
+        myCharacters.forEach((c) => (map[c.id] = c));
         return map;
-    }, [fetchedCharacters]);
+    }, [fetchedCharacters, myCharacters]);
 
     const filteredConvos = React.useMemo(() => {
         if (!searchQuery.trim()) return conversations.map(convo => ({ convo, matchedMsg: null as any }));
@@ -552,25 +555,6 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup }: ChatsTabP
                                     padding: "6px", minWidth: "170px", zIndex: 100
                                 }}
                             >
-                                <button
-                                    onClick={() => { setShowNewMenu(false); /* navigate to explore */ }}
-                                    style={{
-                                        display: "flex", alignItems: "center", gap: "10px",
-                                        background: "transparent", border: "none",
-                                        padding: "12px 14px", borderRadius: "12px",
-                                        cursor: "pointer", color: "#4A3728",
-                                        fontSize: "14px", fontWeight: 500, width: "100%",
-                                        transition: "background 0.15s"
-                                    }}
-                                    onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
-                                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                                        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    </svg>
-                                    New Chat
-                                </button>
-                                <div style={{ height: "1px", background: "rgba(0,0,0,0.05)", margin: "2px 8px" }} />
                                 <button
                                     onClick={() => {
                                         setShowNewMenu(false);

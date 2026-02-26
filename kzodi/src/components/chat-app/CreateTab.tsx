@@ -167,7 +167,10 @@ const LibraryView = ({ onCreateClick, onEditClick, onChatClick, characters = [] 
                             </div>
                             <div className="explore-card-body">
                                 <div className="explore-card-name-row">
-                                    <h3 className="explore-card-name">{char.name}</h3>
+                                    <h3 className="explore-card-name" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {char.name}
+                                        {char.nickname && <span style={{ fontSize: '12px', color: '#9CA3AF', marginLeft: '6px', fontWeight: 'normal' }}>"{char.nickname}"</span>}
+                                    </h3>
                                     <span className="explore-card-online">
                                         <span className="online-dot-sm" />
                                     </span>

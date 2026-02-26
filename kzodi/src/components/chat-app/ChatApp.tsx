@@ -192,6 +192,13 @@ export default function ChatApp() {
         setActiveGroupId(groupId);
     };
 
+    const charMap = React.useMemo(() => {
+        const map: Record<string, Character> = {};
+        allCharacters.forEach((c) => (map[c.id] = c));
+        myCharacters.forEach((c) => (map[c.id] = c));
+        return map;
+    }, [allCharacters, myCharacters]);
+
     if (!mounted) {
         return <div className="chat-app" style={{ background: "#FFFDF5" }} />;
     }
@@ -225,6 +232,7 @@ export default function ChatApp() {
                         character={effectiveCharacter}
                         onBack={handleBack}
                         initialShowProfile={showProfileOnLoad}
+                        charMap={charMap}
                     />
                 </div>
             ) : (
@@ -241,7 +249,7 @@ export default function ChatApp() {
                         )}
                         {activeTab === "chats" && (
                             <div style={{ width: "100%" }}>
-                                <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} />
+                                <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} myCharacters={myCharacters} />
                             </div>
                         )}
                         {activeTab === "create" && (

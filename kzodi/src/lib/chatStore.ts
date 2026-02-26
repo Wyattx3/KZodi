@@ -39,7 +39,7 @@ interface ChatStore {
     setActiveCharacter: (id: string | null) => void;
     sendMessage: (characterId: string, content: string, attachment?: ChatMessage["attachment"], replyToId?: string) => void;
     addReply: (characterId: string, content: string, attachment?: ChatMessage["attachment"], replyToId?: string) => void;
-    markAsSeen: (characterId: string) => void;
+    markAsSeen: (characterId: string, roleToMark: "user" | "assistant") => void;
     clearConversation: (characterId: string) => void;
     deleteConversation: (characterId: string) => void;
     ensureConversation: (characterId: string) => void;
@@ -268,6 +268,9 @@ export const useChatStore = create<ChatStore>()(
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ conversationId: characterId, messages: [msg] })
                 }).catch(err => console.error("Failed to sync message", err));
+
+                // AI replied → mark user's messages as "seen" (the AI has read them)
+                get().markAsSeen(characterId, "user");
             },
 
             addReaction: (characterId, messageId, emoji, userId) => {
@@ -286,6 +289,16 @@ export const useChatStore = create<ChatStore>()(
 
                         return { ...msg, reactions };
                     });
+
+                    // Sync updated reaction to DB
+                    const updatedMsg = newMessages.find(m => m.id === messageId);
+                    if (updatedMsg) {
+                        fetch("/api/messages", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ conversationId: characterId, messages: [updatedMsg] })
+                        }).catch(err => console.error("Failed to sync reaction", err));
+                    }
 
                     return {
                         conversations: {
@@ -315,6 +328,16 @@ export const useChatStore = create<ChatStore>()(
                         return { ...msg, reactions };
                     });
 
+                    // Sync updated reaction to DB
+                    const updatedMsg = newMessages.find(m => m.id === messageId);
+                    if (updatedMsg) {
+                        fetch("/api/messages", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ conversationId: characterId, messages: [updatedMsg] })
+                        }).catch(err => console.error("Failed to sync reaction removal", err));
+                    }
+
                     return {
                         conversations: {
                             ...state.conversations,
@@ -324,15 +347,31 @@ export const useChatStore = create<ChatStore>()(
                 });
             },
 
-            markAsSeen: (characterId) => {
+            markAsSeen: (characterId, roleToMark) => {
                 set((state) => {
                     const existing = state.conversations[characterId];
                     if (!existing) return state;
 
-                    const updatedMessages = existing.messages.map((m) => ({
-                        ...m,
-                        status: "seen" as const,
-                    }));
+                    const updatedMessages = existing.messages.map((m) => {
+                        if (m.role === roleToMark && m.status !== "seen") {
+                            return { ...m, status: "seen" as const };
+                        }
+                        return m;
+                    });
+
+                    // Sync seen status to DB for any messages that actually changed their status to seen
+                    const msgsToSync = updatedMessages.filter(m => {
+                        const oldMsg = existing.messages.find(old => old.id === m.id);
+                        return oldMsg && oldMsg.status !== "seen" && m.status === "seen";
+                    });
+
+                    if (msgsToSync.length > 0) {
+                        fetch("/api/messages", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ conversationId: characterId, messages: msgsToSync })
+                        }).catch(err => console.error("Failed to sync seen status", err));
+                    }
 
                     return {
                         conversations: {
@@ -443,6 +482,13 @@ export const useChatStore = create<ChatStore>()(
                         },
                     };
                 });
+
+                // Sync new message to backend
+                fetch("/api/messages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ conversationId: groupId, messages: [msg] })
+                }).catch(err => console.error("Failed to sync group message", err));
             },
 
             addGroupReply: (groupId, content, senderId, senderName, attachment, replyToId) => {
@@ -474,17 +520,32 @@ export const useChatStore = create<ChatStore>()(
                         },
                     };
                 });
+
+                // Sync AI reply to backend
+                fetch("/api/messages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ conversationId: groupId, messages: [msg] })
+                }).catch(err => console.error("Failed to sync group message", err));
+
+                // AI replied → mark user's messages as "seen" (the AI has read them)
+                get().markAsSeen(groupId, "user");
             },
         }),
         {
             name: "kzodi-chat-store",
-            // Only persist group metadata and active char locally.
-            // Message data comes from the database API now.
+            // Keep all conversations but truncate messages to the last 50 
+            // so we don't blow up the 5MB localStorage limit, while preserving 
+            // unread notifications and the last message preview for the Chats tab.
             partialize: (state) => ({
                 conversations: Object.fromEntries(
-                    Object.entries(state.conversations)
-                        .filter(([, conv]) => conv.isGroup)
-                        .map(([key, conv]) => [key, { ...conv, messages: [] }])
+                    Object.entries(state.conversations).map(([key, conv]) => [
+                        key,
+                        {
+                            ...conv,
+                            messages: (conv.messages || []).slice(-50)
+                        }
+                    ])
                 ),
             }),
         }

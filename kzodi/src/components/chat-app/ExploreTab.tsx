@@ -299,7 +299,10 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                         </div>
                                         <div className="explore-card-body">
                                             <div className="explore-card-name-row">
-                                                <h3 className="explore-card-name" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{char.name}</h3>
+                                                <h3 className="explore-card-name" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {char.name}
+                                                    {char.nickname && <span style={{ fontSize: '12px', color: '#9CA3AF', marginLeft: '6px', fontWeight: 'normal' }}>"{char.nickname}"</span>}
+                                                </h3>
                                                 <button
                                                     onClick={(e) => handleLike(char, e)}
                                                     className="explore-like-btn"

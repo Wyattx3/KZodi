@@ -23,6 +23,7 @@ export const CHARACTER_TAGS = [
 export interface Character {
     id: string;
     name: string;
+    nickname?: string; // New: optional nickname
     tag: Category; // Kept as 'tag' for backward compatibility with components using it as main category
     tags?: string[]; // New: Multiple tags
     description: string;

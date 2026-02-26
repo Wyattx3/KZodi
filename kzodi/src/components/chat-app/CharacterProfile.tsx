@@ -197,6 +197,11 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                         transition={{ delay: 0.3 }}
                     >
                         <h1 className="profile-name">{character.name}</h1>
+                        {character.nickname && (
+                            <div style={{ fontSize: '15px', color: '#6B7280', fontWeight: 500, marginBottom: '8px' }}>
+                                "{character.nickname}"
+                            </div>
+                        )}
                         <div className="profile-tags">
                             <span className="profile-tag-pill">{character.tag}</span>
                             <span className="profile-status">Online Now</span>

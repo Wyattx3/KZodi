@@ -3,6 +3,7 @@
  * Run this with: node scripts/seed-characters.js
  */
 const { Pool } = require("pg");
+require("dotenv").config();
 
 const DATABASE_URL = (process.env.DATABASE_URL || "").replace(/[?&]sslmode=[^&]*/g, "");
 

@@ -211,6 +211,7 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
         const characterData: Character = {
             id: initialData?.id || Date.now().toString(),
             name,
+            nickname,
             tag: tag as any,
             tags: selectedTags,
             description,

@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
             const char = {
                 id: row.id,
                 name: row.name,
+                nickname: row.nickname,
                 tag: row.tag,
                 tags: typeof row.tags === "string" ? JSON.parse(row.tags) : (row.tags || []),
                 description: row.description,
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
 
         const {
-            id, name, tag, tags = [], description, longDescription = null,
+            id, name, nickname = null, tag, tags = [], description, longDescription = null,
             scenario = null, exampleDialogue = null, image, greeting,
             personality, visibility = 'public', source = null, zodiac_sign = null, birthday = null
         } = body;
@@ -113,12 +114,13 @@ export async function POST(req: NextRequest) {
 
         await pool.query(`
             INSERT INTO characters (
-                id, name, tag, tags, description, long_description, scenario, example_dialogue,
+                id, name, nickname, tag, tags, description, long_description, scenario, example_dialogue,
                 image, greeting, personality, visibility, source, zodiac_sign, birthday, creator_id
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
             ) ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
+                nickname = EXCLUDED.nickname,
                 tag = EXCLUDED.tag,
                 tags = EXCLUDED.tags,
                 description = EXCLUDED.description,
@@ -134,7 +136,7 @@ export async function POST(req: NextRequest) {
                 birthday = EXCLUDED.birthday,
                 updated_at = NOW()
         `, [
-            id, name, tag, JSON.stringify(tags), description, longDescription, scenario, exampleDialogue,
+            id, name, nickname, tag, JSON.stringify(tags), description, longDescription, scenario, exampleDialogue,
             image, greeting, personality, visibility, source, zodiac_sign, birthday, userId
         ]);
 

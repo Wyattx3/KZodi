@@ -54,20 +54,84 @@ export async function extractTextFromEPUB(filePath: string): Promise<string> {
 // If we receive a buffer, we might need to write it to a temp file first.
 
 export async function extractTextFromUrl(url: string): Promise<string> {
-    const response = await fetch(url);
-    const html = await response.text();
-    const $ = cheerio.load(html);
+    let text = "";
 
-    // Remove scripts, styles
-    $('script').remove();
-    $('style').remove();
-    $('nav').remove();
-    $('footer').remove();
-    $('header').remove();
+    // 1. Try Exa if available (Exa is great for fetching clean text)
+    if (process.env.EXA_API_KEY) {
+        try {
+            console.log("Extracting with Exa API:", url);
+            const exaResp = await fetch("https://api.exa.ai/contents", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": process.env.EXA_API_KEY
+                },
+                body: JSON.stringify({ ids: [url], text: true })
+            });
 
-    // extract text from paragraphs and headings
-    const text = $('body').text().replace(/\s+/g, ' ').trim();
-    return text.substring(0, 50000); // Limit context
+            if (exaResp.ok) {
+                const data = await exaResp.json();
+                if (data.results && data.results[0] && data.results[0].text) {
+                    text = data.results[0].text;
+                    if (text.length > 500) return text.substring(0, 50000);
+                }
+            }
+        } catch (e) {
+            console.error("Exa extraction failed:", e);
+        }
+    }
+
+    // 2. Try Tavily if Exa failed or unavailable
+    if (process.env.TAVILY_API_KEY) {
+        try {
+            console.log("Extracting with Tavily API:", url);
+            const tavilyResp = await fetch("https://api.tavily.com/extract", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${process.env.TAVILY_API_KEY}`
+                },
+                body: JSON.stringify({ urls: [url] })
+            });
+
+            if (tavilyResp.ok) {
+                const data = await tavilyResp.json();
+                if (data.results && data.results[0] && data.results[0].raw_content) {
+                    text = data.results[0].raw_content;
+                    if (text.length > 500) return text.substring(0, 50000);
+                }
+            }
+        } catch (e) {
+            console.error("Tavily extraction failed:", e);
+        }
+    }
+
+    // 3. Fallback to basic fetch + cheerio
+    console.log("Falling back to basic fetch + cheerio:", url);
+    try {
+        const response = await fetch(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+        });
+        const html = await response.text();
+        const $ = cheerio.load(html);
+
+        // Remove scripts, styles
+        $('script').remove();
+        $('style').remove();
+        $('nav').remove();
+        $('footer').remove();
+        $('header').remove();
+
+        // extract text from paragraphs and headings
+        text = $('body').text().replace(/\s+/g, ' ').trim();
+        return text.substring(0, 50000); // Limit context
+    } catch (e) {
+        console.error("Basic fetch fallback failed:", e);
+    }
+
+    throw new Error("Failed to extract meaningful text from URL using all available methods.");
 }
 
 // -- AI Analysis & Embedding (Pinecone Inference Multilingual) --
