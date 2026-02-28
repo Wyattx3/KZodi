@@ -21,6 +21,7 @@ interface ResultsPageProps {
   aiInsights: Record<string, unknown> | null;
   birthChartData?: Record<string, unknown> | null;
   sessionId?: string;
+  onAskAstrologer: () => void;
 }
 
 type TabKey = "personality" | "love" | "compatibility" | "likes" | "chart";
@@ -34,10 +35,9 @@ const tabs: { key: TabKey; label: string }[] = [
 ];
 
 const ResultsPage: React.FC<ResultsPageProps> = ({
-  person1, person2, relationshipStatus, rsDuration, onBack, aiInsights, birthChartData, sessionId,
+  person1, person2, relationshipStatus, rsDuration, onBack, aiInsights, birthChartData, sessionId, onAskAstrologer
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>("personality");
-  const [showChat, setShowChat] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const shareRef = useRef<HTMLDivElement>(null);
   const { lang, translating, changeLang, getText } = useTranslate();
@@ -142,9 +142,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
                     <button
                       key={l.code}
                       onClick={() => handleLangChange(l.code)}
-                      className={`w-full text-left px-3.5 py-2 text-[12px] font-600 transition-colors ${
-                        lang === l.code ? "bg-pastel-yellow-soft text-warm-black" : "text-warm-gray hover:bg-light-gray"
-                      }`}
+                      className={`w-full text-left px-3.5 py-2 text-[12px] font-600 transition-colors ${lang === l.code ? "bg-pastel-yellow-soft text-warm-black" : "text-warm-gray hover:bg-light-gray"
+                        }`}
                     >
                       {l.label}
                     </button>
@@ -171,7 +170,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
           >
             <div className="flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-[12px] bg-pastel-yellow-soft border border-pastel-yellow-light">
               <div className="flex gap-1">
-                {[0,1,2].map(i => (
+                {[0, 1, 2].map(i => (
                   <motion.div key={i} animate={{ scale: [0.8, 1.2, 0.8], opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }} className="w-1.5 h-1.5 rounded-full bg-warm-black" />
                 ))}
               </div>
@@ -205,17 +204,17 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
           </div>
 
           {/* Birth chart summary badges */}
-          {birthChartData && (birthChartData.angles as Record<string, {sign: string}>)?.ascendant && (
+          {birthChartData && (birthChartData.angles as Record<string, { sign: string }>)?.ascendant && (
             <div className="mt-4 pt-3 border-t border-white/8 flex items-center gap-2 flex-wrap relative z-10">
-              <span className="tag text-[10px] bg-white/10 text-white/70">Rising: {(birthChartData.angles as Record<string, {sign: string}>).ascendant.sign}</span>
-              {(birthChartData.planets as Array<{name: string; sign: string}>)?.find(p => p.name === "Moon") && (
+              <span className="tag text-[10px] bg-white/10 text-white/70">Rising: {(birthChartData.angles as Record<string, { sign: string }>).ascendant.sign}</span>
+              {(birthChartData.planets as Array<{ name: string; sign: string }>)?.find(p => p.name === "Moon") && (
                 <span className="tag text-[10px] bg-white/10 text-white/70">
-                  Moon: {(birthChartData.planets as Array<{name: string; sign: string}>).find(p => p.name === "Moon")?.sign}
+                  Moon: {(birthChartData.planets as Array<{ name: string; sign: string }>).find(p => p.name === "Moon")?.sign}
                 </span>
               )}
-              {(birthChartData.planets as Array<{name: string; sign: string}>)?.find(p => p.name === "Venus") && (
+              {(birthChartData.planets as Array<{ name: string; sign: string }>)?.find(p => p.name === "Venus") && (
                 <span className="tag text-[10px] bg-white/10 text-white/70">
-                  Venus: {(birthChartData.planets as Array<{name: string; sign: string}>).find(p => p.name === "Venus")?.sign}
+                  Venus: {(birthChartData.planets as Array<{ name: string; sign: string }>).find(p => p.name === "Venus")?.sign}
                 </span>
               )}
             </div>
@@ -255,9 +254,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex-1 py-2 rounded-[10px] text-[11px] font-700 whitespace-nowrap transition-all relative ${
-                activeTab === tab.key ? "bg-warm-black text-white" : "text-warm-gray"
-              }`}
+              className={`flex-1 py-2 rounded-[10px] text-[11px] font-700 whitespace-nowrap transition-all relative ${activeTab === tab.key ? "bg-warm-black text-white" : "text-warm-gray"
+                }`}
             >
               {tab.label}
             </button>
@@ -300,20 +298,12 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Chat toggle */}
+      {/* Chat toggle / Ask Astrologer */}
       <div className="px-5 py-3">
-        <button onClick={() => setShowChat(!showChat)} className={`w-full text-[13px] font-600 py-3 rounded-[14px] transition-all ${showChat ? 'bg-warm-black text-white' : 'btn-secondary'}`}>
-          {showChat ? "Hide chat" : "Ask about your chart"}
+        <button onClick={onAskAstrologer} className="w-full text-[13px] font-600 py-3 rounded-[14px] transition-all bg-warm-black text-white hover:opacity-90 active:scale-95 shadow-sm">
+          Ask Astrologer about your chart
         </button>
       </div>
-
-      <AnimatePresence>
-        {showChat && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }} className="overflow-hidden">
-            <ChatWidget zodiacSign={sign1Key} mbtiType={mbti1} personName="You" />
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };

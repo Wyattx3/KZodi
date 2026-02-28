@@ -92,6 +92,8 @@ export interface EngineInput {
     relevantMemory: string;
     /** Authenticated user ID */
     userId: string;
+    /** Astrology reading context for astrologer characters */
+    userReadingContext?: string;
 }
 
 export interface EngineOutput {

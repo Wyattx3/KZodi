@@ -91,6 +91,7 @@ export async function ensureSchema() {
       CREATE TABLE IF NOT EXISTS feedbacks (
         id SERIAL PRIMARY KEY,
         session_id TEXT,
+        user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
         zodiac_sign TEXT,
         mbti_type TEXT,
         birth_chart JSONB,
@@ -105,8 +106,11 @@ export async function ensureSchema() {
       CREATE TABLE IF NOT EXISTS readings (
         id SERIAL PRIMARY KEY,
         session_id TEXT,
+        user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
         birth_chart JSONB,
         ai_response JSONB,
+        zodiac_sign TEXT,
+        mbti_type TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
@@ -193,6 +197,15 @@ export async function ensureSchema() {
 
     _initialized = true;
     console.log("Database schema initialized successfully.");
+
+    // Alter existing tables just in case they were already created without user_id
+    try {
+      await query(`ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL;`);
+      await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL;`);
+      await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS zodiac_sign TEXT;`);
+      await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS mbti_type TEXT;`);
+    } catch(e) { /* ignore if already exists */ }
+
   } catch (e) {
     console.error("DB schema init error:", e);
   }
@@ -219,11 +232,13 @@ export async function insertReading(data: {
   sessionId: string;
   birthChart: Record<string, unknown> | null;
   aiResponse: Record<string, unknown>;
+  zodiacSign?: string;
+  mbtiType?: string;
 }) {
   await ensureSchema();
   await query(
-    `INSERT INTO readings (session_id, birth_chart, ai_response) VALUES ($1, $2, $3)`,
-    [data.sessionId, JSON.stringify(data.birthChart), JSON.stringify(data.aiResponse)]
+    `INSERT INTO readings (session_id, birth_chart, ai_response, zodiac_sign, mbti_type) VALUES ($1, $2, $3, $4, $5)`,
+    [data.sessionId, JSON.stringify(data.birthChart), JSON.stringify(data.aiResponse), data.zodiacSign || null, data.mbtiType || null]
   );
 }
 
@@ -250,4 +265,19 @@ export async function getAggregateFeedback(zodiacSign: string): Promise<string> 
   } catch {
     return "";
   }
+}
+
+export async function linkReadingToUser(sessionId: string, userId: string) {
+  await ensureSchema();
+  await query(`UPDATE readings SET user_id = $1 WHERE session_id = $2`, [userId, sessionId]);
+  await query(`UPDATE feedbacks SET user_id = $1 WHERE session_id = $2`, [userId, sessionId]);
+}
+
+export async function getLatestReadingForUser(userId: string) {
+  await ensureSchema();
+  const res = await query(
+    `SELECT * FROM readings WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [userId]
+  );
+  return res.rows[0];
 }

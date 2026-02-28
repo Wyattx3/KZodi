@@ -293,7 +293,13 @@ You are a master astrologer and personality analyst. Speak directly to the perso
 
     // Store reading (fire-and-forget, truly non-blocking)
     if (sessionId) {
-      insertReading({ sessionId, birthChart: chart as unknown as Record<string, unknown>, aiResponse: responseData }).catch(() => { /* non-blocking */ });
+      insertReading({
+        sessionId,
+        birthChart: chart as unknown as Record<string, unknown>,
+        aiResponse: responseData,
+        zodiacSign,
+        mbtiType
+      }).catch(() => { /* non-blocking */ });
     }
 
     return NextResponse.json({ success: true, data: responseData, birthChart: chart });

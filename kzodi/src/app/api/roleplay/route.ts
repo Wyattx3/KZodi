@@ -4,6 +4,7 @@ import { Pinecone } from '@pinecone-database/pinecone';
 import { generateEmbeddings } from "@/lib/ai-setup";
 import { auth } from "@/auth";
 import { processMessage, type EngineInput } from "@/lib/ai-engine";
+import { getLatestReadingForUser } from "@/lib/db";
 
 // ─── Request Interface ──────────────────────────────────────────────────────
 
@@ -209,6 +210,25 @@ function sanitizeStickers(content: string, characterName: string): string {
 
 function cleanResponseText(rawContent: string, characterName: string): string {
     let content = rawContent.replace(/^["']+|["']+$/g, "").trim();
+
+    // Fallback: If AI wraps response in ```json text ```, strip the wrapper
+    const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;
+    const match = content.match(jsonBlockRegex);
+    if (match) {
+        content = match[1].trim();
+    }
+
+    // Also if it outputs a single JSON object wrapping its message
+    if (content.startsWith("{") && content.endsWith("}")) {
+        try {
+            const parsed = JSON.parse(content);
+            if (parsed.reply) content = parsed.reply;
+            else if (parsed.text) content = parsed.text;
+            else if (parsed.content) content = parsed.content;
+            else if (parsed.response) content = parsed.response;
+        } catch { /* ignore if not JSON */ }
+    }
+
     content = content.replace(/^\[MessageID:\s*[^\]]+\]\s*/i, "").trim();
 
     // Remove character name prefixes
@@ -256,6 +276,40 @@ export async function POST(request: NextRequest) {
         const memoryQuery = `${characterName} ${message || history[history.length - 1]?.content || ""}`;
         const relevantContext = await retrieveContext(memoryQuery, effectiveCharacterId, userId);
 
+        // ─── Reading Context Retrieval (for Astrologers) ─────────────
+        let userReadingContext = "";
+        const cName = characterName?.toLowerCase() || "";
+        const cTag = characterTag?.toLowerCase() || "";
+        const isAstrologer = cTag.includes("astrology") || cName.includes("oracle") || cName.includes("astrologer");
+
+        if (isAstrologer) {
+            try {
+                const latestReading = await getLatestReadingForUser(userId);
+                if (latestReading) {
+                    userReadingContext = `User's Zodiac: ${latestReading.zodiac_sign || "Unknown"}\n`;
+                    userReadingContext += `User's MBTI: ${latestReading.mbti_type || "Unknown"}\n\n`;
+
+                    if (latestReading.ai_response) {
+                        try {
+                            const parsedResponse = typeof latestReading.ai_response === 'string'
+                                ? JSON.parse(latestReading.ai_response)
+                                : latestReading.ai_response;
+
+                            if (parsedResponse.personality) userReadingContext += `Personality Reading:\n${parsedResponse.personality}\n\n`;
+                            if (parsedResponse.love) userReadingContext += `Love Reading:\n${parsedResponse.love}\n\n`;
+                            if (parsedResponse.chartReading) userReadingContext += `Chart Details:\n${parsedResponse.chartReading}\n`;
+                        } catch (e) {
+                            console.error("Failed to parse reading response for RAG context", e);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to get latest reading context:", err);
+            }
+        }
+
+        console.log(`[Roleplay] Character: ${characterName}, isAstrologer: ${isAstrologer}, Context Length: ${userReadingContext.length}`);
+
         // ─── 🧠❤️ AI ENGINE — Brain + Heart Processing ──────────────
         const engineInput: EngineInput = {
             message,
@@ -269,6 +323,7 @@ export async function POST(request: NextRequest) {
             groupMembers,
             relevantMemory: relevantContext,
             userId,
+            userReadingContext,
         };
 
         const engineOutput = await processMessage(engineInput);

@@ -8,10 +8,13 @@ import ProfileTab from "./ProfileTab";
 import ChatRoom from "./ChatRoom";
 import { CHARACTERS, type Character } from "@/data/characters";
 import { useChatStore } from "@/lib/chatStore";
+import { useSearchParams, useRouter } from "next/navigation";
 
 type Tab = "explore" | "chats" | "create" | "profile";
 
 export default function ChatApp() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
     const [mounted, setMounted] = useState(false);
     const [activeTab, setActiveTab] = useState<Tab>("explore");
     const [activeCharacter, setActiveCharacter] = useState<Character | null>(null);
@@ -176,6 +179,43 @@ export default function ChatApp() {
         loadMyCharacters();
         loadAllCharacters();
     }, []);
+
+    // Handle Astrologer Redirect
+    useEffect(() => {
+        if (!mounted || allCharacters.length === 0) return;
+
+        const isAstrologer = searchParams.get("astrologer") === "true";
+        if (isAstrologer) {
+            const sid = localStorage.getItem("kzodi_session_id") || localStorage.getItem("pendingAstrologerRedirect");
+
+            // Link the reading to the user
+            if (sid) {
+                fetch("/api/user/link-reading", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ sessionId: sid }),
+                })
+                    .then(res => res.json())
+                    .then(() => {
+                        localStorage.removeItem("pendingAstrologerRedirect");
+                    })
+                    .catch(err => console.error("Failed to link reading:", err));
+            }
+
+            // Find an astrologer character
+            const astrologer =
+                allCharacters.find(c => c.tag?.toLowerCase().includes("astrology") || c.name?.toLowerCase().includes("oracle")) ||
+                myCharacters.find(c => c.tag?.toLowerCase().includes("astrology") || c.name?.toLowerCase().includes("oracle")) ||
+                allCharacters[0];
+
+            if (astrologer) {
+                handleSelectCharacter(astrologer, false);
+            }
+
+            // Clean up the URL
+            router.replace("/chat");
+        }
+    }, [mounted, allCharacters, myCharacters, searchParams, router]);
 
     const handleSelectCharacter = (char: Character, openProfile = false) => {
         setShowProfileOnLoad(openProfile);

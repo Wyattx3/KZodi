@@ -5,6 +5,8 @@ import { useChatStore, type ChatMessage } from "@/lib/chatStore";
 import { CHARACTERS, type Character } from "@/data/characters";
 import CharacterProfile from "./CharacterProfile";
 import { ThumbsUp, Heart, Laugh, Sparkles, Frown } from "lucide-react";
+import AstrologerMenu from "./AstrologerMenu";
+import { extractAstrologyTags } from "./AstrologyUIElements";
 
 interface ChatRoomProps {
     character: Character;
@@ -456,20 +458,34 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
 const STICKER_REGEX = /(\[\[\s*STICKER\s*:.*?\]\])/gi;
 
 const renderMessageContent = (content: string, character: Character) => {
-    // Split by sticker tags, keeping the delimiters
-    const parts = content.split(STICKER_REGEX);
+    // First extract any astrology charts, tables, or tarot cards
+    const { cleanText, elements } = extractAstrologyTags(content);
 
-    return parts.map((part, i) => {
-        const stickerMatch = part.match(/\[\[\s*STICKER\s*:\s*(.+?)\]\]/i);
-        if (stickerMatch) {
-            const stickerPrompt = stickerMatch[1].trim();
-            // Find fallback emoji
-            const option = STICKER_OPTIONS.find(o => o.label.toLowerCase() === stickerPrompt.toLowerCase());
-            return <Sticker key={i} prompt={stickerPrompt} character={character} fallbackEmoji={option?.emoji} />;
-        }
-        if (!part || !part.trim()) return null;
-        return <span key={i}>{part}</span>;
-    });
+    // Split remaining text by sticker tags, keeping the delimiters
+    const parts = cleanText.split(STICKER_REGEX);
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {elements.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "4px" }}>
+                    {elements}
+                </div>
+            )}
+            <div style={{ wordBreak: "break-word" }}>
+                {parts.map((part, i) => {
+                    const stickerMatch = part.match(/\[\[\s*STICKER\s*:\s*(.+?)\]\]/i);
+                    if (stickerMatch) {
+                        const stickerPrompt = stickerMatch[1].trim();
+                        // Find fallback emoji
+                        const option = STICKER_OPTIONS.find(o => o.label.toLowerCase() === stickerPrompt.toLowerCase());
+                        return <Sticker key={`sticker-${i}`} prompt={stickerPrompt} character={character} fallbackEmoji={option?.emoji} />;
+                    }
+                    if (!part || !part.trim()) return null;
+                    return <span key={`text-${i}`}>{part}</span>;
+                })}
+            </div>
+        </div>
+    );
 };
 
 // Sticker Grid Component for the Picker
@@ -678,7 +694,8 @@ const StickerPicker = ({ character, onSelect }: { character: Character, onSelect
 
 export default function ChatRoom({ character, onBack, initialShowProfile = false, charMap = {} }: ChatRoomProps) {
 
-
+    const isTrueAstrologer = character.id === 'astrologer-specialist' || character.id === 'astrologer_specialist';
+    const [showStandardMenu, setShowStandardMenu] = useState(!isTrueAstrologer);
     const [input, setInput] = useState("");
     const [isTyping, setIsTyping] = useState(false);
     const [isFetchingMessages, setIsFetchingMessages] = useState(true);
@@ -722,11 +739,12 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             // Don't close if clicking inside the menu
             if (menuRef.current && menuRef.current.contains(e.target as Node)) return;
             setShowMenu(false);
+            if (isTrueAstrologer) setShowStandardMenu(false);
             setActiveActionMenuId(null);
         };
         window.addEventListener("click", handleClick);
         return () => window.removeEventListener("click", handleClick);
-    }, []);
+    }, [isTrueAstrologer]);
 
     const [unreadMarkerId, setUnreadMarkerId] = useState<string | null>(() => {
         const convo = useChatStore.getState().conversations[character.id];
@@ -1278,10 +1296,13 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             cleanText = cleanText.replace(replyRegex, "");
         }
 
+        // Protect pipes inside [[ ]] blocks so UI elements don't get split into separate chat bubbles
+        let protectedText = cleanText.replace(/\[\[([\s\S]*?)\]\]/g, (match) => match.replace(/\|/g, "@@PIPE@@"));
+
         // First split by explicit pipe separator
-        const initialParts = cleanText
+        const initialParts = protectedText
             .split("|")
-            .map((p) => p.trim().replace(/^["']+|["']+$/g, "").trim())
+            .map((p) => p.replace(/@@PIPE@@/g, "|").trim().replace(/^["']+|["']+$/g, "").trim())
             .filter((p) => p);
 
         // Then split any part that contains both text and sticker so they become separate bubbles
@@ -1483,6 +1504,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         aria-label="More"
                         onClick={(e) => {
                             e.stopPropagation();
+                            if (!showMenu && isTrueAstrologer) {
+                                setShowStandardMenu(false); // Reset to astrology menu first
+                            }
                             setShowMenu(!showMenu);
                         }}
                     >
@@ -1494,159 +1518,191 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     </button>
                     <AnimatePresence>
                         {showMenu && (
-                            <motion.div
-                                ref={menuRef}
-                                initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                                transition={{ duration: 0.15 }}
-                                style={{
-                                    position: "absolute",
-                                    top: "40px",
-                                    right: "0",
-                                    background: "rgba(255, 255, 255, 0.9)",
-                                    backdropFilter: "blur(10px)",
-                                    WebkitBackdropFilter: "blur(10px)",
-                                    border: "1px solid rgba(0,0,0,0.06)",
-                                    borderRadius: "16px",
-                                    boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
-                                    padding: "6px",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: "4px",
-                                    minWidth: "150px",
-                                    zIndex: 100,
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                <button
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        useChatStore.getState().clearConversation(character.id);
-                                        setShowMenu(false);
+                            isTrueAstrologer && !showStandardMenu ? (
+                                <AstrologerMenu
+                                    onAction={(prompt, desc) => {
+                                        // Send as normal user message, but hidden triggers
+                                        const finalPrompt = `[SYSTEM: User clicked macro button. Generate response for:] ${prompt}`;
+                                        sendMessage(character.id, desc || "Selected an option...", undefined, undefined);
+                                        triggerAiResponse(finalPrompt);
                                     }}
+                                    onOpenStandardMenu={() => setShowStandardMenu(true)}
+                                    onClose={() => setShowMenu(false)}
+                                />
+                            ) : (
+                                <motion.div
+                                    ref={menuRef}
+                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    transition={{ duration: 0.15 }}
                                     style={{
-                                        display: "flex", alignItems: "center", gap: "8px",
-                                        background: "transparent", border: "none", padding: "10px 12px",
-                                        borderRadius: "10px", cursor: "pointer",
-                                        color: "#4A3728", fontSize: "14px", fontWeight: 500,
-                                        transition: "background 0.2s"
+                                        position: "absolute",
+                                        top: "40px",
+                                        right: "0",
+                                        background: "rgba(255, 255, 255, 0.9)",
+                                        backdropFilter: "blur(10px)",
+                                        WebkitBackdropFilter: "blur(10px)",
+                                        border: "1px solid rgba(0,0,0,0.06)",
+                                        borderRadius: "16px",
+                                        boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
+                                        padding: "6px",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "4px",
+                                        minWidth: "150px",
+                                        zIndex: 100,
                                     }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                    onClick={(e) => e.stopPropagation()}
                                 >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z" fill="currentColor" /></svg>
-                                    Clear Chat
-                                </button>
-
-                                <button
-                                    onClick={async (e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if (window.confirm(`Are you sure you want to delete this chat with ${character.name}?`)) {
-                                            useChatStore.getState().deleteConversation(character.id);
-                                            setShowMenu(false);
-                                            onBack();
-                                            try {
-                                                await fetch("/api/memory", {
-                                                    method: "DELETE",
-                                                    headers: { "Content-Type": "application/json" },
-                                                    body: JSON.stringify({ characterId: character.id })
-                                                });
-                                            } catch (err) { }
-                                        }
-                                    }}
-                                    style={{
-                                        display: "flex", alignItems: "center", gap: "8px",
-                                        background: "transparent", border: "none", padding: "10px 12px",
-                                        borderRadius: "10px", cursor: "pointer",
-                                        color: "#EF4444", fontSize: "14px", fontWeight: 500,
-                                        transition: "background 0.2s"
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.1)"}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                                >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                        <path d="M5 7h14M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                        <path d="M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
-                                    </svg>
-                                    Delete Chat
-                                </button>
-
-                                <button
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        useChatStore.getState().toggleBlock(character.id);
-                                        setShowMenu(false);
-                                    }}
-                                    style={{
-                                        display: "flex", alignItems: "center", gap: "8px",
-                                        background: "transparent", border: "none", padding: "10px 12px",
-                                        borderRadius: "10px", cursor: "pointer",
-                                        color: "#EF4444", fontSize: "14px", fontWeight: 500,
-                                        transition: "background 0.2s"
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.1)"}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                                >
-                                    {isBlocked ? (
-                                        <>
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z" fill="currentColor" /></svg>
-                                            Unblock
-                                        </>
-                                    ) : (
-                                        <>
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9l11.21 11.21C15.55 19.37 13.85 20 12 20zm6.31-3.1l-11.21-11.21C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z" fill="currentColor" /></svg>
-                                            Block
-                                        </>
+                                    {isTrueAstrologer && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setShowStandardMenu(false);
+                                            }}
+                                            style={{
+                                                display: "flex", alignItems: "center", gap: "8px",
+                                                background: "rgba(139, 92, 246, 0.1)", border: "none", padding: "10px 12px",
+                                                borderRadius: "10px", cursor: "pointer",
+                                                color: "#6D28D9", fontSize: "14px", fontWeight: 600,
+                                                marginBottom: "4px"
+                                            }}
+                                        >
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 19l-7-7 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                            Back to Astrologer
+                                        </button>
                                     )}
-                                </button>
-                                <div style={{ height: "1px", background: "rgba(0,0,0,0.06)", margin: "4px 0" }} />
-                                <div style={{ padding: "4px 12px 2px", fontSize: "11px", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase" }}>Theme</div>
-                                <div style={{ display: "flex", gap: "10px", padding: "8px 12px", justifyContent: "space-between" }}>
-                                    {[
-                                        { id: "theme-default", color: "#FFFDF5", border: "#EAE6D6" },
-                                        { id: "theme-blue", color: "#EBF4FF", border: "#D1E3FD" },
-                                        { id: "theme-pink", color: "#FDF2F8", border: "#FCE7F3" },
-                                        { id: "theme-green", color: "#F0FDF4", border: "#DCFCE7" },
-                                        { id: "theme-purple", color: "#F5F3FF", border: "#EDE9FE" }
-                                    ].map(t => {
-                                        const isActive = conversationTheme === t.id;
-                                        return (
-                                            <button
-                                                key={t.id}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    useChatStore.getState().setTheme(character.id, t.id);
-                                                    setShowMenu(false);
-                                                }}
-                                                style={{
-                                                    width: 32, height: 32, borderRadius: "50%",
-                                                    border: `1.5px solid ${isActive ? "#4A3728" : t.border}`,
-                                                    background: t.color,
-                                                    boxShadow: isActive ? "0 2px 8px rgba(0,0,0,0.1) inset" : "0 2px 4px rgba(0,0,0,0.02)",
-                                                    cursor: "pointer",
-                                                    transition: "transform 0.2s, box-shadow 0.2s",
-                                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                                    transform: isActive ? "scale(1.1)" : "scale(1)",
-                                                    position: "relative"
-                                                }}
-                                                onMouseEnter={(e) => { e.currentTarget.style.transform = isActive ? "scale(1.1)" : "scale(1.15)"; }}
-                                                onMouseLeave={(e) => { e.currentTarget.style.transform = isActive ? "scale(1.1)" : "scale(1)"; }}
-                                                aria-label={`Theme ${t.id}`}
-                                            >
-                                                {isActive && (
-                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ position: "absolute" }}>
-                                                        <path d="M20 6L9 17L4 12" stroke="#4A3728" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                                                    </svg>
-                                                )}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </motion.div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            useChatStore.getState().clearConversation(character.id);
+                                            setShowMenu(false);
+                                        }}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: "8px",
+                                            background: "transparent", border: "none", padding: "10px 12px",
+                                            borderRadius: "10px", cursor: "pointer",
+                                            color: "#4A3728", fontSize: "14px", fontWeight: 500,
+                                            transition: "background 0.2s"
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z" fill="currentColor" /></svg>
+                                        Clear Chat
+                                    </button>
+
+                                    <button
+                                        onClick={async (e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            if (window.confirm(`Are you sure you want to delete this chat with ${character.name}?`)) {
+                                                useChatStore.getState().deleteConversation(character.id);
+                                                setShowMenu(false);
+                                                onBack();
+                                                try {
+                                                    await fetch("/api/memory", {
+                                                        method: "DELETE",
+                                                        headers: { "Content-Type": "application/json" },
+                                                        body: JSON.stringify({ characterId: character.id })
+                                                    });
+                                                } catch (err) { }
+                                            }
+                                        }}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: "8px",
+                                            background: "transparent", border: "none", padding: "10px 12px",
+                                            borderRadius: "10px", cursor: "pointer",
+                                            color: "#EF4444", fontSize: "14px", fontWeight: 500,
+                                            transition: "background 0.2s"
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.1)"}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                            <path d="M5 7h14M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                            <path d="M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
+                                        </svg>
+                                        Delete Chat
+                                    </button>
+
+                                    <button
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            useChatStore.getState().toggleBlock(character.id);
+                                            setShowMenu(false);
+                                        }}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: "8px",
+                                            background: "transparent", border: "none", padding: "10px 12px",
+                                            borderRadius: "10px", cursor: "pointer",
+                                            color: "#EF4444", fontSize: "14px", fontWeight: 500,
+                                            transition: "background 0.2s"
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.1)"}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                                    >
+                                        {isBlocked ? (
+                                            <>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z" fill="currentColor" /></svg>
+                                                Unblock
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9l11.21 11.21C15.55 19.37 13.85 20 12 20zm6.31-3.1l-11.21-11.21C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z" fill="currentColor" /></svg>
+                                                Block
+                                            </>
+                                        )}
+                                    </button>
+                                    <div style={{ height: "1px", background: "rgba(0,0,0,0.06)", margin: "4px 0" }} />
+                                    <div style={{ padding: "4px 12px 2px", fontSize: "11px", fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase" }}>Theme</div>
+                                    <div style={{ display: "flex", gap: "10px", padding: "8px 12px", justifyContent: "space-between" }}>
+                                        {[
+                                            { id: "theme-default", color: "#FFFDF5", border: "#EAE6D6" },
+                                            { id: "theme-blue", color: "#EBF4FF", border: "#D1E3FD" },
+                                            { id: "theme-pink", color: "#FDF2F8", border: "#FCE7F3" },
+                                            { id: "theme-green", color: "#F0FDF4", border: "#DCFCE7" },
+                                            { id: "theme-purple", color: "#F5F3FF", border: "#EDE9FE" }
+                                        ].map(t => {
+                                            const isActive = conversationTheme === t.id;
+                                            return (
+                                                <button
+                                                    key={t.id}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        useChatStore.getState().setTheme(character.id, t.id);
+                                                        setShowMenu(false);
+                                                    }}
+                                                    style={{
+                                                        width: 32, height: 32, borderRadius: "50%",
+                                                        border: `1.5px solid ${isActive ? "#4A3728" : t.border}`,
+                                                        background: t.color,
+                                                        boxShadow: isActive ? "0 2px 8px rgba(0,0,0,0.1) inset" : "0 2px 4px rgba(0,0,0,0.02)",
+                                                        cursor: "pointer",
+                                                        transition: "transform 0.2s, box-shadow 0.2s",
+                                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                                        transform: isActive ? "scale(1.1)" : "scale(1)",
+                                                        position: "relative"
+                                                    }}
+                                                    onMouseEnter={(e) => { e.currentTarget.style.transform = isActive ? "scale(1.1)" : "scale(1.15)"; }}
+                                                    onMouseLeave={(e) => { e.currentTarget.style.transform = isActive ? "scale(1.1)" : "scale(1)"; }}
+                                                    aria-label={`Theme ${t.id}`}
+                                                >
+                                                    {isActive && (
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ position: "absolute" }}>
+                                                            <path d="M20 6L9 17L4 12" stroke="#4A3728" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </motion.div>
+                            )
                         )}
                     </AnimatePresence>
                 </div>

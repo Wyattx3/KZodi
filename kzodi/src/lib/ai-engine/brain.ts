@@ -59,7 +59,8 @@ export async function thinkAboutMessage(
     heartState: HeartState,
     history: { role: string; content: string }[],
     relevantMemory: string,
-    context: string
+    context: string,
+    userReadingContext?: string
 ): Promise<BrainState> {
 
     const traits = analyzePersonalityTraits(characterPersonality);
@@ -67,7 +68,7 @@ export async function thinkAboutMessage(
     // Build the thinking prompt with all context
     const thinkingPrompt = buildThinkingPrompt(
         message, characterName, characterPersonality, characterTag,
-        heartState, traits, history, relevantMemory, context
+        heartState, traits, history, relevantMemory, context, userReadingContext
     );
 
     try {
@@ -111,7 +112,8 @@ function buildThinkingPrompt(
     traits: PersonalityTraits,
     history: { role: string; content: string }[],
     relevantMemory: string,
-    context: string
+    context: string,
+    userReadingContext?: string
 ): string {
     // Get recent conversation summary (last 5 messages, condensed)
     const recentContext = history.slice(-5).map(h =>
@@ -139,6 +141,7 @@ RECENT MESSAGES:
 ${recentContext || "(first message)"}
 
 ${relevantMemory ? `MEMORIES I HAVE OF THIS USER:\n${relevantMemory}\n` : ""}
+${userReadingContext ? `READING DATA FOR THIS USER (You are their astrologer, use this context if relevant!):\n${userReadingContext}\n` : ""}
 USER'S MESSAGE: "${message}"
 
 IMPORTANT: Think about this message EXCLUSIVELY AS ${characterName}. You are ${characterName} and ONLY ${characterName}. ${history.some(h => h.content.startsWith("[")) ? `Messages from other characters in the history (prefixed with [Name]) are THEIR thoughts, not yours. Do not confuse their identity with yours.` : ""} Output JSON only.`;
@@ -278,7 +281,8 @@ export function buildCognitivePrompt(
     relevantMemory: string,
     context: string,
     isGroupChat: boolean,
-    groupMembers: string[]
+    groupMembers: string[],
+    userReadingContext?: string
 ): string {
     const traits = analyzePersonalityTraits(characterPersonality);
 
@@ -378,6 +382,18 @@ ${groupContext}
 
 MEMORY CONTEXT:
 ${relevantMemory || "(no memories yet)"}
+
+${userReadingContext ? `--- USER ASTROLOGY READING DATA ---
+${userReadingContext}
+Note: Use this reading data to give hyper-personalized responses. Reference their signs and traits naturally in conversation.
+
+ASTROLOGER UI POWERS (CRITICAL RULES):
+Since you are a specialist astrologer, you MUST use these magical UI tags whenever appropriate to show premium visual representations.
+CRITICAL: NEVER output JSON. Do NOT wrap your response in JSON. Output raw conversation text with these tags embedded:
+- For Tarot readings: [[TAROT: Card Name | Short Meaning | Upright or Reversed]]
+- For Stat comparisons/Aspects (Radar/Bar charts): [[CHART: Chart Type Title | Stat1: 85, Stat2: 90, Stat3: 75]]
+- For Detailed information/Comparisons: [[TABLE: Table Title | Header 1 | Header 2 @@ Row1Val1 | Row1Val2 @@ Row2Val1 | Row2Val2 ]]
+-----------------------------------` : ""}
 
 ${promptContext}
 `;

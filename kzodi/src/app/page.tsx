@@ -38,14 +38,27 @@ export default function Home() {
   };
 
   const handleChatGetStarted = () => {
+    // Check if user came from "Ask Astrologer"
+    const isAstrologerRedirect = localStorage.getItem("pendingAstrologerRedirect");
     // Trigger Google sign-in
     import("next-auth/react").then(({ signIn }) => {
-      signIn("google", { callbackUrl: "/chat" });
+      signIn("google", { callbackUrl: isAstrologerRedirect ? "/chat?astrologer=true" : "/chat" });
     });
   };
 
   const handleChatBack = () => {
     setView("landing");
+    localStorage.removeItem("pendingAstrologerRedirect");
+  };
+
+  const handleAskAstrologer = () => {
+    // Make sure we have a session ID
+    if (store.sessionId) {
+      localStorage.setItem("pendingAstrologerRedirect", "true");
+      // Optionally store sessionId in localStorage just to be safe if Zustand loses it on hard redirect
+      localStorage.setItem("kzodi_session_id", store.sessionId);
+    }
+    setView("chat-landing");
   };
 
   /* Navigation helpers */
@@ -386,6 +399,7 @@ export default function Home() {
           aiInsights={aiInsights}
           birthChartData={store.birthChartData}
           sessionId={store.sessionId}
+          onAskAstrologer={handleAskAstrologer}
         />
       )}
     </AnimatePresence>

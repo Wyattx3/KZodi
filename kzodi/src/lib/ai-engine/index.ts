@@ -43,6 +43,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         groupMembers,
         relevantMemory,
         userId,
+        userReadingContext,
     } = input;
 
     console.log(`\n${"═".repeat(60)}`);
@@ -79,7 +80,8 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
                 heartState,
                 history.map(h => ({ role: h.role, content: h.content || "" })),
                 relevantMemory,
-                context
+                context,
+                userReadingContext
             );
             // 15s timeout — fail fast to fallback
             const timeoutPromise = new Promise<never>((_, reject) =>
@@ -114,7 +116,8 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         relevantMemory,
         context,
         isGroupChat,
-        groupMembers
+        groupMembers,
+        userReadingContext
     );
 
     // Build messages array

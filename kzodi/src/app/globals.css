@@ -35,7 +35,6 @@
     background-color: #EEEDEA;
     color: var(--color-warm-black);
     min-height: 100dvh;
-    overflow-x: hidden;
   }
 
   ::-webkit-scrollbar {
@@ -764,10 +763,8 @@
 
 html,
 body {
-  height: 100dvh;
   margin: 0;
   padding: 0;
-  overflow: hidden;
   background: #FAFAFA;
 }
 
