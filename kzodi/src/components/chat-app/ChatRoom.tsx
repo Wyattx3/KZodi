@@ -10,6 +10,7 @@ import AstroProfileModal from "./AstroProfileModal";
 import { extractAstrologyTags } from "./AstrologyUIElements";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { getZodiacSign } from "@/lib/zodiac";
 
 interface ChatRoomProps {
     character: Character;
@@ -1535,6 +1536,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                         triggerAiResponse(finalPrompt);
                                     }}
                                     onOpenStandardMenu={() => setShowStandardMenu(true)}
+                                    onUpdateProfile={() => {
+                                        setShowMenu(false);
+                                        setIsAstroProfileModalOpen(true);
+                                    }}
                                     onClose={() => setShowMenu(false)}
                                 />
                             ) : (
@@ -2002,13 +2007,25 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 onClose={() => setIsAstroProfileModalOpen(false)}
                 onSave={async (data) => {
                     try {
+                        let finalZodiac = "";
+                        if (data.date) {
+                            const parts = data.date.split("-").map(Number);
+                            if (parts.length === 3) {
+                                const [year, month, day] = parts;
+                                finalZodiac = getZodiacSign(month, day);
+                                finalZodiac = finalZodiac.charAt(0).toUpperCase() + finalZodiac.slice(1);
+                            }
+                        }
+
                         const res = await fetch("/api/user/reading", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ zodiac_sign: data.date, mbti_type: data.mbti })
+                            body: JSON.stringify({ zodiac_sign: finalZodiac, mbti_type: data.mbti })
                         });
                         if (res.ok) {
-                            sendMessage("I've thoroughly updated my Astrological data. Please reset your reading context and account for my new Birth Details and MBTI going forward.", "user");
+                            const updateMsg = `I just updated my astrology profile. My zodiac sign is now ${finalZodiac || "not set"}${data.mbti ? ` and my MBTI is ${data.mbti}` : ""}. Please use my NEW profile data for all readings from now on.`;
+                            sendMessage(character.id, updateMsg);
+                            triggerAiResponse(`[SYSTEM: User has updated their astrology profile. Their new zodiac sign is ${finalZodiac || "Unknown"}${data.mbti ? `, MBTI: ${data.mbti}` : ""}. Acknowledge the update and confirm you will use their new data going forward. Be enthusiastic about recalibrating their readings.]`);
                         }
                     } catch (e) {
                         console.error("Failed to update profile", e);
