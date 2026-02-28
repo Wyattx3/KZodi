@@ -9,14 +9,15 @@ import {
 interface AstrologerMenuProps {
     onAction: (prompt: string, displayMessage?: string) => void;
     onOpenStandardMenu: () => void;
+    onUpdateProfile?: () => void;
     onClose: () => void;
 }
 
-export default function AstrologerMenu({ onAction, onOpenStandardMenu, onClose }: AstrologerMenuProps) {
+export default function AstrologerMenu({ onAction, onOpenStandardMenu, onUpdateProfile, onClose }: AstrologerMenuProps) {
     const menuItems = [
         {
             id: "daily", icon: <Sun size={18} color="#F59E0B" />, label: "Daily Horoscope",
-            prompt: "Please give me my daily horoscope for today.",
+            prompt: "Please give me my daily horoscope for today. Output a [[DAILY: Title | Score | Body]] tag.",
             display: "Tell me my daily horoscope 🌟"
         },
         {
@@ -26,7 +27,7 @@ export default function AstrologerMenu({ onAction, onOpenStandardMenu, onClose }
         },
         {
             id: "love", icon: <Heart size={18} color="#EF4444" />, label: "Love Compatibility",
-            prompt: "Give me an in-depth love and compatibility reading based on my chart. Generate a [[TABLE: Love Aspects | Aspect | Meaning]] to summarize.",
+            prompt: "Give me an in-depth love and compatibility reading based on my chart. Generate a [[COMPATIBILITY: My Sign | Their Sign | Score | Key Aspect]] tag.",
             display: "Check my Love Compatibility ❤️"
         },
         {
@@ -41,12 +42,12 @@ export default function AstrologerMenu({ onAction, onOpenStandardMenu, onClose }
         },
         {
             id: "moon", icon: <Moon size={18} color="#6366F1" />, label: "Moon Phase Focus",
-            prompt: "Based on the current moon phase and my chart, what should my emotional or spiritual focus be?",
+            prompt: "Based on the current moon phase and my chart, what should my emotional or spiritual focus be? Output a [[DAILY: Moon Phase Focus | Score | Body]] tag.",
             display: "Focus for this Moon Phase? 🌙"
         },
         {
             id: "crystal", icon: <Gem size={18} color="#EC4899" />, label: "Crystal/Remedy",
-            prompt: "Suggest some specific crystals, herbs, or remedies that align with my current astrological needs.",
+            prompt: "Suggest some specific crystals, herbs, or remedies that align with my current astrological needs. Output a [[REMEDY: Material1 | Purpose1 @@ Material2 | Purpose2]] tag.",
             display: "Suggest Crystals/Remedies 💎"
         },
         {
@@ -97,7 +98,11 @@ export default function AstrologerMenu({ onAction, onOpenStandardMenu, onClose }
                         onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            onAction(item.prompt, item.display);
+                            if (item.id === "update" && onUpdateProfile) {
+                                onUpdateProfile();
+                            } else {
+                                onAction(item.prompt, item.display);
+                            }
                             onClose();
                         }}
                         style={{

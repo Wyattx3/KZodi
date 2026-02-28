@@ -2377,6 +2377,7 @@ body {
   display: flex;
   gap: 8px;
   max-width: 85%;
+  min-width: 0;
 }
 
 .chatroom-msg-first {
@@ -2416,6 +2417,7 @@ body {
 
 .chatroom-bubble-wrap {
   position: relative;
+  min-width: 0;
 }
 
 /* Bubbles — Light */
@@ -2424,6 +2426,7 @@ body {
   position: relative;
   line-height: 1.5;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+  min-width: 0;
 }
 
 .chatroom-bubble p {
@@ -3415,4 +3418,47 @@ body {
 .chats-item svg {
   pointer-events: none !important;
   -webkit-user-drag: none;
+}
+
+/* Markdown formatting for AI Chat Bubbles */
+.markdown-content {
+  font-size: 15px;
+  line-height: 1.6;
+  color: inherit;
+}
+
+.markdown-content p {
+  margin-bottom: 12px;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content strong {
+  font-weight: 700;
+  color: #111827;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 8px 0 12px 20px;
+  padding: 0;
+}
+
+.markdown-content li {
+  margin-bottom: 6px;
+  padding-left: 4px;
+}
+
+.markdown-content li::marker {
+  color: #FACC15;
+}
+
+.chatroom-bubble-ai .markdown-content strong {
+  color: #000;
+}
+
+.chatroom-bubble-user .markdown-content strong {
+  color: #4A3728;
 }

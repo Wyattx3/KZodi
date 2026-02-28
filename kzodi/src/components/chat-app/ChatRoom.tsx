@@ -6,7 +6,10 @@ import { CHARACTERS, type Character } from "@/data/characters";
 import CharacterProfile from "./CharacterProfile";
 import { ThumbsUp, Heart, Laugh, Sparkles, Frown } from "lucide-react";
 import AstrologerMenu from "./AstrologerMenu";
+import AstroProfileModal from "./AstroProfileModal";
 import { extractAstrologyTags } from "./AstrologyUIElements";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatRoomProps {
     character: Character;
@@ -465,7 +468,7 @@ const renderMessageContent = (content: string, character: Character) => {
     const parts = cleanText.split(STICKER_REGEX);
 
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
             {elements.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "4px" }}>
                     {elements}
@@ -481,7 +484,11 @@ const renderMessageContent = (content: string, character: Character) => {
                         return <Sticker key={`sticker-${i}`} prompt={stickerPrompt} character={character} fallbackEmoji={option?.emoji} />;
                     }
                     if (!part || !part.trim()) return null;
-                    return <span key={`text-${i}`}>{part}</span>;
+                    return (
+                        <div key={`text-${i}`} className="markdown-content">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{part}</ReactMarkdown>
+                        </div>
+                    );
                 })}
             </div>
         </div>
@@ -704,6 +711,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+    const [isAstroProfileModalOpen, setIsAstroProfileModalOpen] = useState(false);
     const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1297,7 +1305,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         }
 
         // Protect pipes inside [[ ]] blocks so UI elements don't get split into separate chat bubbles
-        let protectedText = cleanText.replace(/\[\[([\s\S]*?)\]\]/g, (match) => match.replace(/\|/g, "@@PIPE@@"));
+        let protectedText = cleanText.replace(/\[{1,3}([\s\S]*?)(?:\]{1,3}|$)/g, (match) => match.replace(/\|/g, "@@PIPE@@"));
 
         // First split by explicit pipe separator
         const initialParts = protectedText
@@ -1821,7 +1829,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     } alt="" />
                                 </div>
                                 <div className="chatroom-typing-bubble">
-                                    <span className="chatroom-typing-name">{typingMemberName || character.name.split(" ")[0]}</span>
+
                                     <div className="typing-dots">
                                         <span />
                                         <span />
@@ -1988,6 +1996,25 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     />
                 )}
             </AnimatePresence>
+            {/* Astro Profile Update Modal */}
+            <AstroProfileModal
+                isOpen={isAstroProfileModalOpen}
+                onClose={() => setIsAstroProfileModalOpen(false)}
+                onSave={async (data) => {
+                    try {
+                        const res = await fetch("/api/user/reading", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ zodiac_sign: data.date, mbti_type: data.mbti })
+                        });
+                        if (res.ok) {
+                            sendMessage("I've thoroughly updated my Astrological data. Please reset your reading context and account for my new Birth Details and MBTI going forward.", "user");
+                        }
+                    } catch (e) {
+                        console.error("Failed to update profile", e);
+                    }
+                }}
+            />
         </div >
     );
 }
