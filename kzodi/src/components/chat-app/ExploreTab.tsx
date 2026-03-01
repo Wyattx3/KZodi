@@ -12,6 +12,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
     const [search, setSearch] = useState("");
     const [selectedPreview, setSelectedPreview] = useState<Character | null>(null);
     const [characters, setCharacters] = useState<Character[]>([]);
+    const [specialCharacters, setSpecialCharacters] = useState<Character[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     // Fetch characters from the backend API
@@ -30,8 +31,25 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
         }
     };
 
+    const fetchSpecialCharacters = async () => {
+        try {
+            const res = await fetch(`/api/characters?category=Specialist&limit=10`);
+            if (res.ok) {
+                const data = await res.json();
+                setSpecialCharacters(data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch special characters:", error);
+        }
+    };
+
     useEffect(() => {
         fetchCharacters();
+        if (activeCategory === "All" && !search) {
+            fetchSpecialCharacters();
+        } else {
+            setSpecialCharacters([]);
+        }
 
         const handleLikeUpdate = (e: Event) => {
             const customEvent = e as CustomEvent<{ id: string, likesCount: number, liked: boolean }>;
@@ -186,6 +204,47 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                 </div>
             ) : (
                 <>
+                    {/* ── Specialist Characters — Horizontal Scroll ── */}
+                    {activeCategory === "All" && !search && specialCharacters.length > 0 && (
+                        <div className="explore-section">
+                            <div className="explore-section-header">
+                                <h2 className="explore-section-title">Specialist Characters</h2>
+                                <span className="explore-section-count">{specialCharacters.length} specialists</span>
+                            </div>
+                            <div className="explore-specialist-scroll no-scrollbar">
+                                {specialCharacters.map((char, i) => (
+                                    <motion.div
+                                        key={char.id}
+                                        className="explore-specialist-card"
+                                        onClick={() => onSelectCharacter(char)}
+                                        initial={{ opacity: 0, x: 40 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ duration: 0.45, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] }}
+                                        whileTap={{ scale: 0.96 }}
+                                    >
+                                        <img src={char.image} alt={char.name} className="explore-specialist-img" />
+                                        <div className="explore-specialist-overlay" />
+                                        <div className="explore-specialist-badge-wrap">
+                                            <span className="explore-specialist-badge">
+                                                <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+                                                Specialist
+                                            </span>
+                                        </div>
+                                        <div className="explore-specialist-chat-hint">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        </div>
+                                        <div className="explore-specialist-info">
+                                            <div className="explore-specialist-name">{char.name}</div>
+                                            <div className="explore-specialist-role">{char.description?.substring(0, 40) || char.tag}</div>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* ── Featured Character Spotlight ──────────── */}
                     {activeCategory === "All" && !search && featured && (
                         <motion.div
