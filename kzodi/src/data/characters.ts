@@ -2,7 +2,7 @@
 export const SOURCE_CATEGORIES = [
     "All", "Anime", "Manga", "Game", "K-pop", "Movies", "TV", "Books",
     "VTuber", "Original", "History", "Mythology", "Philosophy",
-    "Celebrity", "Roleplay", "BL", "GL"
+    "Celebrity", "Roleplay", "BL", "GL", "Specialist"
 ] as const;
 export type Category = (typeof SOURCE_CATEGORIES)[number];
 

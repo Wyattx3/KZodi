@@ -11,6 +11,7 @@ import { extractAstrologyTags } from "./AstrologyUIElements";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getZodiacSign } from "@/lib/zodiac";
+import SpecialistSetup from "./SpecialistSetups";
 
 interface ChatRoomProps {
     character: Character;
@@ -714,6 +715,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
     const [isAstroProfileModalOpen, setIsAstroProfileModalOpen] = useState(false);
     const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
+    const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1237,6 +1239,20 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [character.id]);
+
+    const handleSetupComplete = (setupData: string) => {
+        setHasCompletedSetup(true);
+        if (!setupData) {
+            triggerAiResponse("Hello!");
+            return;
+        }
+
+        const initialPrompt = `[SYSTEM BACKGROUND INFORMATION FOR THIS ROLEPLAY:\n${setupData}]\n\n*The user has just entered the chat.* Greet them based on this background context!`;
+        triggerAiResponse(initialPrompt);
+    };
+
+    const isSpecialist = character.tag === 'Specialist';
+    const needsSpecialistSetup = isSpecialist && !isFetchingMessages && messages.length === 0 && !hasCompletedSetup;
 
     // Auto-resize textarea
     useEffect(() => {
@@ -1849,8 +1865,16 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 </div>
             </div>
 
-            {/* ── Input Bar / Blocked State ──────────────────────── */}
-            {isBlocked ? (
+            {/* ── Input Bar / Blocked State / Setup State ───────── */}
+            {needsSpecialistSetup ? (
+                <div className="chatroom-input-bar">
+                    <SpecialistSetup
+                        characterName={character.name}
+                        specialtyType={character.name}
+                        onComplete={handleSetupComplete}
+                    />
+                </div>
+            ) : isBlocked ? (
                 <motion.div
                     className="chatroom-input-bar"
                     style={{ justifyContent: "center", padding: "16px", background: "rgba(255,255,255,0.8)", borderTop: "1px solid rgba(0,0,0,0.05)" }}
