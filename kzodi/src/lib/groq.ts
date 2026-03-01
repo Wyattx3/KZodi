@@ -104,7 +104,7 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 // ─── Model Configuration ─────────────────────────────────────────────────────
 
 const MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct";
-const FALLBACK_MODEL = "openai/gpt-oss-120b";
+const FALLBACK_MODEL = "moonshotai/kimi-k2-instruct-0905";
 
 export const MODELS = {
   CHAT: MODEL,
@@ -429,7 +429,8 @@ class MultiProviderClient {
         }
 
         let messages = params.messages;
-        if (attempt > 0 && params.response_format && provider !== PROVIDERS.OLLAMA) {
+        if (attempt > 0 && params.response_format && provider === PROVIDERS.GROQ) {
+          // Only inject JSON hint for Groq — xAI reasoning models don't support this
           messages = [
             ...params.messages,
             { role: "user", content: "Remember: respond ONLY with a valid JSON object starting with { — no other text." },
@@ -447,6 +448,11 @@ class MultiProviderClient {
             temperature: params.temperature ?? 0.7,
             num_predict: params.max_tokens ?? 1000
           };
+        } else if (provider === PROVIDERS.XAI) {
+          // Grok 4 is a reasoning model — does NOT support temperature, 
+          // presencePenalty, frequencyPenalty, stop, or reasoning_effort
+          body.max_tokens = params.max_tokens ?? 1000;
+          // Do NOT send response_format or temperature for grok-4
         } else {
           body.temperature = params.temperature ?? 0.7;
           body.max_tokens = params.max_tokens ?? 1000;
@@ -493,14 +499,16 @@ class MultiProviderClient {
         if (!res.ok) {
           const errText = await res.text();
           console.error(`[AI] Error ${res.status} on ${model}: ${errText.slice(0, 300)}`);
+          // For xAI or Ollama: ANY error (400, 403, network error, etc.) should fall back to Kimi k2
+          if ((provider === PROVIDERS.XAI && model.includes("grok")) || provider === PROVIDERS.OLLAMA) {
+            console.warn(`[AI] ${provider} error ${res.status}, falling back to Groq ${FALLBACK_MODEL}`);
+            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+          }
           if (res.status === 400 || (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403)) {
             if (attempt < maxRetries) {
               await sleep(backoffs[attempt] || 2000);
               continue;
             }
-          }
-          if (provider === PROVIDERS.XAI && model.includes("grok")) {
-            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
           }
           return { content: "", finish_reason: "error", truncated: false, cached: false, provider };
         }
@@ -548,7 +556,7 @@ class MultiProviderClient {
           await sleep(backoffs[attempt] || 4000);
           continue;
         }
-        if (provider === PROVIDERS.XAI && model.includes("grok")) {
+        if ((provider === PROVIDERS.XAI && model.includes("grok")) || provider === PROVIDERS.OLLAMA) {
           return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
         }
         return { content: "", finish_reason: "exception", truncated: false, cached: false, provider };

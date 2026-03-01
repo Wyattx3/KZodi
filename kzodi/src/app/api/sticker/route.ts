@@ -76,148 +76,166 @@ export async function POST(request: NextRequest) {
         const fullPrompt = `(best quality, masterpiece), solo chibi sticker of ${subject}. Action/Emotion: ${stickerPrompt}. Style: cute chibi, flat vector color, thick white outline, sticker design. Traits: ${visualTraits}. Background: PURE SOLID WHITE BACKGROUND. Negative prompt: text, words, watermark, transparent background, colored background, gradient background, extra characters.`;
         console.log(`Generating sticker for: ${stickerPrompt} using Fireworks AI...`);
 
-        // Step 1: Submit Generation Request (async workflow)
-        const workflowsUrl = "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-max";
+        let imageData = "";
 
-        // Note: Removing response_format as it might cause 400s if not supported by this workflow endpoint
-        let submitResponse;
-        let submitRetries = 0;
-        const maxRetries = 12; // Increase max retries
-
-        while (submitRetries <= maxRetries) {
-            if (request.signal.aborted) {
-                console.log("Client disconnected before Fireworks request submit. Canceling.");
-                return NextResponse.json({ error: "aborted" }, { status: 499 });
-            }
-
-            submitResponse = await fetch(workflowsUrl, {
+        // ─── STEP 1: Try Primary (xAI: grok-imagine-image) ─────────────
+        try {
+            console.log(`Generating sticker for: ${stickerPrompt} using xAI (Primary)...`);
+            const xaiResponse = await fetch("https://api.x.ai/v1/images/generations", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "Authorization": `Bearer ${FIREWORKS_API_KEY}`
+                    "Authorization": `Bearer ${process.env.XAI_API_KEY}`
                 },
                 body: JSON.stringify({
+                    model: "grok-imagine-image",
                     prompt: fullPrompt,
+                    n: 1,
+                    aspect_ratio: "auto",
+                    resolution: "1k"
                 }),
-                signal: AbortSignal.timeout(15000) // Prevent hanging tcp
-            }).catch(e => {
-                console.error("Fetch Error:", e);
-                return null;
+                signal: AbortSignal.timeout(45000) // 45s timeout for image generation
             });
 
-            if (!submitResponse) {
-                submitRetries++;
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                continue;
+            if (!xaiResponse.ok) {
+                const errText = await xaiResponse.text();
+                throw new Error(`xAI error: ${xaiResponse.status} ${errText}`);
             }
 
-            if (submitResponse.status === 429) {
-                submitRetries++;
-                const waitTime = 3000 * Math.pow(1.5, submitRetries) + Math.random() * 2000;
-                console.log(`Fireworks API Rate Limit (Generation queued). Retrying in ${Math.round(waitTime / 1000)}s... (Attempt ${submitRetries}/${maxRetries})`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                continue;
+            const xaiResult = await xaiResponse.json();
+            const imgItem = xaiResult.data?.[0];
+
+            if (imgItem?.b64_json) {
+                imageData = imgItem.b64_json;
+                console.log("xAI image generation successful (base64).");
+            } else if (imgItem?.url) {
+                // xAI returned a URL instead of base64: download it
+                console.log("xAI returned URL, downloading...");
+                const dlRes = await fetch(imgItem.url);
+                const dlBuf = await dlRes.arrayBuffer();
+                imageData = Buffer.from(dlBuf).toString("base64");
+                console.log("xAI image downloaded successfully.");
+            } else {
+                throw new Error("xAI returned successful response but no image data.");
             }
-            break;
-        }
+        } catch (xaiError) {
+            console.warn(`xAI primary generation failed:`, xaiError);
+            console.log("Falling back to Fireworks AI (flux-kontext-pro)...");
 
-        if (!submitResponse || !submitResponse.ok) {
-            const errText = submitResponse ? await submitResponse.text() : "No response after retries";
-            console.error(`Fireworks Submit Error: ${submitResponse?.status} ${errText}`);
-            throw new Error(`Fireworks Submit Error: ${submitResponse?.status} ${errText}`);
-        }
+            // ─── STEP 2: Fallback to Fireworks AI (Async Workflow) ──────────
+            const workflowsUrl = "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-kontext-pro";
 
-        const submitResult = await submitResponse.json();
-        const requestId = submitResult.id || submitResult.request_id;
+            let submitResponse;
+            let submitRetries = 0;
+            const maxRetries = 5;
 
-        if (!requestId) {
-            console.error("Fireworks response missing ID:", submitResult);
-            throw new Error("No request ID returned from Fireworks AI");
-        }
+            while (submitRetries <= maxRetries) {
+                if (request.signal.aborted) {
+                    return NextResponse.json({ error: "aborted" }, { status: 499 });
+                }
 
-        console.log(`Fireworks Request ID: ${requestId}`);
-
-        // Step 2: Poll for Result
-        const resultEndpoint = `${workflowsUrl}/get_result`;
-        let imageData = "";
-
-        // Poll for up to several minutes to survive 429 backoffs
-        for (let attempts = 0; attempts < 100; attempts++) {
-            if (request.signal.aborted) {
-                console.log(`Client disconnected during polling (${requestId}). Canceling.`);
-                return NextResponse.json({ error: "aborted" }, { status: 499 });
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 5000 + (attempts > 5 ? 2000 : 0))); // Wait 5s between polls, 7s after 5 tries
-
-            if (request.signal.aborted) return NextResponse.json({ error: "aborted" }, { status: 499 });
-
-            let pollResponse;
-            try {
-                pollResponse = await fetch(resultEndpoint, {
+                submitResponse = await fetch(workflowsUrl, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                         "Accept": "application/json",
                         "Authorization": `Bearer ${FIREWORKS_API_KEY}`
                     },
-                    body: JSON.stringify({ id: requestId }),
-                    signal: AbortSignal.timeout(10000)
+                    body: JSON.stringify({ prompt: fullPrompt }),
+                    signal: AbortSignal.timeout(15000)
+                }).catch(e => {
+                    console.error("Fireworks Fetch Error:", e);
+                    return null;
                 });
-            } catch (e) {
-                console.warn("Poll fetch error (network):", e);
-                continue;
-            }
 
-            if (!pollResponse.ok) {
-                // If 429, wait longer and retry with exponential backoff
-                if (pollResponse.status === 429) {
-                    const waitTime = 8000 + (attempts * 1000) + Math.random() * 2000;
-                    console.log(`Fireworks AI is busy generating. Retrying in ${Math.round(waitTime / 1000)}s...`);
-                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                if (!submitResponse) {
+                    submitRetries++;
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                     continue;
                 }
-                const errText = await pollResponse.text();
-                // 404 might mean task not ready yet? Or truly not found?
-                // Typically we should just continue if it's transient, but log it.
-                console.warn(`Poll failed: ${pollResponse.status} - ${errText}`);
-                continue;
-            }
 
-            const pollResult = await pollResponse.json();
-            // Check for success statuses across multiple possible field names
-            const status = pollResult.status || "UNKNOWN";
-            console.log(`Poll status: ${status} (Attempt ${attempts + 1})`);
-
-            if (['Ready', 'Complete', 'Finished', 'COMPLETED', 'SUCCEEDED'].includes(status)) {
-                // Result structure varies. Usually 'result.sample' (URL) or 'output.sample'
-                const sample = pollResult.result?.sample || pollResult.output?.sample;
-
-                if (sample) {
-                    if (sample.startsWith("http")) {
-                        console.log("Downloading image from URL...");
-                        const imgRes = await fetch(sample);
-                        const buf = await imgRes.arrayBuffer();
-                        imageData = Buffer.from(buf).toString("base64");
-                    } else {
-                        imageData = sample;
-                    }
-                } else {
-                    console.error("Completed but no sample found:", JSON.stringify(pollResult));
+                if (submitResponse.status === 429) {
+                    submitRetries++;
+                    const waitTime = 2000 * Math.pow(1.5, submitRetries) + Math.random() * 1000;
+                    console.log(`Fireworks API Rate Limit. Retrying in ${Math.round(waitTime / 1000)}s...`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    continue;
                 }
                 break;
             }
 
-            if (['Failed', 'Error', 'FAILED'].includes(status)) {
-                throw new Error(`Generation failed: ${pollResult.details || JSON.stringify(pollResult)}`);
+            if (!submitResponse || !submitResponse.ok) {
+                const errText = submitResponse ? await submitResponse.text() : "No response after retries";
+                throw new Error(`Fireworks Submit Error: ${submitResponse?.status} ${errText}`);
             }
-        }
+
+            const submitResult = await submitResponse.json();
+            const requestId = submitResult.id || submitResult.request_id;
+
+            if (!requestId) throw new Error("No request ID returned from Fireworks AI");
+
+            console.log(`Fireworks Request ID: ${requestId}`);
+
+            const resultEndpoint = `${workflowsUrl}/get_result`;
+
+            for (let attempts = 0; attempts < 60; attempts++) {
+                if (request.signal.aborted) return NextResponse.json({ error: "aborted" }, { status: 499 });
+
+                await new Promise(resolve => setTimeout(resolve, 3000 + (attempts > 5 ? 2000 : 0)));
+
+                let pollResponse;
+                try {
+                    pollResponse = await fetch(resultEndpoint, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                            "Authorization": `Bearer ${FIREWORKS_API_KEY}`
+                        },
+                        body: JSON.stringify({ id: requestId }),
+                        signal: AbortSignal.timeout(10000)
+                    });
+                } catch (e) {
+                    console.warn("Poll fetch error (network):", e);
+                    continue;
+                }
+
+                if (!pollResponse.ok) {
+                    if (pollResponse.status === 429) {
+                        const waitTime = 5000 + Math.random() * 2000;
+                        await new Promise(resolve => setTimeout(resolve, waitTime));
+                        continue;
+                    }
+                    continue;
+                }
+
+                const pollResult = await pollResponse.json();
+                const status = pollResult.status || "UNKNOWN";
+                console.log(`Poll status: ${status} (Attempt ${attempts + 1})`);
+
+                if (['Ready', 'Complete', 'Finished', 'COMPLETED', 'SUCCEEDED'].includes(status)) {
+                    const sample = pollResult.result?.sample || pollResult.output?.sample;
+                    if (sample) {
+                        if (sample.startsWith("http")) {
+                            const imgRes = await fetch(sample);
+                            const buf = await imgRes.arrayBuffer();
+                            imageData = Buffer.from(buf).toString("base64");
+                        } else {
+                            imageData = sample;
+                        }
+                    }
+                    break;
+                }
+
+                if (['Failed', 'Error', 'FAILED'].includes(status)) {
+                    throw new Error(`Generation failed: ${pollResult.details || JSON.stringify(pollResult)}`);
+                }
+            }
+        } // End of Fallback Logic
 
         if (imageData) {
             const buf = Buffer.from(imageData, "base64");
 
-            // Background removal library crashed Next.js. 
             // Relying on Flux zero-background Prompting + sharp crop/resize.
             const processed = await sharp(buf)
                 .trim()
@@ -230,7 +248,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ image: dataUrl, type: "image" });
         }
 
-        throw new Error("Timed out waiting for Fireworks AI generation");
+        throw new Error("Timed out waiting for image generation");
 
     } catch (error) {
         console.error("Sticker API Exception:", error);

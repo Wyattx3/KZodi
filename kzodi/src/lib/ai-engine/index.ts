@@ -68,19 +68,27 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     const isBurmese = responseLanguage === "Burmese (Unicode)" ||
         responseLanguage === "Burmese (Zawgyi)" ||
         responseLanguage === "Mix (Burmese + English)";
+    const isNonEnglish = responseLanguage && responseLanguage !== "English (Default)";
 
-    let brainModel = "openai/gpt-oss-120b";
-    let generationModel = "ollama/llama3.2"; // default local roleplay model
+    let brainModel: string;
+    let generationModel: string;
 
     if (isBurmese) {
-        // Grok handles both logic and output for Burmese
-        brainModel = "grok-beta";
-        generationModel = "grok-beta";
-    }
-
-    if (context === "reading") {
-        // Readings always use GPT-OSS, unless Burmese requires Grok for translation
-        generationModel = isBurmese ? "grok-beta" : "openai/gpt-oss-120b";
+        // Myanmar language (Reading and Roleplay)
+        // Fallback to Kimi is handled automatically in groq.ts if Grok fails
+        brainModel = "grok-4-1-fast-reasoning";
+        generationModel = "grok-4-1-fast-reasoning";
+    } else {
+        // Other Languages (English, Japanese, etc.)
+        if (context === "reading") {
+            // Reading context for other languages
+            brainModel = "openai/gpt-oss-120b";
+            generationModel = "openai/gpt-oss-120b";
+        } else {
+            // Roleplay chat for other languages
+            brainModel = "openai/gpt-oss-120b";
+            generationModel = "ollama/llama3.2";
+        }
     }
 
     console.log(`[AI Routing] Language: ${responseLanguage || "English"}, Brain: ${brainModel}, Generation: ${generationModel}`);
@@ -140,7 +148,8 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         context,
         isGroupChat,
         groupMembers,
-        userReadingContext
+        userReadingContext,
+        responseLanguage
     );
 
     // Build messages array
