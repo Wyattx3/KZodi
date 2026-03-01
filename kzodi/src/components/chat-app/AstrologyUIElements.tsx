@@ -1,10 +1,125 @@
 "use client";
 import React from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, CartesianGrid } from 'recharts';
 import { Sparkles, CheckCircle2, ChevronRight, Hash, Layers, Sun, Heart, Gem } from "lucide-react";
 
 /* ── UI Element Types (Thesys C1 / Perplexity Style) ── */
+import { X } from "lucide-react";
+
+export const AstroWidgetWrapper = ({ elements, types, children }: { elements: React.ReactNode[], types: string[], children?: React.ReactNode }) => {
+    const [isOpen, setIsOpen] = React.useState(false);
+
+    if (!elements || elements.length === 0) return null;
+
+    const mainType = types[0] || "Astrology Insight";
+
+    return (
+        <>
+            {/* The Mini Card in Chat (Minimalist Version) */}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                onClick={() => setIsOpen(true)}
+                style={{
+                    background: "#ffffff",
+                    borderRadius: "16px",
+                    padding: "14px 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                    border: "1px solid rgba(0,0,0,0.08)",
+                    width: "100%",
+                    maxWidth: "320px",
+                    margin: "8px 0"
+                }}
+                whileHover={{ y: -2, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
+                whileTap={{ scale: 0.98 }}
+            >
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ background: "#FAFAFA", border: "1px solid #E5E7EB", width: "40px", height: "40px", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Sparkles size={20} color="#111827" fill="#FACC15" />
+                    </div>
+                    <div>
+                        <h4 style={{ margin: 0, color: "#111827", fontSize: "14px", fontWeight: 700 }}>{mainType}</h4>
+                        <p style={{ margin: 0, color: "#6B7280", fontSize: "12px", marginTop: "2px", fontWeight: 500 }}>Tap to view details <span style={{ fontSize: "10px", verticalAlign: "middle", marginLeft: "2px" }}>→</span></p>
+                    </div>
+                </div>
+            </motion.div>
+
+            {/* The Fullscreen / Bottom Sheet Modal */}
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: "100%" }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: "100%" }}
+                        transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                        style={{
+                            position: "fixed",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: "rgba(0,0,0,0.5)",
+                            backdropFilter: "blur(4px)",
+                            zIndex: 9999,
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "flex-end"
+                        }}
+                        onClick={() => setIsOpen(false)}
+                    >
+                        <div
+                            style={{
+                                background: "#F9FAFB",
+                                width: "100%",
+                                height: "90%", // Bottom sheet style
+                                borderTopLeftRadius: "24px",
+                                borderTopRightRadius: "24px",
+                                display: "flex",
+                                flexDirection: "column",
+                                overflow: "hidden",
+                                boxShadow: "0 -4px 24px rgba(0,0,0,0.15)"
+                            }}
+                            onClick={(e) => e.stopPropagation()} // Prevent close when clicking inside
+                        >
+                            <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(0,0,0,0.05)", background: "#ffffff" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <Sparkles size={18} color="#111827" fill="#FACC15" />
+                                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#111827" }}>{mainType}</h3>
+                                </div>
+                                <button
+                                    onClick={() => setIsOpen(false)}
+                                    style={{
+                                        background: "rgba(0,0,0,0.05)",
+                                        border: "none",
+                                        borderRadius: "50%",
+                                        width: "32px",
+                                        height: "32px",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        cursor: "pointer"
+                                    }}
+                                >
+                                    <X size={18} color="#111827" />
+                                </button>
+                            </div>
+
+                            <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", alignItems: "center" }} className="no-scrollbar">
+                                {elements}
+                                {children && <div style={{ width: "100%", marginTop: "16px", color: "#111827", fontSize: "15px", lineHeight: "1.6" }}>{children}</div>}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </>
+    );
+};
 
 // Helper to map card names to classic Rider-Waite-Smith images from sacred-texts
 // Helper to map card names to local Figma-exported files in /public/tarot/
@@ -394,6 +509,7 @@ export const AstroTable = ({ title, headersStr, rowsStr }: { title: string, head
 // Extractor that works with ChatRoom rendering
 export const extractAstrologyTags = (content: string) => {
     const elements: React.ReactNode[] = [];
+    const types: string[] = [];
     let cleanText = content;
 
     // 1. Tarot: [[TAROT: Card Name | Meaning | Upright/Reversed]]
@@ -404,6 +520,7 @@ export const extractAstrologyTags = (content: string) => {
         const meaning = parts[1] ? parts[1].replace(/\]/g, '').trim() : "";
         const status = parts[2] ? parts[2].replace(/\]/g, '').trim() : "Upright";
         elements.push(<TarotCard key={`tarot-${match}`} card={card} meaning={meaning} status={status} />);
+        types.push("Tarot Draw");
         return ""; // remove from text
     });
 
@@ -414,6 +531,7 @@ export const extractAstrologyTags = (content: string) => {
         const type = parts[0] ? parts[0].replace(/\]/g, '').trim() : "Astrology Chart";
         const dataStr = parts[1] ? parts[1].replace(/\]/g, '').trim() : "";
         elements.push(<AstroChart key={`chart-${match}`} type={type} dataStr={dataStr} />);
+        types.push(type);
         return "";
     });
 
@@ -441,6 +559,7 @@ export const extractAstrologyTags = (content: string) => {
         }
 
         elements.push(<AstroTable key={`table-${match}`} title={title} headersStr={headersStr} rowsStr={rowsStr} />);
+        types.push(title);
         return "";
     });
 
@@ -452,6 +571,7 @@ export const extractAstrologyTags = (content: string) => {
         const score = parts[1] ? parts[1].replace(/\]/g, '').trim() : "5";
         const body = parts[2] ? parts[2].replace(/\]/g, '').trim() : "";
         elements.push(<AstroDailyCard key={`daily-${elements.length}`} title={title} score={score} body={body} />);
+        types.push("Daily Insight");
         return "";
     });
 
@@ -464,6 +584,7 @@ export const extractAstrologyTags = (content: string) => {
         const score = parts[2] ? parts[2].replace(/\]/g, '').trim() : "50";
         const aspect = parts[3] ? parts[3].replace(/\]/g, '').trim() : "";
         elements.push(<AstroCompatibility key={`compat-${elements.length}`} sign1={sign1} sign2={sign2} score={score} aspect={aspect} />);
+        types.push("Compatibility Options");
         return "";
     });
 
@@ -472,8 +593,9 @@ export const extractAstrologyTags = (content: string) => {
     cleanText = cleanText.replace(remedyRegex, (match, inner) => {
         const content = inner.replace(/\]/g, '').trim();
         elements.push(<AstroRemedy key={`rem-${elements.length}`} remediesStr={content} />);
+        types.push("Prescribed Remedies");
         return "";
     });
 
-    return { cleanText: cleanText.trim(), elements };
+    return { cleanText: cleanText.trim(), elements, types };
 };

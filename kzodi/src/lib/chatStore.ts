@@ -56,6 +56,9 @@ interface ChatStore {
     // Group Chat
     createGroup: (groupName: string, memberIds: string[], groupImage: string) => string;
     addGroupMember: (groupId: string, memberId: string) => void;
+    removeGroupMember: (groupId: string, memberId: string) => void;
+    sendGroupMessage: (groupId: string, content: string, senderId: string, senderName: string, attachment?: ChatMessage["attachment"], replyToId?: string) => void;
+    addGroupReply: (groupId: string, content: string, senderId: string, senderName: string, attachment?: ChatMessage["attachment"], replyToId?: string) => void;
     // Settings
     responseLanguage: string;
     setResponseLanguage: (lang: string) => void;

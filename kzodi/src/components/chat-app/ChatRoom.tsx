@@ -7,7 +7,7 @@ import CharacterProfile from "./CharacterProfile";
 import { ThumbsUp, Heart, Laugh, Sparkles, Frown } from "lucide-react";
 import AstrologerMenu from "./AstrologerMenu";
 import AstroProfileModal from "./AstroProfileModal";
-import { extractAstrologyTags } from "./AstrologyUIElements";
+import { extractAstrologyTags, AstroWidgetWrapper } from "./AstrologyUIElements";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getZodiacSign } from "@/lib/zodiac";
@@ -464,34 +464,55 @@ const STICKER_REGEX = /(\[\[\s*STICKER\s*:.*?\]+)/gi;
 
 const renderMessageContent = (content: string, character: Character) => {
     // First extract any astrology charts, tables, or tarot cards
-    const { cleanText, elements } = extractAstrologyTags(content);
+    const { cleanText, elements, types } = extractAstrologyTags(content);
 
     // Split remaining text by sticker tags, keeping the delimiters
     const parts = cleanText.split(STICKER_REGEX);
 
+    const renderParts = (partsArray: string[]) => partsArray.map((part, i) => {
+        const stickerMatch = part.match(/\[\[\s*STICKER\s*:\s*(.+?)\]+/i);
+        if (stickerMatch) {
+            const stickerPrompt = stickerMatch[1].trim();
+            // Find fallback emoji
+            const option = STICKER_OPTIONS.find(o => o.label.toLowerCase() === stickerPrompt.toLowerCase());
+            return <Sticker key={`sticker-${i}`} prompt={stickerPrompt} character={character} fallbackEmoji={option?.emoji} />;
+        }
+        if (!part || !part.trim()) return null;
+        return (
+            <div key={`text-${i}`} className="markdown-content">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{part}</ReactMarkdown>
+            </div>
+        );
+    });
+
+    if (elements.length > 0) {
+        // Extract a clean preview text by removing sticker tags and getting the first paragraph or two
+        let shortTextString = cleanText.replace(/\[\[\s*STICKER\s*:\s*(.+?)\]+/gi, '').trim();
+        // Take up to 300 characters for a slightly longer, more detailed preview
+        if (shortTextString.length > 300) {
+            shortTextString = shortTextString.substring(0, 300) + "...";
+        }
+
+        return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
+                {shortTextString && (
+                    <div style={{ wordBreak: "break-word", fontSize: "14px", opacity: 0.9 }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{shortTextString}</ReactMarkdown>
+                    </div>
+                )}
+                <AstroWidgetWrapper elements={elements} types={types}>
+                    <div style={{ wordBreak: "break-word" }}>
+                        {renderParts(parts)}
+                    </div>
+                </AstroWidgetWrapper>
+            </div>
+        );
+    }
+
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
-            {elements.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "4px" }}>
-                    {elements}
-                </div>
-            )}
             <div style={{ wordBreak: "break-word" }}>
-                {parts.map((part, i) => {
-                    const stickerMatch = part.match(/\[\[\s*STICKER\s*:\s*(.+?)\]+/i);
-                    if (stickerMatch) {
-                        const stickerPrompt = stickerMatch[1].trim();
-                        // Find fallback emoji
-                        const option = STICKER_OPTIONS.find(o => o.label.toLowerCase() === stickerPrompt.toLowerCase());
-                        return <Sticker key={`sticker-${i}`} prompt={stickerPrompt} character={character} fallbackEmoji={option?.emoji} />;
-                    }
-                    if (!part || !part.trim()) return null;
-                    return (
-                        <div key={`text-${i}`} className="markdown-content">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{part}</ReactMarkdown>
-                        </div>
-                    );
-                })}
+                {renderParts(parts)}
             </div>
         </div>
     );
