@@ -44,6 +44,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         relevantMemory,
         userId,
         userReadingContext,
+        responseLanguage,
     } = input;
 
     console.log(`\n${"═".repeat(60)}`);
@@ -63,8 +64,29 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         characterId,
     });
 
+    // ─── Routing Logic Configuration ──────────────────────────────────
+    const isBurmese = responseLanguage === "Burmese (Unicode)" ||
+        responseLanguage === "Burmese (Zawgyi)" ||
+        responseLanguage === "Mix (Burmese + English)";
+
+    let brainModel = "openai/gpt-oss-120b";
+    let generationModel = "ollama/llama3.2"; // default local roleplay model
+
+    if (isBurmese) {
+        // Grok handles both logic and output for Burmese
+        brainModel = "grok-beta";
+        generationModel = "grok-beta";
+    }
+
+    if (context === "reading") {
+        // Readings always use GPT-OSS, unless Burmese requires Grok for translation
+        generationModel = isBurmese ? "grok-beta" : "openai/gpt-oss-120b";
+    }
+
+    console.log(`[AI Routing] Language: ${responseLanguage || "English"}, Brain: ${brainModel}, Generation: ${generationModel}`);
+
     // ─── Phase 2: Brain Reasoning (LLM thinking call) ──────────────────
-    // With 5 API keys load-balanced, Brain ALWAYS runs for maximum quality.
+    // With dynamic model routing, Brain ALWAYS runs for maximum quality.
     // Only skip for truly empty messages (comfort follow-ups with no user input).
     const { getFallbackBrainStateFromHeart } = await import("./brain");
 
@@ -81,7 +103,8 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
                 history.map(h => ({ role: h.role, content: h.content || "" })),
                 relevantMemory,
                 context,
-                userReadingContext
+                userReadingContext,
+                brainModel
             );
             // 15s timeout — fail fast to fallback
             const timeoutPromise = new Promise<never>((_, reject) =>
@@ -149,7 +172,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     const result = await groq.chat(
         {
             messages,
-            model: MODELS.CHAT,
+            model: generationModel,
             temperature,
             max_tokens: maxTokens,
         },
@@ -166,7 +189,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     // Analyze AI's own sentiment for timing calculations
     const textForSentiment = content
         .replace(/\|/g, " ")
-        .replace(/\[\[STICKER:.*?\]\]/gi, "")
+        .replace(/\[\[\s*STICKER\s*:.*?\]+/gi, "")
         .replace(/\[\[REACT:.*?\]\]/gi, "")
         .trim();
     const aiSentiment = sentimentAnalyzer.analyze(textForSentiment);

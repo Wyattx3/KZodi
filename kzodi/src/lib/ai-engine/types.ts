@@ -83,8 +83,10 @@ export interface EngineInput {
     characterTag: string;
     /** Conversation history */
     history: { id?: string; role: string; content: string; attachment?: { type: string; url: string } }[];
-    /** Conversation context type */
-    context: "reply" | "proactive" | "proactive-cold" | "proactive-friendly" | "comfort";
+    /**
+     * Context of the conversation (reply vs proactive vs reading etc.)
+     */
+    context: "reply" | "proactive" | "proactive-cold" | "proactive-friendly" | "comfort" | "reading";
     /** Group chat settings */
     isGroupChat: boolean;
     groupMembers: string[];
@@ -94,6 +96,8 @@ export interface EngineInput {
     userId: string;
     /** Astrology reading context for astrologer characters */
     userReadingContext?: string;
+    /** User's preferred response language */
+    responseLanguage?: string;
 }
 
 export interface EngineOutput {

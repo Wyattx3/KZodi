@@ -19,6 +19,7 @@ interface RoleplayRequest {
     isGroupChat?: boolean;
     groupMembers?: string[];
     groupImage?: string;
+    responseLanguage?: string;
 }
 
 // ─── Pinecone Setup ─────────────────────────────────────────────────────────
@@ -267,7 +268,8 @@ export async function POST(request: NextRequest) {
             history,
             context = "reply",
             isGroupChat = false,
-            groupMembers = []
+            groupMembers = [],
+            responseLanguage = "English (Default)"
         } = body;
 
         const effectiveCharacterId = reqCharId || characterName;
@@ -324,6 +326,7 @@ export async function POST(request: NextRequest) {
             relevantMemory: relevantContext,
             userId,
             userReadingContext,
+            responseLanguage,
         };
 
         const engineOutput = await processMessage(engineInput);

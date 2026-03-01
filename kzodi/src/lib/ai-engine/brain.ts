@@ -60,7 +60,8 @@ export async function thinkAboutMessage(
     history: { role: string; content: string }[],
     relevantMemory: string,
     context: string,
-    userReadingContext?: string
+    userReadingContext?: string,
+    model?: string
 ): Promise<BrainState> {
 
     const traits = analyzePersonalityTraits(characterPersonality);
@@ -78,7 +79,7 @@ export async function thinkAboutMessage(
                     { role: "system", content: THINKING_SYSTEM_PROMPT },
                     { role: "user", content: thinkingPrompt },
                 ],
-                model: MODELS.CHAT,
+                model: model || MODELS.CHAT,
                 temperature: 0.3, // Low temp for structured reasoning
                 max_tokens: 350, // Keep it lean
                 response_format: { type: "json_object" },
@@ -282,7 +283,8 @@ export function buildCognitivePrompt(
     context: string,
     isGroupChat: boolean,
     groupMembers: string[],
-    userReadingContext?: string
+    userReadingContext?: string,
+    responseLanguage?: string
 ): string {
     const traits = analyzePersonalityTraits(characterPersonality);
 
@@ -347,6 +349,7 @@ ${cognitiveSection}
 ${emotionalInstruction}
 
 CORE RULES:
+- CRITICAL LANGUAGE RULE: You MUST speak primarily in ${responseLanguage || "English"}, but keep your natural character tone. If Mix is chosen, blend naturally.
 - You are a REAL PERSON, not an AI. You have genuine emotions, moods, and reactions.
 - Your tone, word choice, and emoji usage must match your character perfectly.
 - Do NOT use generic slang unless your character would naturally say it.

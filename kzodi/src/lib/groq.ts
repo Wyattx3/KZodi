@@ -272,7 +272,7 @@ class TPMTracker {
   }
 }
 
-// ─── Groq Client ─────────────────────────────────────────────────────────────
+// ─── Groq + xAI + Ollama Unified Client ──────────────────────────────────────
 
 export interface GroqMessage {
   role: "system" | "user" | "assistant";
@@ -292,13 +292,13 @@ export interface GroqResponse {
   finish_reason: string;
   truncated: boolean;
   cached: boolean;
+  provider?: string;
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Rough token estimation (conservative: ~3 chars per token for mixed content) */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
 }
@@ -309,7 +309,19 @@ function generateCacheKey(params: GroqChatParams, prefix: string): string {
   return `${prefix}:${model}:${params.temperature ?? 0.7}:${params.max_tokens ?? 1000}:${msgKey}`;
 }
 
-class GroqClient {
+export const PROVIDERS = {
+  GROQ: "groq",
+  XAI: "xai",
+  OLLAMA: "ollama"
+};
+
+function determineProvider(model: string): string {
+  if (model.includes("grok")) return PROVIDERS.XAI;
+  if (model.includes("ollama")) return PROVIDERS.OLLAMA;
+  return PROVIDERS.GROQ; // default to Groq
+}
+
+class MultiProviderClient {
   private queues: Map<string, RequestQueue> = new Map();
   private cache: LRUCache;
   private tpm: TPMTracker;
@@ -321,7 +333,9 @@ class GroqClient {
 
   private getQueue(model: string): RequestQueue {
     if (!this.queues.has(model)) {
-      this.queues.set(model, new RequestQueue(2));
+      // Allow more concurrency for Ollama since it's local
+      const isOllama = model.includes("ollama");
+      this.queues.set(model, new RequestQueue(isOllama ? 4 : 2));
     }
     return this.queues.get(model)!;
   }
@@ -337,7 +351,7 @@ class GroqClient {
       const cacheKey = generateCacheKey(params, cachePrefix);
       const cached = this.cache.get(cacheKey);
       if (cached) {
-        console.log(`[Groq] Cache hit (${cachePrefix})`);
+        console.log(`[AI] Cache hit (${cachePrefix})`);
         return { content: cached, finish_reason: "cached", truncated: false, cached: true };
       }
     }
@@ -349,7 +363,7 @@ class GroqClient {
 
     // Auto-fallback: if primary model returns empty/too-short, try fallback model
     if ((!result.content || result.content.length < 10) && model === MODEL && FALLBACK_MODEL) {
-      console.warn(`[Groq] Primary model empty (${result.content.length} chars). Auto-fallback to ${FALLBACK_MODEL}...`);
+      console.warn(`[AI] Primary model empty (${result.content.length} chars). Auto-fallback to ${FALLBACK_MODEL}...`);
       const fallbackParams = { ...params, model: FALLBACK_MODEL };
       const fbQueue = this.getQueue(FALLBACK_MODEL);
       const fbResult = await fbQueue.enqueue(() => this.callWithRetry(fallbackParams, maxRetries, useCache ? cachePrefix : null));
@@ -368,30 +382,54 @@ class GroqClient {
   ): Promise<GroqResponse> {
     const backoffs = [1000, 2000, 4000, 8000];
     const model = params.model || MODELS.CHAT;
+    const provider = determineProvider(model);
 
-    // Estimate tokens for TPM tracking
+    // Estimate tokens
     const inputText = params.messages.map((m) => m.content).join("");
     const estimatedInput = estimateTokens(inputText);
     const estimatedTotal = estimatedInput + (params.max_tokens || 1000);
 
-    // TPM-aware delay: wait if we'd exceed the limit
-    const delay = this.tpm.getRequiredDelay(model, estimatedTotal);
-    if (delay > 0) {
-      console.log(`[Groq] TPM throttle: waiting ${delay}ms before request to ${model} (current: ${this.tpm.getCurrentTPM(model)} TPM)`);
-      await sleep(delay);
+    // TPM tracking (only for cloud APIs)
+    if (provider !== PROVIDERS.OLLAMA) {
+      const delay = this.tpm.getRequiredDelay(model, estimatedTotal);
+      if (delay > 0) {
+        console.log(`[AI] TPM throttle: waiting ${delay}ms before request to ${model} (current: ${this.tpm.getCurrentTPM(model)} TPM)`);
+        await sleep(delay);
+      }
     }
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const currentKey = keyPool.getKey();
-        if (!currentKey) {
-          console.error("[Groq] No API key available");
-          return { content: "", finish_reason: "error", truncated: false, cached: false };
+        let apiUrl = "";
+        let apiKey = "";
+        let headers: Record<string, string> = { "Content-Type": "application/json" };
+        let requestModel = model;
+
+        if (provider === PROVIDERS.XAI) {
+          apiUrl = "https://api.x.ai/v1/chat/completions";
+          apiKey = process.env.XAI_API_KEY || "";
+          if (!apiKey) {
+            console.warn("[AI] XAI_API_KEY missing, falling back to Groq Kimi");
+            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+          }
+          headers.Authorization = `Bearer ${apiKey}`;
+        } else if (provider === PROVIDERS.GROQ) {
+          apiUrl = GROQ_URL;
+          const currentKey = keyPool.getKey();
+          if (!currentKey) {
+            console.error("[AI] No Groq API key available");
+            return { content: "", finish_reason: "error", truncated: false, cached: false, provider };
+          }
+          apiKey = currentKey.key;
+          headers.Authorization = `Bearer ${apiKey}`;
+        } else if (provider === PROVIDERS.OLLAMA) {
+          apiUrl = "http://localhost:11434/api/chat";
+          // strip "ollama/" prefix from model name if present
+          requestModel = model.replace(/^ollama\//, "");
         }
 
-        // On json_validate_failed retry, reinforce JSON instruction in messages
         let messages = params.messages;
-        if (attempt > 0 && params.response_format) {
+        if (attempt > 0 && params.response_format && provider !== PROVIDERS.OLLAMA) {
           messages = [
             ...params.messages,
             { role: "user", content: "Remember: respond ONLY with a valid JSON object starting with { — no other text." },
@@ -399,117 +437,125 @@ class GroqClient {
         }
 
         const body: Record<string, unknown> = {
-          model,
+          model: requestModel,
           messages,
-          temperature: params.temperature ?? 0.7,
-          max_tokens: params.max_tokens ?? 1000,
         };
-        if (params.response_format) {
-          body.response_format = params.response_format;
+
+        if (provider === PROVIDERS.OLLAMA) {
+          body.stream = false;
+          body.options = {
+            temperature: params.temperature ?? 0.7,
+            num_predict: params.max_tokens ?? 1000
+          };
+        } else {
+          body.temperature = params.temperature ?? 0.7;
+          body.max_tokens = params.max_tokens ?? 1000;
+          if (params.response_format) body.response_format = params.response_format;
         }
 
-        console.log(`[Groq] ${model} attempt ${attempt + 1}/${maxRetries + 1} [${currentKey.label}], TPM: ${this.tpm.getCurrentTPM(model)}/${MODEL_TPM_LIMITS[model] || "??"}`);
+        console.log(`[AI][${provider}] ${model} attempt ${attempt + 1}/${maxRetries + 1}`);
 
         const fetchController = new AbortController();
         const fetchTimeout = setTimeout(() => fetchController.abort(), 60000);
-        const res = await fetch(GROQ_URL, {
+        const res = await fetch(apiUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${currentKey.key}`,
-          },
+          headers,
           body: JSON.stringify(body),
           signal: fetchController.signal,
         });
         clearTimeout(fetchTimeout);
 
-        // Handle rate limiting (429) — mark key and switch to another
-        if (res.status === 429) {
+        // Rate Limit Handling
+        if (res.status === 429 && provider === PROVIDERS.GROQ) {
           const retryAfter = res.headers.get("retry-after");
           const cooldownMs = retryAfter ? parseInt(retryAfter) * 1000 : 60000;
-          console.warn(`[Groq] Rate limited (429) on ${model} [${currentKey.label}]. Marking key for ${cooldownMs}ms`);
-          keyPool.markRateLimited(currentKey.key, cooldownMs);
-          // Don't sleep — just continue to next attempt which picks a different key
-          if (attempt < maxRetries) {
-            continue;
-          }
-          return { content: "", finish_reason: "rate_limited", truncated: false, cached: false };
+          console.warn(`[AI] Rate limited (429) on ${model}. Cooldown ${cooldownMs}ms`);
+          keyPool.markRateLimited(apiKey, cooldownMs);
+          if (attempt < maxRetries) continue;
+          return { content: "", finish_reason: "rate_limited", truncated: false, cached: false, provider };
         }
 
-        // Handle server errors (5xx)
         if (res.status >= 500) {
           const waitMs = backoffs[attempt] || 8000;
-          console.warn(`[Groq] Server error (${res.status}) on ${model}. Wait ${waitMs}ms`);
+          console.warn(`[AI] Server error (${res.status}) on ${model}. Wait ${waitMs}ms`);
           if (attempt < maxRetries) {
             await sleep(waitMs);
             continue;
           }
-          return { content: "", finish_reason: "server_error", truncated: false, cached: false };
+          // if xAI fails, fallback to Groq Kimi if it was Grok
+          if (provider === PROVIDERS.XAI && model.includes("grok")) {
+            console.warn(`[AI] xAI failed consistently, falling back to Groq ${FALLBACK_MODEL}`);
+            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+          }
+          return { content: "", finish_reason: "server_error", truncated: false, cached: false, provider };
         }
 
         if (!res.ok) {
           const errText = await res.text();
-          console.error(`[Groq] Error ${res.status} on ${model}: ${errText.slice(0, 300)}`);
-
-          // Retry on 400 errors (json_validate_failed, bad request, etc.)
-          if (res.status === 400) {
-            console.warn(`[Groq] 400 error on ${model}. Retrying... (attempt ${attempt + 1})`);
+          console.error(`[AI] Error ${res.status} on ${model}: ${errText.slice(0, 300)}`);
+          if (res.status === 400 || (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403)) {
             if (attempt < maxRetries) {
               await sleep(backoffs[attempt] || 2000);
               continue;
             }
           }
-
-          // Retry on any 4xx (except 401/403 auth errors)
-          if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403) {
-            if (attempt < maxRetries) {
-              await sleep(backoffs[attempt] || 2000);
-              continue;
-            }
+          if (provider === PROVIDERS.XAI && model.includes("grok")) {
+            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
           }
-
-          return { content: "", finish_reason: "error", truncated: false, cached: false };
+          return { content: "", finish_reason: "error", truncated: false, cached: false, provider };
         }
 
         // Success
-        const data = await res.json();
-        const choice = data.choices?.[0];
-        const content = choice?.message?.content || "";
-        const finishReason = choice?.finish_reason || "unknown";
-        const truncated = finishReason === "length";
+        let content = "";
+        let finishReason = "unknown";
+        let truncated = false;
 
-        // Track actual token usage
-        const usage = data.usage;
-        if (usage) {
-          this.tpm.record(model, (usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
-          console.log(`[Groq] ${model} tokens: ${usage.prompt_tokens}in + ${usage.completion_tokens}out = ${usage.total_tokens}total`);
+        const data = await res.json();
+        if (provider === PROVIDERS.OLLAMA) {
+          content = data.message?.content || "";
+          finishReason = data.done ? "stop" : "unknown";
+          // Optional: map Ollama specific metrics here if wanted
         } else {
-          this.tpm.record(model, estimatedTotal);
+          const choice = data.choices?.[0];
+          content = choice?.message?.content || "";
+          finishReason = choice?.finish_reason || "unknown";
+          truncated = finishReason === "length";
+
+          const usage = data.usage;
+          if (usage) {
+            this.tpm.record(model, (usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
+            console.log(`[AI][${provider}] ${model} tokens: ${usage.prompt_tokens}in + ${usage.completion_tokens}out = ${usage.total_tokens}total`);
+          } else {
+            this.tpm.record(model, estimatedTotal);
+          }
         }
 
         if (truncated) {
-          console.warn(`[Groq] TRUNCATED on ${model}! finish_reason=length, max_tokens=${params.max_tokens}. Output: ${content.length} chars`);
+          console.warn(`[AI] TRUNCATED on ${model}! finish_reason=length, max_tokens=${params.max_tokens}. Output: ${content.length} chars`);
         }
 
-        console.log(`[Groq] ${model} OK: ${content.length} chars, reason=${finishReason}`);
+        console.log(`[AI][${provider}] OK: ${content.length} chars, reason=${finishReason}`);
 
         if (cachePrefix && content) {
           const cacheKey = generateCacheKey(params, cachePrefix);
           this.cache.set(cacheKey, content);
         }
 
-        return { content, finish_reason: finishReason, truncated, cached: false };
+        return { content, finish_reason: finishReason, truncated, cached: false, provider };
       } catch (err) {
-        console.error(`[Groq] Exception on ${model} attempt ${attempt + 1}:`, err);
+        console.error(`[AI] Exception on ${model} attempt ${attempt + 1}:`, err);
         if (attempt < maxRetries) {
           await sleep(backoffs[attempt] || 4000);
           continue;
         }
-        return { content: "", finish_reason: "exception", truncated: false, cached: false };
+        if (provider === PROVIDERS.XAI && model.includes("grok")) {
+          return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+        }
+        return { content: "", finish_reason: "exception", truncated: false, cached: false, provider };
       }
     }
 
-    return { content: "", finish_reason: "exhausted_retries", truncated: false, cached: false };
+    return { content: "", finish_reason: "exhausted_retries", truncated: false, cached: false, provider: determineProvider(model) };
   }
 
   get stats() {
@@ -527,7 +573,9 @@ class GroqClient {
 
 // ─── Singleton Export ────────────────────────────────────────────────────────
 
-export const groq = new GroqClient();
+export const aiClient = new MultiProviderClient();
+// Alias for backward compatibility while we refactor everywhere
+export const groq = aiClient;
 
 // ─── Language Names (shared across routes) ───────────────────────────────────
 

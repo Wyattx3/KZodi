@@ -460,7 +460,7 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
 };
 
 // Parse message content for sticker tags
-const STICKER_REGEX = /(\[\[\s*STICKER\s*:.*?\]\])/gi;
+const STICKER_REGEX = /(\[\[\s*STICKER\s*:.*?\]+)/gi;
 
 const renderMessageContent = (content: string, character: Character) => {
     // First extract any astrology charts, tables, or tarot cards
@@ -478,7 +478,7 @@ const renderMessageContent = (content: string, character: Character) => {
             )}
             <div style={{ wordBreak: "break-word" }}>
                 {parts.map((part, i) => {
-                    const stickerMatch = part.match(/\[\[\s*STICKER\s*:\s*(.+?)\]\]/i);
+                    const stickerMatch = part.match(/\[\[\s*STICKER\s*:\s*(.+?)\]+/i);
                     if (stickerMatch) {
                         const stickerPrompt = stickerMatch[1].trim();
                         // Find fallback emoji
@@ -879,6 +879,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         // Don't show typing yet — wait for seen to appear first
 
         try {
+            const responseLanguage = useChatStore.getState().responseLanguage;
             const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
             const history = currentMessages.map((m) => ({
                 id: m.id,
@@ -900,6 +901,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     context: "reply",
                     isGroupChat: false,
                     groupMembers: [],
+                    responseLanguage,
                 }),
             });
 
@@ -1333,7 +1335,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         // Then split any part that contains both text and sticker so they become separate bubbles
         const finalParts: string[] = [];
         // Robust regex: case insensitive, allows spaces
-        const stickerRegex = /(\[\[\s*STICKER\s*:.*?\]\])/gi;
+        const stickerRegex = /(\[\[\s*STICKER\s*:.*?\]+)/gi;
 
         for (const part of initialParts) {
             const subParts = part
@@ -1360,7 +1362,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
-            const isSticker = /^\[\[\s*STICKER\s*:.*?\]\]$/i.test(part.trim());
+            const isSticker = /^\[\[\s*STICKER\s*:.*?\]+$/i.test(part.trim());
 
             // ─── REALISTIC PAUSE BETWEEN MESSAGES ───
             // Instead of instantly typing the next message, a real person pauses
@@ -1737,248 +1739,251 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 </div>
             </motion.div>
 
-            {/* ── Messages Area ──────────────────── */}
-            <div className="chatroom-messages-area">
+            {/* ── Messages Area / Setup Area ───────── */}
+            <div className="chatroom-messages-area relative">
 
-                <div className="chatroom-messages no-scrollbar">
-                    {/* Date separator */}
-                    <div className="chatroom-date-sep">
-                        <span>Today</span>
+                {needsSpecialistSetup ? (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-4 bg-[#FFFDF5]/80 backdrop-blur-sm overflow-y-auto">
+                        <SpecialistSetup
+                            characterName={character.name}
+                            specialtyType={character.name}
+                            onComplete={handleSetupComplete}
+                        />
                     </div>
+                ) : (
+                    <div className="chatroom-messages no-scrollbar">
+                        {/* Date separator */}
+                        <div className="chatroom-date-sep">
+                            <span>Today</span>
+                        </div>
 
-                    <AnimatePresence initial={false}>
-                        {messages.map((msg, i) => {
-                            const prevMsg = messages[i - 1];
-                            const isNewConversation = prevMsg && (msg.timestamp - prevMsg.timestamp > 15 * 60 * 1000);
-                            const isUnreadMarker = msg.id === unreadMarkerId;
+                        <AnimatePresence initial={false}>
+                            {messages.map((msg, i) => {
+                                const prevMsg = messages[i - 1];
+                                const isNewConversation = prevMsg && (msg.timestamp - prevMsg.timestamp > 15 * 60 * 1000);
+                                const isUnreadMarker = msg.id === unreadMarkerId;
 
-                            const isVeryLastInArray = i === messages.length - 1;
-                            const isNextDiff = messages[i + 1]?.role !== msg.role || (messages[i + 1]?.senderId || null) !== (msg.senderId || null);
-                            const isSenderTyping = isTyping && msg.role === "assistant" && (!isGroupChat || msg.senderName === typingMemberName);
-                            // Hide the avatar on the last message if the sender is currently typing right below it
-                            const isLastInGroup = isVeryLastInArray ? !isSenderTyping : isNextDiff;
+                                const isVeryLastInArray = i === messages.length - 1;
+                                const isNextDiff = messages[i + 1]?.role !== msg.role || (messages[i + 1]?.senderId || null) !== (msg.senderId || null);
+                                const isSenderTyping = isTyping && msg.role === "assistant" && (!isGroupChat || msg.senderName === typingMemberName);
+                                // Hide the avatar on the last message if the sender is currently typing right below it
+                                const isLastInGroup = isVeryLastInArray ? !isSenderTyping : isNextDiff;
 
-                            return (
-                                <React.Fragment key={msg.id}>
-                                    {isNewConversation && !isUnreadMarker && (
-                                        <motion.div
-                                            initial={{ opacity: 0, y: -5 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            style={{
-                                                textAlign: "center",
-                                                margin: "16px 0 8px",
-                                                fontSize: "11px",
-                                                color: "#8B8680",
-                                                fontWeight: 600,
-                                                letterSpacing: "0.5px"
+                                return (
+                                    <React.Fragment key={msg.id}>
+                                        {isNewConversation && !isUnreadMarker && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: -5 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                style={{
+                                                    textAlign: "center",
+                                                    margin: "16px 0 8px",
+                                                    fontSize: "11px",
+                                                    color: "#8B8680",
+                                                    fontWeight: 600,
+                                                    letterSpacing: "0.5px"
+                                                }}
+                                            >
+                                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </motion.div>
+                                        )}
+                                        {isUnreadMarker && (
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0.9 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                exit={{ opacity: 0, scale: 0.9, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: 0.3 } }}
+                                                style={{
+                                                    marginTop: 24,
+                                                    marginBottom: 8,
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    width: "100%",
+                                                    position: "relative"
+                                                }}
+                                            >
+                                                <div style={{ position: "absolute", left: -16, right: -16, height: 1, background: "rgba(56, 163, 253, 0.2)" }} />
+                                                <span style={{
+                                                    background: "rgba(56, 163, 253, 0.15)",
+                                                    color: "#38a3fd",
+                                                    fontWeight: 600,
+                                                    fontSize: "12px",
+                                                    padding: "4px 12px",
+                                                    borderRadius: "12px",
+                                                    position: "relative",
+                                                    zIndex: 1,
+                                                    backdropFilter: "blur(4px)"
+                                                }}>New message</span>
+                                            </motion.div>
+                                        )}
+                                        <MessageBubble
+                                            message={msg}
+                                            character={character}
+                                            charMap={charMap}
+                                            isFirst={i === 0 || prevMsg?.role !== msg.role || (prevMsg?.senderId || null) !== (msg.senderId || null) || Boolean(isNewConversation || isUnreadMarker)}
+                                            isLast={isLastInGroup}
+                                            onReply={(msg) => {
+                                                setReplyingTo(msg);
+                                                setTimeout(() => inputRef.current?.focus(), 50);
                                             }}
-                                        >
-                                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </motion.div>
-                                    )}
-                                    {isUnreadMarker && (
-                                        <motion.div
-                                            initial={{ opacity: 0, scale: 0.9 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            exit={{ opacity: 0, scale: 0.9, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: 0.3 } }}
-                                            style={{
-                                                marginTop: 24,
-                                                marginBottom: 8,
-                                                display: "flex",
-                                                alignItems: "center",
-                                                justifyContent: "center",
-                                                width: "100%",
-                                                position: "relative"
+                                            replyMessage={msg.replyToId ? messages.find(m => m.id === msg.replyToId) : undefined}
+                                            onReaction={(msgId, emoji) => {
+                                                const hasReacted = msg.reactions?.[emoji]?.includes(USER_CHARACTER.id);
+                                                if (hasReacted) {
+                                                    useChatStore.getState().removeReaction(character.id, msgId, emoji, USER_CHARACTER.id);
+                                                } else {
+                                                    useChatStore.getState().addReaction(character.id, msgId, emoji, USER_CHARACTER.id);
+                                                }
                                             }}
-                                        >
-                                            <div style={{ position: "absolute", left: -16, right: -16, height: 1, background: "rgba(56, 163, 253, 0.2)" }} />
-                                            <span style={{
-                                                background: "rgba(56, 163, 253, 0.15)",
-                                                color: "#38a3fd",
-                                                fontWeight: 600,
-                                                fontSize: "12px",
-                                                padding: "4px 12px",
-                                                borderRadius: "12px",
-                                                position: "relative",
-                                                zIndex: 1,
-                                                backdropFilter: "blur(4px)"
-                                            }}>New message</span>
-                                        </motion.div>
-                                    )}
-                                    <MessageBubble
-                                        message={msg}
-                                        character={character}
-                                        charMap={charMap}
-                                        isFirst={i === 0 || prevMsg?.role !== msg.role || (prevMsg?.senderId || null) !== (msg.senderId || null) || Boolean(isNewConversation || isUnreadMarker)}
-                                        isLast={isLastInGroup}
-                                        onReply={(msg) => {
-                                            setReplyingTo(msg);
-                                            setTimeout(() => inputRef.current?.focus(), 50);
-                                        }}
-                                        replyMessage={msg.replyToId ? messages.find(m => m.id === msg.replyToId) : undefined}
-                                        onReaction={(msgId, emoji) => {
-                                            const hasReacted = msg.reactions?.[emoji]?.includes(USER_CHARACTER.id);
-                                            if (hasReacted) {
-                                                useChatStore.getState().removeReaction(character.id, msgId, emoji, USER_CHARACTER.id);
-                                            } else {
-                                                useChatStore.getState().addReaction(character.id, msgId, emoji, USER_CHARACTER.id);
-                                            }
-                                        }}
-                                        activeActionMenuId={activeActionMenuId}
-                                        setActiveActionMenuId={setActiveActionMenuId}
-                                    />
-                                </React.Fragment>
-                            );
-                        })}
-                    </AnimatePresence>
+                                            activeActionMenuId={activeActionMenuId}
+                                            setActiveActionMenuId={setActiveActionMenuId}
+                                        />
+                                    </React.Fragment>
+                                );
+                            })}
+                        </AnimatePresence>
 
-                    {/* Typing indicator */}
-                    <AnimatePresence>
-                        {isTyping && (
-                            <motion.div
-                                className="chatroom-typing"
-                                initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                                transition={{ duration: 0.2 }}
-                            >
-                                <div className="chatroom-typing-avatar">
-                                    <img src={
-                                        typingMemberName
-                                            ? (groupMemberChars.find(c => c.name === typingMemberName)?.image || character.image)
-                                            : character.image
-                                    } alt="" />
-                                </div>
-                                <div className="chatroom-typing-bubble">
-
-                                    <div className="typing-dots">
-                                        <span />
-                                        <span />
-                                        <span />
+                        {/* Typing indicator */}
+                        <AnimatePresence>
+                            {isTyping && (
+                                <motion.div
+                                    className="chatroom-typing"
+                                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                                    transition={{ duration: 0.2 }}
+                                >
+                                    <div className="chatroom-typing-avatar">
+                                        <img src={
+                                            typingMemberName
+                                                ? (groupMemberChars.find(c => c.name === typingMemberName)?.image || character.image)
+                                                : character.image
+                                        } alt="" />
                                     </div>
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                                    <div className="chatroom-typing-bubble">
 
-                    <div ref={messagesEndRef} />
-                </div>
+                                        <div className="typing-dots">
+                                            <span />
+                                            <span />
+                                            <span />
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        <div ref={messagesEndRef} />
+                    </div>
+                )}
             </div>
 
-            {/* ── Input Bar / Blocked State / Setup State ───────── */}
-            {needsSpecialistSetup ? (
-                <div className="chatroom-input-bar">
-                    <SpecialistSetup
-                        characterName={character.name}
-                        specialtyType={character.name}
-                        onComplete={handleSetupComplete}
-                    />
-                </div>
-            ) : isBlocked ? (
-                <motion.div
-                    className="chatroom-input-bar"
-                    style={{ justifyContent: "center", padding: "16px", background: "rgba(255,255,255,0.8)", borderTop: "1px solid rgba(0,0,0,0.05)" }}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                >
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
-                        <span style={{ color: "#8B8680", fontSize: "14px" }}>You blocked this account. You cannot send or receive messages.</span>
-                        <button
-                            onClick={() => useChatStore.getState().toggleBlock(character.id)}
-                            style={{ background: "none", border: "none", color: "#38a3fd", fontWeight: 600, fontSize: "15px", cursor: "pointer" }}
-                        >
-                            Unblock
-                        </button>
-                    </div>
-                </motion.div>
-            ) : (
-                <div
-                    className="chatroom-input-bar"
-                >
-                    <div className="chatroom-input-wrap" style={replyingTo ? { flexDirection: "column", padding: 0 } : undefined}>
-                        {replyingTo && (
-                            <div style={{
-                                width: "100%", padding: "8px 12px 8px 16px", background: "transparent",
-                                display: "flex", alignItems: "center", justifyContent: "space-between",
-                                fontSize: "13px"
-                            }}>
-                                <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", borderLeft: "3px solid #38A3FD", paddingLeft: "10px" }}>
-                                    <span style={{ fontWeight: 600, color: "#38A3FD", fontSize: "12px", marginBottom: "2px" }}>
-                                        {replyingTo.role === "user" ? "You" : character.name}
-                                    </span>
-                                    <span style={{ WebkitLineClamp: 1, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", opacity: 0.7, fontSize: "13px" }}>
-                                        {replyingTo.content || "Attachment"}
-                                    </span>
-                                </div>
-                                <button onClick={() => setReplyingTo(null)} style={{ background: "none", border: "none", cursor: "pointer", opacity: 0.5, padding: "4px" }}>
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                                </button>
-                            </div>
-                        )}
-                        <div style={{ display: "flex", width: "100%", alignItems: "center", padding: replyingTo ? "0" : undefined }}>
-                            {input.length === 0 && (
-                                <div
-                                    className="chatroom-input-actions"
-                                    style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
-                                >
-                                    <label
-                                        className="chatroom-input-attach"
-                                        aria-label="Attach Image"
-                                        style={{ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", margin: 0, padding: 0 }}
-                                    >
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={handleFileChange}
-                                            style={{ width: 0, height: 0, position: "absolute", visibility: "hidden" }}
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                    </label>
-                                    <button
-                                        type="button"
-                                        className="chatroom-input-attach"
-                                        aria-label="Send Sticker"
-                                        onClick={() => setShowStickerPicker(!showStickerPicker)}
-                                        style={{ marginLeft: 8, marginRight: 8, flexShrink: 0 }}
-                                    >
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="1.5" />
-                                            <path d="M8 14C8 14 9.5 16 12 16C14.5 16 16 14 16 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M9 9H9.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
+            {/* ── Input Bar / Blocked State ───────── */}
+            {!needsSpecialistSetup ? (
+                isBlocked ? (
+                    <motion.div
+                        className="chatroom-input-bar"
+                        style={{ justifyContent: "center", padding: "16px", background: "rgba(255,255,255,0.8)", borderTop: "1px solid rgba(0,0,0,0.05)" }}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                    >
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", textAlign: "center" }}>
+                            <span style={{ color: "#8B8680", fontSize: "14px" }}>You blocked this account. You cannot send or receive messages.</span>
+                            <button
+                                onClick={() => useChatStore.getState().toggleBlock(character.id)}
+                                style={{ background: "none", border: "none", color: "#38a3fd", fontWeight: 600, fontSize: "15px", cursor: "pointer" }}
+                            >
+                                Unblock
+                            </button>
+                        </div>
+                    </motion.div>
+                ) : (
+                    <div
+                        className="chatroom-input-bar"
+                    >
+                        <div className="chatroom-input-wrap" style={replyingTo ? { flexDirection: "column", padding: 0 } : undefined}>
+                            {replyingTo && (
+                                <div style={{
+                                    width: "100%", padding: "8px 12px 8px 16px", background: "transparent",
+                                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                                    fontSize: "13px"
+                                }}>
+                                    <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", borderLeft: "3px solid #38A3FD", paddingLeft: "10px" }}>
+                                        <span style={{ fontWeight: 600, color: "#38A3FD", fontSize: "12px", marginBottom: "2px" }}>
+                                            {replyingTo.role === "user" ? "You" : character.name}
+                                        </span>
+                                        <span style={{ WebkitLineClamp: 1, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", opacity: 0.7, fontSize: "13px" }}>
+                                            {replyingTo.content || "Attachment"}
+                                        </span>
+                                    </div>
+                                    <button onClick={() => setReplyingTo(null)} style={{ background: "none", border: "none", cursor: "pointer", opacity: 0.5, padding: "4px" }}>
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
                                     </button>
                                 </div>
                             )}
-                            <textarea
-                                ref={inputRef}
-                                className="chatroom-input no-scrollbar"
-                                placeholder={`Message ${character.name.split(" ")[0]}...`}
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                rows={1}
-                                style={{ paddingLeft: input.length > 0 ? "12px" : "0", paddingTop: replyingTo ? "12px" : undefined, paddingBottom: replyingTo ? "12px" : undefined }}
-                            />
-                            {input.trim() && (
-                                <button
-                                    className="chatroom-send chatroom-send-active"
-                                    onClick={() => handleSend()}
-                                    aria-label="Send message"
-                                    style={{ marginLeft: 4, flexShrink: 0 }}
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                                    </svg>
-                                </button>
-                            )}
+                            <div style={{ display: "flex", width: "100%", alignItems: "center", padding: replyingTo ? "0" : undefined }}>
+                                {input.length === 0 && (
+                                    <div
+                                        className="chatroom-input-actions"
+                                        style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
+                                    >
+                                        <label
+                                            className="chatroom-input-attach"
+                                            aria-label="Attach Image"
+                                            style={{ display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", margin: 0, padding: 0 }}
+                                        >
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={handleFileChange}
+                                                style={{ width: 0, height: 0, position: "absolute", visibility: "hidden" }}
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        </label>
+                                        <button
+                                            type="button"
+                                            className="chatroom-input-attach"
+                                            aria-label="Send Sticker"
+                                            onClick={() => setShowStickerPicker(!showStickerPicker)}
+                                            style={{ marginLeft: 8, marginRight: 8, flexShrink: 0 }}
+                                        >
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="1.5" />
+                                                <path d="M8 14C8 14 9.5 16 12 16C14.5 16 16 14 16 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M9 9H9.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                )}
+                                <textarea
+                                    ref={inputRef}
+                                    className="chatroom-input no-scrollbar"
+                                    placeholder={`Message ${character.name.split(" ")[0]}...`}
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    rows={1}
+                                    style={{ paddingLeft: input.length > 0 ? "12px" : "0", paddingTop: replyingTo ? "12px" : undefined, paddingBottom: replyingTo ? "12px" : undefined }}
+                                />
+                                {input.trim() && (
+                                    <button
+                                        className="chatroom-send chatroom-send-active"
+                                        onClick={() => handleSend()}
+                                        aria-label="Send message"
+                                        style={{ marginLeft: 4, flexShrink: 0 }}
+                                    >
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )) : null}
 
             {/* ── Sticker Drawer (Bottom Sheet) ────────── */}
             <AnimatePresence>
@@ -2086,7 +2091,7 @@ function MessageBubble({
 }) {
     const isUser = message.role === "user";
     const showActions = activeActionMenuId === message.id;
-    const isStickerOnly = /^\[\[STICKER:\s*.+?\]\]$/.test(message.content.trim());
+    const isStickerOnly = /^\[\[\s*STICKER\s*:\s*.+?\]+$/i.test(message.content.trim());
     const isAttachmentOnly = message.attachment?.type === "image" && (!message.content || message.content.trim() === "");
     const isTransparentBubble = isStickerOnly || isAttachmentOnly;
     const rid = message.id.slice(-6); // unique suffix for SVG gradient IDs
