@@ -20,6 +20,7 @@ interface ResultsPageProps {
   onBack: () => void;
   aiInsights: Record<string, unknown> | null;
   birthChartData?: Record<string, unknown> | null;
+  partnerBirthChartData?: Record<string, unknown> | null;
   sessionId?: string;
   onAskAstrologer: () => void;
 }
@@ -35,9 +36,10 @@ const tabs: { key: TabKey; label: string }[] = [
 ];
 
 const ResultsPage: React.FC<ResultsPageProps> = ({
-  person1, person2, relationshipStatus, rsDuration, onBack, aiInsights, birthChartData, sessionId, onAskAstrologer
+  person1, person2, relationshipStatus, rsDuration, onBack, aiInsights, birthChartData, partnerBirthChartData, sessionId, onAskAstrologer
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>("personality");
+  const [activePerson, setActivePerson] = useState<"person1" | "person2">("person1");
   const [showLangMenu, setShowLangMenu] = useState(false);
   const shareRef = useRef<HTMLDivElement>(null);
   const { lang, translating, changeLang, getText } = useTranslate();
@@ -58,11 +60,23 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
   const aiLikesRaw = (aiInsights?.likes as string) || null;
   const aiChartReadingRaw = (aiInsights?.chartReading as string) || null;
 
+  const aiPartnerPersonalityRaw = (aiInsights?.partnerPersonality as string) || null;
+  const aiPartnerLoveRaw = (aiInsights?.partnerLove as string) || null;
+  const aiPartnerCompatibilityRaw = (aiInsights?.partnerCompatibility as string) || null;
+  const aiPartnerLikesRaw = (aiInsights?.partnerLikes as string) || null;
+  const aiPartnerChartReadingRaw = (aiInsights?.partnerChartReading as string) || null;
+
   const aiPersonality = getText("personality", aiPersonalityRaw);
   const aiLove = getText("love", aiLoveRaw);
   const aiCompatibility = getText("compatibility", aiCompatibilityRaw);
   const aiLikes = getText("likes", aiLikesRaw);
   const aiChartReading = getText("chartReading", aiChartReadingRaw);
+
+  const aiPartnerPersonality = getText("partnerPersonality", aiPartnerPersonalityRaw);
+  const aiPartnerLove = getText("partnerLove", aiPartnerLoveRaw);
+  const aiPartnerCompatibility = getText("partnerCompatibility", aiPartnerCompatibilityRaw);
+  const aiPartnerLikes = getText("partnerLikes", aiPartnerLikesRaw);
+  const aiPartnerChartReading = getText("partnerChartReading", aiPartnerChartReadingRaw);
 
   const handleLangChange = (code: string) => {
     setShowLangMenu(false);
@@ -72,6 +86,11 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
       compatibility: aiCompatibilityRaw,
       likes: aiLikesRaw,
       chartReading: aiChartReadingRaw,
+      partnerPersonality: aiPartnerPersonalityRaw,
+      partnerLove: aiPartnerLoveRaw,
+      partnerCompatibility: aiPartnerCompatibilityRaw,
+      partnerLikes: aiPartnerLikesRaw,
+      partnerChartReading: aiPartnerChartReadingRaw,
     });
   };
 
@@ -263,36 +282,86 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
         </div>
       </motion.div>
 
+      {/* Global Person Toggle (for Relationship mode) */}
+      {relationshipStatus === "rs" && sign2 && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="px-5 mb-3">
+          <div className="bg-light-gray rounded-[12px] p-1 flex gap-1 border border-border-soft">
+            <button
+              onClick={() => setActivePerson("person1")}
+              className={`flex-1 py-1.5 rounded-[8px] text-[12px] font-700 transition-all flex items-center justify-center gap-1.5 ${activePerson === "person1" ? "bg-white text-warm-black shadow-sm" : "text-warm-gray"
+                }`}
+            >
+              {ZodiacIcon1 && <ZodiacIcon1 size={14} />}
+              You
+            </button>
+            <button
+              onClick={() => setActivePerson("person2")}
+              className={`flex-1 py-1.5 rounded-[8px] text-[12px] font-700 transition-all flex items-center justify-center gap-1.5 ${activePerson === "person2" ? "bg-white text-warm-black shadow-sm" : "text-warm-gray"
+                }`}
+            >
+              {ZodiacIcon2 && <ZodiacIcon2 size={14} />}
+              Partner
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       {/* Tab content */}
       <div className="px-5 pb-2">
         <AnimatePresence mode="wait">
           {activeTab === "personality" && (
-            <TabContent key="personality">
-              <PersonalitySection sign={sign1} mbti={mbti1} mbtiDesc={mbti1Desc} aiInsight={aiPersonality} lang={lang} />
+            <TabContent key={`personality-${activePerson}`}>
+              <PersonalitySection
+                sign={activePerson === "person1" ? sign1 : sign2!}
+                mbti={activePerson === "person1" ? mbti1 : person2!.mbti}
+                mbtiDesc={activePerson === "person1" ? mbti1Desc : mbtiDescriptions[person2!.mbti]}
+                aiInsight={activePerson === "person1" ? aiPersonality : aiPartnerPersonality}
+                lang={lang}
+              />
               {renderFeedback("personality", "Personality")}
             </TabContent>
           )}
           {activeTab === "love" && (
-            <TabContent key="love">
-              <LoveSection sign={sign1} aiInsight={aiLove} lang={lang} />
+            <TabContent key={`love-${activePerson}`}>
+              <LoveSection
+                sign={activePerson === "person1" ? sign1 : sign2!}
+                aiInsight={activePerson === "person1" ? aiLove : aiPartnerLove}
+                lang={lang}
+              />
               {renderFeedback("love", "Love")}
             </TabContent>
           )}
           {activeTab === "compatibility" && (
-            <TabContent key="compatibility">
-              <CompatibilitySection sign1={sign1} sign1Key={sign1Key} sign2={sign2} sign2Key={sign2Key} compatScore={compatScore} aiInsight={aiCompatibility} lang={lang} />
+            <TabContent key={`compatibility-${activePerson}`}>
+              <CompatibilitySection
+                sign1={activePerson === "person1" ? sign1 : sign2!}
+                sign1Key={activePerson === "person1" ? sign1Key : sign2Key!}
+                sign2={activePerson === "person1" ? sign2 : sign1}
+                sign2Key={activePerson === "person1" ? sign2Key : sign1Key}
+                compatScore={compatScore}
+                aiInsight={activePerson === "person1" ? aiCompatibility : aiPartnerCompatibility}
+                lang={lang}
+              />
               {renderFeedback("compatibility", "Compatibility")}
             </TabContent>
           )}
           {activeTab === "likes" && (
-            <TabContent key="likes">
-              <LikesSection sign={sign1} aiInsight={aiLikes} lang={lang} />
+            <TabContent key={`likes-${activePerson}`}>
+              <LikesSection
+                sign={activePerson === "person1" ? sign1 : sign2!}
+                aiInsight={activePerson === "person1" ? aiLikes : aiPartnerLikes}
+                lang={lang}
+              />
               {renderFeedback("likes", "Likes")}
             </TabContent>
           )}
           {activeTab === "chart" && (
-            <TabContent key="chart">
-              <ChartSection birthChartData={birthChartData || null} aiChartReading={aiChartReading} lang={lang} />
+            <TabContent key={`chart-${activePerson}`}>
+              <ChartSection
+                birthChartData={activePerson === "person1" ? birthChartData || null : partnerBirthChartData || null}
+                aiChartReading={activePerson === "person1" ? aiChartReading : aiPartnerChartReading}
+                lang={lang}
+              />
             </TabContent>
           )}
         </AnimatePresence>
@@ -519,6 +588,7 @@ const LikesSection: React.FC<{ sign: ZodiacSign; aiInsight: string | null; lang:
 const ChartSection: React.FC<{ birthChartData: Record<string, unknown> | null; aiChartReading: string | null; lang: string }> = ({ birthChartData, aiChartReading, lang }) => {
   return (
     <div className="flex flex-col gap-3">
+
       {/* Birth chart visualization */}
       <BirthChartWheel birthChartData={birthChartData} />
 

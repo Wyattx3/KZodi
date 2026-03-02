@@ -103,8 +103,8 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // ─── Model Configuration ─────────────────────────────────────────────────────
 
-const MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct";
-const FALLBACK_MODEL = "moonshotai/kimi-k2-instruct-0905";
+const MODEL = "gpt-oss-120b";
+const FALLBACK_MODEL = "llama-3.3-70b-versatile";
 
 export const MODELS = {
   CHAT: MODEL,

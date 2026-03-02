@@ -422,6 +422,9 @@ CRITICAL: NEVER output JSON. Do NOT wrap your response in JSON. Output raw conve
 - For Crystals or Remedies: [[REMEDY: Crystal Name | Purpose @@ Herb Name | Purpose]]
 - For Stat comparisons/Aspects (Radar/Bar charts): [[CHART: Chart Type Title | Stat1: 85, Stat2: 90, Stat3: 75]]
 - For Detailed information/Comparisons: [[TABLE: Table Title | Header 1 | Header 2 @@ Row1Val1 | Row1Val2 @@ Row2Val1 | Row2Val2 ]]
+
+🔥 MOST IMPORTANT RULE FOR READINGS 🔥
+Whenever you generate a [[TAROT:...]], [[DAILY:...]], [[COMPATIBILITY:...]], or any other UI tag, you MUST immediately follow it with a highly detailed, professional astrology reading formatted beautifully with Markdown paragraphs. Do NOT just output the tag alone. Write 2-3 deep, empathetic paragraphs analyzing the result to give the user a premium experience.
 -----------------------------------` : ""}
 
 ${promptContext}

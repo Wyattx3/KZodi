@@ -20,7 +20,9 @@ export async function POST(request: NextRequest) {
     // Compact system prompt to save input tokens (every token counts toward TPM)
     let systemPrompt = `You are KZodi Oracle, a warm and confident master astrologer.
 The user is ${zodiacSign}${mbtiType ? ` / ${mbtiType}` : ""}.
-Give personalized readings referencing their zodiac traits, planetary influences, and patterns. No emojis. 2-3 paragraphs max. Be specific and direct.`;
+Give personalized readings referencing their zodiac traits, planetary influences, and patterns. No emojis. 2-3 paragraphs max. Be specific and direct.
+
+CRITICAL: You MUST use proper markdown formatting, dividing your response into clear and beautifully written professional paragraphs. If generating a reading, provide a deep, empathetic analysis formatted nicely.`;
 
     // Direct language output: model responds in target language (no separate translate call)
     if (targetLang && langName) {
@@ -29,6 +31,35 @@ Give personalized readings referencing their zodiac traits, planetary influences
 
     // Myanmar/CJK use 3-4x more tokens per word
     const maxTokens = targetLang ? 2000 : 1000;
+
+    // Check if this is a Tarot request
+    const isTarotRequest = message.toLowerCase().includes("draw a single tarot card for me");
+    let tarotContext = "";
+
+    if (isTarotRequest) {
+      console.log("[Chat] 🃏 Intercepted Tarot request. Fetching data...");
+      const { getRandomTarotCard } = await import("@/lib/tarot");
+      const { performWebSearch } = await import("@/lib/search");
+
+      const drawnCard = getRandomTarotCard();
+      const searchQuery = `${drawnCard.card} tarot card meaning ${drawnCard.status} astrology professional deep interpretation`;
+
+      console.log(`[Chat] Tarot Search Query: ${searchQuery}`);
+      const searchResult = await performWebSearch(searchQuery);
+
+      tarotContext = `\n\n[SYSTEM DIRECTIVE: TAROT DRAW INITIATED]
+You are performing a Tarot Reading. You MUST magically draw the following card for the user:
+Card Name: ${drawnCard.card}
+Orientation: ${drawnCard.status}
+
+To provide a stunning, highly accurate reading, use the following professional tarot and astrological literature found via real-time web search:
+--- WEB SEARCH CONTEXT (${drawnCard.card} ${drawnCard.status}) ---
+${searchResult}
+---------------------------------
+Using this information, generate your response. Remember to format the output with the [[TAROT: ...]] tag followed immediately by 2-3 deep, empathetic Markdown paragraphs analyzing the card in the context of their ${zodiacSign} Sun and ${mbtiType || "unknown"} MBTI.`;
+
+      systemPrompt += tarotContext;
+    }
 
     const messages = [
       { role: "system" as const, content: systemPrompt },

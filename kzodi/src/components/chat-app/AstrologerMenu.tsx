@@ -17,42 +17,42 @@ export default function AstrologerMenu({ onAction, onOpenStandardMenu, onUpdateP
     const menuItems = [
         {
             id: "daily", icon: <Sun size={18} color="#F59E0B" />, label: "Daily Horoscope",
-            prompt: "Please give me my daily horoscope for today. Output a [[DAILY: Title | Score | Body]] tag.",
+            prompt: "Please give me my daily horoscope for today. First output a [[DAILY: Title | Score | Body]] tag. Then, underneath the tag, write a detailed astrology reading paragraph.",
             display: "Tell me my daily horoscope 🌟"
         },
         {
             id: "tarot", icon: <Layers size={18} color="#8B5CF6" />, label: "Tarot Draw",
-            prompt: "Draw a single tarot card for me and explain its meaning right now. Output a [[TAROT: Card Name | Meaning | Upright/Reversed]] tag.",
+            prompt: "Draw a single tarot card for me. First output a [[TAROT: Card Name | Short Keywords | Upright/Reversed]] tag. Then, underneath the tag, write a detailed reading paragraph.",
             display: "Draw a Tarot card for me 🃏"
         },
         {
             id: "love", icon: <Heart size={18} color="#EF4444" />, label: "Love Compatibility",
-            prompt: "Give me an in-depth love and compatibility reading based on my chart. Generate a [[COMPATIBILITY: My Sign | Their Sign | Score | Key Aspect]] tag.",
+            prompt: "Give me an in-depth love and compatibility reading based on my chart. First output a [[COMPATIBILITY: My Sign | Their Sign | Score | Key Aspect]] tag. Then, underneath write a detailed compatibility breakdown paragraph.",
             display: "Check my Love Compatibility ❤️"
         },
         {
             id: "career", icon: <Briefcase size={18} color="#3B82F6" />, label: "Career Insights",
-            prompt: "What are my career and wealth insights based on my chart? Generate a [[TABLE: Career Strengths | Trait | Impact]].",
+            prompt: "What are my career and wealth insights based on my chart? First output a [[TABLE: Career Strengths | Trait | Impact]] tag. Then write a detailed explanation paragraph underneath.",
             display: "Give me Career Insights 💼"
         },
         {
             id: "transit", icon: <Globe size={18} color="#10B981" />, label: "Transit Update",
-            prompt: "What planetary transits are affecting me right now, and how should I navigate them?",
+            prompt: "What planetary transits are affecting me right now, and how should I navigate them? Write a detailed paragraph.",
             display: "What's my current Planetary Transit? 🌐"
         },
         {
             id: "moon", icon: <Moon size={18} color="#6366F1" />, label: "Moon Phase Focus",
-            prompt: "Based on the current moon phase and my chart, what should my emotional or spiritual focus be? Output a [[DAILY: Moon Phase Focus | Score | Body]] tag.",
+            prompt: "Based on the current moon phase and my chart, what should my emotional or spiritual focus be? First output a [[DAILY: Moon Phase Focus | Score | Body]] tag. Then write a detailed paragraph.",
             display: "Focus for this Moon Phase? 🌙"
         },
         {
             id: "crystal", icon: <Gem size={18} color="#EC4899" />, label: "Crystal/Remedy",
-            prompt: "Suggest some specific crystals, herbs, or remedies that align with my current astrological needs. Output a [[REMEDY: Material1 | Purpose1 @@ Material2 | Purpose2]] tag.",
+            prompt: "Suggest specific crystals, herbs, or remedies that align with my astrological needs. First output a [[REMEDY: Material1 | Purpose1 @@ Material2 | Purpose2]] tag. Then explain them in a paragraph.",
             display: "Suggest Crystals/Remedies 💎"
         },
         {
             id: "chart", icon: <Compass size={18} color="#06B6D4" />, label: "Detailed Birth Chart",
-            prompt: "Generate a detailed birth chart data layout for me. Please output a [[CHART: BirthChart | Planets]] or table.",
+            prompt: "Generate a detailed birth chart data layout for me. First output a [[CHART: BirthChart | Planets]] or table. Then write a short paragraph explaining the core placements.",
             display: "Show my Detailed Birth Chart 🗺️"
         },
         {

@@ -58,6 +58,9 @@ export interface AppState {
   birthChartData: Record<string, unknown> | null;
   setBirthChartData: (d: Record<string, unknown> | null) => void;
 
+  partnerBirthChartData: Record<string, unknown> | null;
+  setPartnerBirthChartData: (d: Record<string, unknown> | null) => void;
+
   /* Results */
   results: Record<string, unknown> | null;
   setResults: (r: Record<string, unknown>) => void;
@@ -114,6 +117,9 @@ export const useAppStore = create<AppState>((set) => ({
   birthChartData: null,
   setBirthChartData: (d) => set({ birthChartData: d }),
 
+  partnerBirthChartData: null,
+  setPartnerBirthChartData: (d) => set({ partnerBirthChartData: d }),
+
   results: null,
   setResults: (r) => set({ results: r }),
   isLoading: false,
@@ -131,6 +137,7 @@ export const useAppStore = create<AppState>((set) => ({
       mbtiTestTarget: null,
       mbtiAnswers: {},
       birthChartData: null,
+      partnerBirthChartData: null,
       results: null,
       isLoading: false,
     }),

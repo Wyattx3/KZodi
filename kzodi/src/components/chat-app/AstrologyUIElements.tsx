@@ -260,7 +260,7 @@ export const AstroDailyCard = ({ title, score, body }: { title: string, score: s
                 </div>
                 <div style={{ background: "#FACC15", border: "2px solid #111827", borderRadius: "12px", padding: "8px 12px", textAlign: "center", boxShadow: "2px 2px 0px #111827" }}>
                     <span style={{ display: "block", fontSize: "10px", fontWeight: 800, textTransform: "uppercase" }}>Score</span>
-                    <span style={{ display: "block", fontSize: "18px", fontWeight: 900 }}>{score}/10</span>
+                    <span style={{ display: "block", fontSize: "18px", fontWeight: 900 }}>{score.replace(/\/10$/, '')}/10</span>
                 </div>
             </div>
             <p style={{ margin: 0, fontSize: "14px", lineHeight: 1.6, color: "#374151", fontWeight: 500 }}>
@@ -513,7 +513,7 @@ export const extractAstrologyTags = (content: string) => {
     let cleanText = content;
 
     // 1. Tarot: [[TAROT: Card Name | Meaning | Upright/Reversed]]
-    const tarotRegex = /\[{1,3}\s*TAROT\s*:\s*([\s\S]*?)(?:\]{1,3}|$)/gi;
+    const tarotRegex = /\[{2,3}\s*TAROT\s*:\s*([\s\S]*?)\]{2,3}/gi;
     cleanText = cleanText.replace(tarotRegex, (match, inner) => {
         const parts = inner.split("|").map((p: string) => p.trim());
         const card = parts[0] ? parts[0].replace(/\]/g, '').trim() : "Unknown Card";
@@ -525,7 +525,7 @@ export const extractAstrologyTags = (content: string) => {
     });
 
     // 2. Chart: [[CHART: Chart Type | Label: 80, Label2: 90]]
-    const chartRegex = /\[{1,3}\s*CHART\s*:\s*([\s\S]*?)(?:\]{1,3}|$)/gi;
+    const chartRegex = /\[{2,3}\s*CHART\s*:\s*([\s\S]*?)\]{2,3}/gi;
     cleanText = cleanText.replace(chartRegex, (match, inner) => {
         const parts = inner.split("|").map((p: string) => p.trim());
         const type = parts[0] ? parts[0].replace(/\]/g, '').trim() : "Astrology Chart";
@@ -536,7 +536,7 @@ export const extractAstrologyTags = (content: string) => {
     });
 
     // 3. Table: Either @@ or newline row separators
-    const tableRegex = /\[{1,3}\s*TABLE\s*:\s*([\s\S]*?)(?:\]{1,3}|$)/gi;
+    const tableRegex = /\[{2,3}\s*TABLE\s*:\s*([\s\S]*?)\]{2,3}/gi;
     cleanText = cleanText.replace(tableRegex, (match, inner) => {
         const firstPipeIndex = inner.indexOf("|");
         const title = firstPipeIndex !== -1 ? inner.substring(0, firstPipeIndex).trim() : "Astrology Data";
@@ -564,7 +564,7 @@ export const extractAstrologyTags = (content: string) => {
     });
 
     // 4. Daily: [[DAILY: Title | Score | Body]]
-    const dailyRegex = /\[{1,3}\s*DAILY\s*:\s*([\s\S]*?)(?:\]{1,3}|$)/gi;
+    const dailyRegex = /\[{2,3}\s*DAILY\s*:\s*([\s\S]*?)\]{2,3}/gi;
     cleanText = cleanText.replace(dailyRegex, (match, inner) => {
         const parts = inner.split("|").map((p: string) => p.trim());
         const title = parts[0] ? parts[0].replace(/\]/g, '').trim() : "Daily Insight";
@@ -576,7 +576,7 @@ export const extractAstrologyTags = (content: string) => {
     });
 
     // 5. Compatibility: [[COMPATIBILITY: Sign1 | Sign2 | Score | Aspect]]
-    const compatRegex = /\[{1,3}\s*COMPATIBILITY\s*:\s*([\s\S]*?)(?:\]{1,3}|$)/gi;
+    const compatRegex = /\[{2,3}\s*COMPATIBILITY\s*:\s*([\s\S]*?)\]{2,3}/gi;
     cleanText = cleanText.replace(compatRegex, (match, inner) => {
         const parts = inner.split("|").map((p: string) => p.trim());
         const sign1 = parts[0] ? parts[0].replace(/\]/g, '').trim() : "You";
@@ -589,7 +589,7 @@ export const extractAstrologyTags = (content: string) => {
     });
 
     // 6. Remedy: [[REMEDY: Item1 | Purpose1 @@ Item2 | Purpose2]]
-    const remedyRegex = /\[{1,3}\s*REMEDY\s*:\s*([\s\S]*?)(?:\]{1,3}|$)/gi;
+    const remedyRegex = /\[{2,3}\s*REMEDY\s*:\s*([\s\S]*?)\]{2,3}/gi;
     cleanText = cleanText.replace(remedyRegex, (match, inner) => {
         const content = inner.replace(/\]/g, '').trim();
         elements.push(<AstroRemedy key={`rem-${elements.length}`} remediesStr={content} />);

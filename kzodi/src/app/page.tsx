@@ -225,6 +225,9 @@ export default function Home() {
           if (data.birthChart) {
             store.setBirthChartData(data.birthChart);
           }
+          if (data.partnerBirthChart) {
+            store.setPartnerBirthChartData(data.partnerBirthChart);
+          }
         } else {
           console.error("API returned error:", data.error);
         }
@@ -337,71 +340,83 @@ export default function Home() {
   const currentStepData = steps[store.currentStep];
 
   return (
-    <AnimatePresence mode="wait">
-      {view === "landing" && (
-        <LandingPage
-          key="landing"
-          onLearnPersonality={handleLearnPersonality}
-          onStartChat={handleStartChat}
-        />
-      )}
-
-      {view === "chat-landing" && (
-        <ChatLandingPage
-          key="chat-landing"
-          onGetStarted={handleChatGetStarted}
-          onBack={handleChatBack}
-        />
-      )}
-
-      {view === "flow" && currentStepData && (
-        <div key="flow">
-          <div className="px-5 pt-4">
-            <ProgressBar currentStep={store.currentStep} totalSteps={totalSteps} />
-          </div>
-          <StepWrapper
-            stepKey={currentStepData.key}
-            direction={direction}
-            onBack={goBack}
-            title="Want to Know Personality"
-            subtitle={`Step ${store.currentStep + 1} of ${totalSteps}`}
-          >
-            {currentStepData.component}
-          </StepWrapper>
-        </div>
-      )}
-
-      {view === "mbti-test" && (
-        <div key="mbti-test" className="px-5 py-5 safe-top safe-bottom">
-          <MBTITest
-            onComplete={handleMBTITestComplete}
-            onBack={handleMBTITestBack}
+    <div className="chat-app" style={{ height: '100dvh', overflow: 'hidden' }}>
+      <AnimatePresence mode="wait">
+        {view === "landing" && (
+          <LandingPage
+            key="landing"
+            onLearnPersonality={handleLearnPersonality}
+            onStartChat={handleStartChat}
           />
-        </div>
-      )}
+        )}
 
-      {view === "loading" && (
-        <LoadingScreen key="loading" />
-      )}
+        {view === "chat-landing" && (
+          <ChatLandingPage
+            key="chat-landing"
+            onGetStarted={handleChatGetStarted}
+            onBack={handleChatBack}
+          />
+        )}
 
-      {view === "results" && (
-        <ResultsPage
-          key="results"
-          person1={store.person1}
-          person2={store.relationshipStatus === "rs" ? store.person2 : undefined}
-          relationshipStatus={store.relationshipStatus || "single"}
-          rsDuration={store.rsDuration}
-          onBack={() => {
-            store.reset();
-            setView("landing");
-            setAiInsights(null);
-          }}
-          aiInsights={aiInsights}
-          birthChartData={store.birthChartData}
-          sessionId={store.sessionId}
-          onAskAstrologer={handleAskAstrologer}
-        />
-      )}
-    </AnimatePresence>
+        {view === "flow" && currentStepData && (
+          <div key="flow" className="chat-app-view">
+            <div className="chat-app-content">
+              <div className="px-5 pt-4">
+                <ProgressBar currentStep={store.currentStep} totalSteps={totalSteps} />
+              </div>
+              <StepWrapper
+                stepKey={currentStepData.key}
+                direction={direction}
+                onBack={goBack}
+                title="Want to Know Personality"
+                subtitle={`Step ${store.currentStep + 1} of ${totalSteps}`}
+              >
+                {currentStepData.component}
+              </StepWrapper>
+            </div>
+          </div>
+        )}
+
+        {view === "mbti-test" && (
+          <div key="mbti-test" className="chat-app-view">
+            <div className="chat-app-content px-5 py-5 safe-top safe-bottom">
+              <MBTITest
+                onComplete={handleMBTITestComplete}
+                onBack={handleMBTITestBack}
+              />
+            </div>
+          </div>
+        )}
+
+        {view === "loading" && (
+          <div key="loading" className="chat-app-view h-full w-full">
+            <LoadingScreen />
+          </div>
+        )}
+
+        {view === "results" && (
+          <div key="results" className="chat-app-view h-full w-full">
+            <div className="chat-app-content">
+              <ResultsPage
+                person1={store.person1}
+                person2={store.relationshipStatus === "rs" ? store.person2 : undefined}
+                relationshipStatus={store.relationshipStatus || "single"}
+                rsDuration={store.rsDuration}
+                onBack={() => {
+                  store.reset();
+                  setView("landing");
+                  setAiInsights(null);
+                }}
+                aiInsights={aiInsights}
+                birthChartData={store.birthChartData}
+                partnerBirthChartData={store.partnerBirthChartData}
+                sessionId={store.sessionId}
+                onAskAstrologer={handleAskAstrologer}
+              />
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

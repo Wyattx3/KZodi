@@ -308,6 +308,35 @@ export async function POST(request: NextRequest) {
             } catch (err) {
                 console.error("Failed to get latest reading context:", err);
             }
+
+            // Check if this is a Tarot request specifically
+            const isTarotRequest = message?.toLowerCase().includes("draw a single tarot card for me");
+            if (isTarotRequest) {
+                console.log("[Roleplay] 🃏 Intercepted Tarot request for Astrologer. Fetching data...");
+                try {
+                    const { getRandomTarotCard } = await import("@/lib/tarot");
+                    const { performWebSearch } = await import("@/lib/search");
+
+                    const drawnCard = getRandomTarotCard();
+                    const searchQuery = `${drawnCard.card} tarot card meaning ${drawnCard.status} astrology professional deep interpretation`;
+
+                    console.log(`[Roleplay] Tarot Search Query: ${searchQuery}`);
+                    const searchResult = await performWebSearch(searchQuery);
+
+                    userReadingContext += `\n\n[SYSTEM DIRECTIVE: TAROT DRAW INITIATED]
+You are performing a Tarot Reading. You MUST magically draw the following card for the user:
+Card Name: ${drawnCard.card}
+Orientation: ${drawnCard.status}
+
+To provide a stunning, highly accurate reading, use the following professional tarot and astrological literature found via real-time web search:
+--- WEB SEARCH CONTEXT (${drawnCard.card} ${drawnCard.status}) ---
+${searchResult}
+---------------------------------
+Using this information, generate your response. Remember to format the output with the [[TAROT: ...]] tag followed immediately by 2-3 deep, empathetic Markdown paragraphs analyzing the card.`;
+                } catch (e) {
+                    console.error("[Roleplay] Failed to load tarot search data:", e);
+                }
+            }
         }
 
         console.log(`[Roleplay] Character: ${characterName}, isAstrologer: ${isAstrologer}, Context Length: ${userReadingContext.length}`);

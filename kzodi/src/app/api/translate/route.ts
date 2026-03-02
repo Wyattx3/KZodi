@@ -1,21 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LANG_NAMES } from "@/lib/groq";
+import { LANG_NAMES, aiClient, MODELS } from "@/lib/groq";
 
 /**
- * Translation API — powered by Grok AI (xAI)
- * Model: grok-4-1-fast-reasoning
- * Endpoint: https://api.x.ai/v1/chat/completions
- *
- * Separate from Groq entirely → does NOT consume Groq TPM budget.
- *
- * Modes:
- * 1. Single: { text, targetLang }
- * 2. Batch:  { texts: { key: text }, targetLang } → 1 API call for N texts
+ * Translation API
+ * Using unified aiClient which handles multi-provider routing and fallbacks
  */
-
-const GROK_API_KEY = process.env.GROK_API_KEY || "";
-const GROK_URL = "https://api.x.ai/v1/chat/completions";
-const GROK_MODEL = "grok-4-1-fast-reasoning";
 
 // ─── Server-side Translation Cache ───────────────────────────────────────────
 
@@ -46,90 +35,6 @@ function setCache(key: string, value: string): void {
   cache.set(key, { value, expiry: Date.now() + CACHE_TTL });
 }
 
-// ─── Grok API Call with Retry ────────────────────────────────────────────────
-
-async function callGrok(
-  systemPrompt: string,
-  userContent: string,
-  maxTokens: number
-): Promise<string> {
-  if (!GROK_API_KEY) {
-    console.error("[Translate] No GROK_API_KEY configured");
-    return "";
-  }
-
-  const backoffs = [1000, 2000, 4000];
-
-  for (let attempt = 0; attempt <= 2; attempt++) {
-    try {
-      console.log(`[Translate] Grok ${GROK_MODEL} attempt ${attempt + 1}/3`);
-
-      const res = await fetch(GROK_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${GROK_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: GROK_MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent },
-          ],
-          temperature: 0.3,
-          max_tokens: maxTokens,
-        }),
-      });
-
-      if (res.status === 429) {
-        const retryAfter = res.headers.get("retry-after");
-        const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : backoffs[attempt] || 4000;
-        console.warn(`[Translate] Grok rate limited (429). Wait ${waitMs}ms`);
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, waitMs));
-          continue;
-        }
-        return "";
-      }
-
-      if (res.status >= 500) {
-        console.warn(`[Translate] Grok server error (${res.status})`);
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, backoffs[attempt] || 2000));
-          continue;
-        }
-        return "";
-      }
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error(`[Translate] Grok error ${res.status}: ${errText.slice(0, 300)}`);
-        return "";
-      }
-
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content || "";
-      const finishReason = data.choices?.[0]?.finish_reason || "unknown";
-
-      if (finishReason === "length") {
-        console.warn(`[Translate] Grok response truncated (finish_reason=length)`);
-      }
-
-      console.log(`[Translate] Grok OK: ${content.length} chars, reason=${finishReason}`);
-      return content;
-    } catch (err) {
-      console.error(`[Translate] Grok exception attempt ${attempt + 1}:`, err);
-      if (attempt < 2) {
-        await new Promise((r) => setTimeout(r, backoffs[attempt] || 2000));
-        continue;
-      }
-      return "";
-    }
-  }
-
-  return "";
-}
-
 // ─── Single Translation ──────────────────────────────────────────────────────
 
 async function translateSingle(text: string, targetLang: string): Promise<string> {
@@ -144,17 +49,32 @@ async function translateSingle(text: string, targetLang: string): Promise<string
   }
 
   const langName = LANG_NAMES[targetLang] || targetLang;
-  const result = await callGrok(
-    `Translate to ${langName}. Return ONLY the translation, nothing else.`,
-    text,
-    4000
-  );
+  const result = await aiClient.chat({
+    model: MODELS.CHAT,
+    temperature: 0.3,
+    max_tokens: 4000,
+    messages: [
+      {
+        role: "system", content: `Translate to ${langName}. Return ONLY the translation, nothing else.
 
-  if (result) {
-    setCache(cacheKey, result);
+CRITICAL RULES:
+- Keep ALL zodiac sign names in English: Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces
+- Keep ALL MBTI types in English: INTJ, INFP, ENTJ, etc.
+- Keep planet names in English: Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
+- Keep astrological terms in English: Rising sign, Ascendant, Houses, Elements (Fire, Earth, Air, Water)
+- Keep the app name "KZodi" unchanged
+- Translate everything else naturally into ${langName}`
+      },
+      { role: "user", content: text }
+    ]
+  });
+
+  const content = result.content;
+  if (content) {
+    setCache(cacheKey, content);
   }
 
-  return result || text;
+  return content || text;
 }
 
 // ─── Batch Translation (N texts → 1 API call) ───────────────────────────────
@@ -181,11 +101,27 @@ async function translateBatch(
     .map(([, text], i) => `[${i + 1}] ${text}`)
     .join("\n\n---\n\n");
 
-  const result = await callGrok(
-    `Translate ALL texts below to ${langName}. Return ONLY translations in same numbered format: [1] ... [2] ... No explanations.`,
-    numberedTexts,
-    Math.min(entries.length * 2000, 8000)
-  );
+  const response = await aiClient.chat({
+    model: MODELS.CHAT,
+    temperature: 0.3,
+    max_tokens: Math.min(entries.length * 2000, 8000),
+    messages: [
+      {
+        role: "system", content: `Translate ALL texts below to ${langName}. Return ONLY translations in same numbered format: [1] ... [2] ... No explanations.
+
+CRITICAL RULES:
+- Keep ALL zodiac sign names in English: Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces
+- Keep ALL MBTI types in English: INTJ, INFP, ENTJ, etc.
+- Keep planet names in English: Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
+- Keep astrological terms in English: Rising sign, Ascendant, Houses, Elements (Fire, Earth, Air, Water)
+- Keep the app name "KZodi" unchanged
+- Translate everything else naturally into ${langName}`
+      },
+      { role: "user", content: numberedTexts }
+    ]
+  });
+
+  const result = response.content;
 
   if (!result) {
     return Object.fromEntries(entries);
