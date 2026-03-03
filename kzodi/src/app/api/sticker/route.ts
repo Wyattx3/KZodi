@@ -9,7 +9,7 @@ const FIREWORKS_API_KEY = process.env.FIREWORKS_API_KEY || "";
 
 async function getFromCache(key: string): Promise<string | null> {
     try {
-        const cached = await valkey.get(`sticker:${key}`);
+        const cached = await valkey.get(`sticker_v2:${key}`);
         if (cached) return cached;
     } catch (e) {
         console.error("Valkey cache read error:", e);
@@ -20,7 +20,7 @@ async function getFromCache(key: string): Promise<string | null> {
 async function saveToCache(key: string, dataUrl: string, userId?: string, characterName?: string, prompt?: string) {
     try {
         // Save to Redis cache for fast retrieval (expire in 7 days or keep forever)
-        await valkey.set(`sticker:${key}`, dataUrl);
+        await valkey.set(`sticker_v2:${key}`, dataUrl);
 
         // Save to PostgreSQL if user is logged in
         if (userId && characterName && prompt) {

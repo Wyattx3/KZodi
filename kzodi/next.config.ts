@@ -2,6 +2,21 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [
+          {
+            type: 'host',
+            value: 'kakoei.com',
+          },
+        ],
+        destination: 'https://www.kakoei.com/:path*',
+        permanent: true,
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {

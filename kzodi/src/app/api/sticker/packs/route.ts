@@ -1,31 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
+import { valkey } from "@/lib/redis";
 import { getInitialPacks, generateDailyPack, type StickerPackData } from "@/lib/stickerPacks";
 
-const DB_PATH = path.join(process.cwd(), "src", "data", "sticker_db.json");
-
-// Ensure data directory exists
-async function ensureDbExists() {
-    try {
-        await fs.access(DB_PATH);
-    } catch {
-        // Create initial packs if file doesn't exist
-        const initial = getInitialPacks();
-        const dir = path.dirname(DB_PATH);
-        try {
-            await fs.mkdir(dir, { recursive: true });
-        } catch { }
-        await fs.writeFile(DB_PATH, JSON.stringify(initial, null, 2));
-    }
-}
-
 export async function GET(req: NextRequest) {
-    await ensureDbExists();
-
     try {
-        const fileData = await fs.readFile(DB_PATH, "utf-8");
-        let packs: StickerPackData[] = JSON.parse(fileData);
+        const fileData = await valkey.get("kb_sticker_packs");
+        let packs: StickerPackData[] = fileData ? JSON.parse(fileData) : getInitialPacks();
 
         // Check date logic - if no pack for today, generate one
         const today = new Date().toISOString().split("T")[0];
@@ -41,8 +21,8 @@ export async function GET(req: NextRequest) {
             if (packs.length > 20) packs = packs.slice(0, 20);
 
             // Save back
-            await fs.writeFile(DB_PATH, JSON.stringify(packs, null, 2));
-            return NextResponse.json([dailyPack]);
+            await valkey.set("kb_sticker_packs", JSON.stringify(packs));
+            return NextResponse.json(packs);
         }
 
         // Return all available packs, limited to newest 20.

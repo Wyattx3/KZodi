@@ -23,7 +23,7 @@ const ZODIAC_GLYPHS = [
   publicZodiacIcons.capricorn({}),
   publicZodiacIcons.aquarius({}),
   publicZodiacIcons.pisces({}),
-];
+] as React.JSX.Element[];
 
 /* Pre-computed orbit positions (r=58, 12 points) */
 const ORBIT_POS = [

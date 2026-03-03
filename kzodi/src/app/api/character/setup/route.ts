@@ -32,7 +32,6 @@ export async function POST(req: NextRequest) {
                 try {
                     textContent = await extractTextFromEPUB(tempPath);
                 } finally {
-                    // Clean up temp file
                     try { fs.unlinkSync(tempPath); } catch (e) { }
                 }
             } else {

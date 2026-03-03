@@ -59,10 +59,10 @@ const USER_CHARACTER: Character = {
 };
 
 // Sticker cache version — bump this to force re-processing of all stickers
-const STICKER_CACHE_VERSION = "v10-IDB-CACHE";
+const STICKER_CACHE_VERSION = "v11-IDB-CACHE";
 
 // IDB Native Wrapper for unlimited Base64 caching
-const IDB_NAME = "KzodiStickerCache";
+const IDB_NAME = "KzodiStickerCacheV2";
 const IDB_RAW = "raw";
 const IDB_PROC = "processed";
 
@@ -727,6 +727,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const isTrueAstrologer = character.id === 'astrologer-specialist' || character.id === 'astrologer_specialist';
     const [showStandardMenu, setShowStandardMenu] = useState(!isTrueAstrologer);
     const [input, setInput] = useState("");
+    const [viewportHeight, setViewportHeight] = useState<number | string>("100dvh");
     const [isTyping, setIsTyping] = useState(false);
     const [isFetchingMessages, setIsFetchingMessages] = useState(true);
     const [typingMemberName, setTypingMemberName] = useState<string | null>(null);
@@ -1152,7 +1153,11 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     }, [messages, character.id, markAsSeen, unreadMarkerId]);
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+        // Direct scrollTop manipulation to prevent page jump issues on mobile
+        const scrollArea = document.querySelector('.chatroom-messages-area');
+        if (scrollArea) {
+            scrollArea.scrollTop = scrollArea.scrollHeight;
+        }
     }, [messages.length, isTyping]);
 
     useEffect(() => {
@@ -1297,7 +1302,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         setReplyingTo(null);
 
         sendMessage(character.id, text, undefined, repliedId);
-        setTimeout(() => inputRef.current?.focus(), 50);
+
 
         // Fire-and-forget: don't block the UI — user can keep typing
         triggerAiResponse(text, repliedContent, repliedId)
@@ -1497,8 +1502,52 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         }
     };
 
+    // Extremely robust Android keyboard fix
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+
+        // Lock the body to strictly prevent native scrolling up
+        const originalOverflow = document.body.style.overflow;
+        const originalPosition = document.body.style.position;
+        const originalWidth = document.body.style.width;
+        const originalHeight = document.body.style.height;
+
+        document.body.style.overflow = "hidden";
+        document.body.style.position = "fixed";
+        document.body.style.width = "100%";
+        document.body.style.height = "100%";
+
+        const handleResize = () => {
+            if (window.visualViewport) {
+                // Force layout flush and strict pixel height
+                setViewportHeight(window.visualViewport.height);
+                window.scrollTo(0, 0); // categorically prevent visual viewport drift
+            }
+        };
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener("resize", handleResize);
+            window.visualViewport.addEventListener("scroll", handleResize);
+            handleResize(); // Init
+        }
+
+        return () => {
+            document.body.style.overflow = originalOverflow;
+            document.body.style.position = originalPosition;
+            document.body.style.width = originalWidth;
+            document.body.style.height = originalHeight;
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener("resize", handleResize);
+                window.visualViewport.removeEventListener("scroll", handleResize);
+            }
+        };
+    }, []);
+
     return (
-        <div className={`chatroom ${conversationTheme}`}>
+        <div
+            className={`chatroom ${conversationTheme}`}
+            style={{ height: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight }}
+        >
             <div className="chatroom-bg-pattern" />
             {/* ── Header ─────────────────────────── */}
             <motion.div
@@ -1992,7 +2041,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 {input.trim() && (
                                     <button
                                         className="chatroom-send chatroom-send-active"
-                                        onClick={() => handleSend()}
+                                        onPointerDown={(e) => {
+                                            e.preventDefault();
+                                            handleSend();
+                                        }}
                                         aria-label="Send message"
                                         style={{ marginLeft: 4, flexShrink: 0 }}
                                     >
@@ -2012,7 +2064,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     <motion.div
                         className="sticker-drawer"
                         initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "420px", opacity: 1 }}
+                        animate={{ height: "min(420px, 45dvh)", opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.3, type: "spring", damping: 25, stiffness: 200 }}
                         style={{

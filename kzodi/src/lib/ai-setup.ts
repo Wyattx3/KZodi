@@ -1,9 +1,14 @@
 import { Pinecone } from '@pinecone-database/pinecone';
 import { Groq } from 'groq-sdk';
 import * as cheerio from 'cheerio';
+import { v4 as uuidv4 } from 'uuid';
+
+// Vercel Serverless/Edge polyfill for pdf-parse which depends on DOMMatrix
+if (typeof globalThis.DOMMatrix === 'undefined') {
+    (globalThis as any).DOMMatrix = class DOMMatrix { };
+}
 const pdf = require('pdf-parse');
 import EPub from 'epub2';
-import { v4 as uuidv4 } from 'uuid';
 
 let pineconeInstance: Pinecone | null = null;
 function getPinecone() {
@@ -25,8 +30,13 @@ const groq = new Groq({
 // -- Text Extraction Helpers --
 
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-    const data = await pdf(buffer);
-    return data.text;
+    try {
+        const data = await pdf(buffer);
+        return data.text;
+    } catch (e) {
+        console.error("PDF Parsing error:", e);
+        throw new Error("Failed to parse PDF file.");
+    }
 }
 
 export async function extractTextFromEPUB(filePath: string): Promise<string> {
@@ -39,19 +49,14 @@ export async function extractTextFromEPUB(filePath: string): Promise<string> {
                     if (err || !d) return;
                     const $ = cheerio.load(d);
                     text += $('body').text() + '\n';
-                    // This is async inside a loop, simplistic. Better use epub-parser logic or similar.
-                    // For now, this is a basic implementation.
                 });
             });
-            // Wait a bit for chapters to load (epub2 is weird with sync access)
-            setTimeout(() => resolve(text), 1000);
+            setTimeout(() => resolve(text), 1000); // Allow async chapter fetching
         });
         epub.on('error', reject);
         epub.parse();
     });
 }
-// Note: EPUB handling in Node can be tricky with buffers. EPub2 usually needs a file path.
-// If we receive a buffer, we might need to write it to a temp file first.
 
 export async function extractTextFromUrl(url: string): Promise<string> {
     let text = "";
