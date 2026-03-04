@@ -75,9 +75,9 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
 
     if (isBurmese) {
         // Myanmar language (Reading and Roleplay)
-        // Fallback to Kimi is handled automatically in groq.ts if Grok fails
-        brainModel = "grok-4-1-fast-reasoning";
-        generationModel = "grok-4-1-fast-reasoning";
+        // Note: Fireworks only hosts deepseek-v3p2. We rely on route.ts to strip reasoning.
+        brainModel = "accounts/fireworks/models/deepseek-v3p2";
+        generationModel = "accounts/fireworks/models/deepseek-v3p2";
     } else {
         // Other Languages (English, Japanese, etc.)
         if (context === "reading") {
@@ -87,19 +87,23 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         } else {
             // Roleplay chat for other languages
             brainModel = "openai/gpt-oss-120b";
-            generationModel = "ollama/llama3.2";
+            generationModel = "llama-3.3-70b-versatile";
         }
     }
 
     console.log(`[AI Routing] Language: ${responseLanguage || "English"}, Brain: ${brainModel}, Generation: ${generationModel}`);
 
     // ─── Phase 2: Brain Reasoning (LLM thinking call) ──────────────────
-    // With dynamic model routing, Brain ALWAYS runs for maximum quality.
-    // Only skip for truly empty messages (comfort follow-ups with no user input).
+    // Skip brain thinking for Fireworks/DeepSeek since it can't produce structured JSON
+    // and we already skip the cognitive state in the generation prompt for those models.
     const { getFallbackBrainStateFromHeart } = await import("./brain");
+    const isFireworksModel = generationModel.includes("fireworks");
 
     let brainState;
-    if (message && message.trim() !== "") {
+    if (isFireworksModel) {
+        console.log(`[AI Engine] Phase 2: 🧠 Brain skipped (Fireworks model — using Heart fallback)`);
+        brainState = getFallbackBrainStateFromHeart(heartState, characterPersonality);
+    } else if (message && message.trim() !== "") {
         console.log(`[AI Engine] Phase 2: 🧠 Brain reasoning...`);
         try {
             const thinkingPromise = thinkAboutMessage(
@@ -114,9 +118,9 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
                 userReadingContext,
                 brainModel
             );
-            // 15s timeout — fail fast to fallback
+            // 45s timeout — reasoning models (like Deepseek V3/R1) take longer to think
             const timeoutPromise = new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("Brain thinking timed out")), 15000)
+                setTimeout(() => reject(new Error("Brain thinking timed out")), 45000)
             );
             brainState = await Promise.race([thinkingPromise, timeoutPromise]);
         } catch (e) {
@@ -149,16 +153,28 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         isGroupChat,
         groupMembers,
         userReadingContext,
-        responseLanguage
+        responseLanguage,
+        generationModel
     );
 
     // Build messages array
+    // For Fireworks/DeepSeek: send fewer messages (10 vs 30) to save tokens
+    // and prevent the model from re-reasoning about the entire conversation
+    const historyLimit = isFireworksModel ? 10 : 30;
+    const recentHistory = history.slice(-historyLimit);
+
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
         { role: "system", content: systemPrompt },
-        ...history.slice(-30).map((h) => {
-            const textContent = h.role === "user" && h.id && h.content
+        ...recentHistory.map((h, idx) => {
+            const isRecent = idx >= recentHistory.length - 5;
+            let textContent = h.role === "user" && h.id && h.content
                 ? `[MessageID: ${h.id}] ${h.content}`
                 : (h.content || " ");
+
+            // For Fireworks: truncate older messages to save input tokens
+            if (isFireworksModel && !isRecent && textContent.length > 80) {
+                textContent = textContent.slice(0, 80) + "...";
+            }
 
             let finalContent = textContent;
             if (h.attachment?.type === "image" && h.attachment.url) {
@@ -175,8 +191,16 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
 
     // Emotional state affects generation parameters
     const isEmotional = heartState.userEmotion !== "neutral" || context === "comfort";
-    const maxTokens = isEmotional ? 800 : 600;
+    let maxTokens = isEmotional ? 800 : 600;
     const temperature = isEmotional ? 0.95 : 0.9;
+
+    // For Burmese, we allow a higher maxTokens threshold because DeepSeek V3
+    // may generate reasoning tokens before the actual message. Starving it of tokens
+    // causes it to truncate before outputting the actual Burmese reply.
+    // Length is still strictly enforced post-generation by enforceShortMessages().
+    if (isBurmese) {
+        maxTokens = isEmotional ? 1000 : 800;
+    }
 
     const result = await groq.chat(
         {
@@ -193,7 +217,21 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     );
 
     // ─── Phase 4: Post-Processing ────────────────────────────────────
-    const content = result.content || "";
+    let content = result.content || "";
+
+    // IMPORTANT: Strip <think>...</think> tags which are output by DeepSeek r1 or similar reasoning models
+    // Since DeepSeek sometimes outputs its thoughts even when instructed not to, we must clean the final output.
+    // IMPORTANT: Strip <think>...</think> tags using GREEDY matching
+    // to catch ALL reasoning content between first <think> and last </think>
+    const thinkMatch = content.match(/<think>[\s\S]*<\/think>/);
+    if (thinkMatch) {
+        content = content.replace(thinkMatch[0], "").trim();
+    } else {
+        const thinkEndIdx = content.indexOf("</think>");
+        if (thinkEndIdx !== -1) {
+            content = content.slice(thinkEndIdx + 8).trim();
+        }
+    }
 
     // Analyze AI's own sentiment for timing calculations
     const textForSentiment = content

@@ -212,6 +212,30 @@ function sanitizeStickers(content: string, characterName: string): string {
 function cleanResponseText(rawContent: string, characterName: string): string {
     let content = rawContent.replace(/^["']+|["']+$/g, "").trim();
 
+    // Strip <think>...</think> tags from DeepSeek reasoning models (GREEDY match)
+    content = content.replace(/<think>[\s\S]*<\/think>/g, "").trim();
+    // Also handle unclosed <think> tags (model got cut off mid-thought)
+    const thinkEndIdx = content.indexOf("</think>");
+    if (thinkEndIdx !== -1) {
+        content = content.slice(thinkEndIdx + 8).trim();
+    }
+    // Handle opening <think> without closing (strip everything from <think> to end if no closing tag)
+    const thinkStartIdx = content.indexOf("<think>");
+    if (thinkStartIdx !== -1) {
+        content = content.slice(0, thinkStartIdx).trim();
+    }
+
+    // Strip inline reasoning patterns (DeepSeek often outputs these without <think> tags)
+    content = content
+        .replace(/^(The user (said|is|wants|asked|seems|sent|mentioned|wrote)|Let me (think|respond|consider|analyze)|I (should|need to|will|must|can) (respond|reply|say|write|generate|think|consider)|My response (should|will|is)|Here'?s (my|the|a) (response|reply|message)|In character,? (I|as)|Okay,? (so|let|I)|Now (I|let me|I'll)|Looking at (this|the)|Based on (the|this|what)|Considering (the|this|what)|Since (the|this|they)|This means (I|the)|As \w+,? I).*$/gim, "")
+        .replace(/^(အသုံးပြုသူက|သုံးသူက|ဒါပေမယ့်|စာကြောင်းနှစ်ကြောင်း ဖလှယ်ကတည်းက|ဒီချက်တင်စကားဝိုင်းမှာ|ဘာကိုဆိုလိုတာလဲလို့|ဆိုလိုတာလဲလို့ မေးနေတယ်။|အခုနှစ်ဆိုတာ ဘာကိုဆိုလိုတာလဲ).*$/gim, "")
+        .trim();
+
+    // Strip bracketed meta-commentary
+    content = content
+        .replace(/\[(Inner thought|Analysis|Reasoning|Strategy|Note|Context|Understanding|Tone|Plan|Cognitive state|Emotional tone|Response plan|User intent|Chat context|User prompt)[^\]]*\]/gi, "")
+        .trim();
+
     // Fallback: If AI wraps response in ```json text ```, strip the wrapper
     const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;
     const match = content.match(jsonBlockRegex);
@@ -227,8 +251,14 @@ function cleanResponseText(rawContent: string, characterName: string): string {
             else if (parsed.text) content = parsed.text;
             else if (parsed.content) content = parsed.content;
             else if (parsed.response) content = parsed.response;
+            else if (parsed.message) content = parsed.message;
         } catch { /* ignore if not JSON */ }
     }
+
+    // Strip partial JSON fragments embedded in text (e.g., {"reply": "..."} mixed with normal text)
+    content = content.replace(/\{\s*"(reply|text|content|response|message)"\s*:\s*"([^"]*)"\s*\}/g, '$2');
+    // Strip remaining orphaned curly braces with key-value patterns
+    content = content.replace(/\{\s*"\w+"\s*:.*?\}/g, "").trim();
 
     content = content.replace(/^\[MessageID:\s*[^\]]+\]\s*/i, "").trim();
 
@@ -240,6 +270,116 @@ function cleanResponseText(rawContent: string, characterName: string): string {
     content = content.replace(/^\[[^\]]+\]:\s*/, "").trim();
 
     return content;
+}
+
+// ─── Enforce Short Messages (Code-Level) ─────────────────────────────────────
+
+/**
+ * Hard code-level enforcement of short message bubbles.
+ * DeepSeek and other reasoning models often ignore prompt instructions,
+ * so we enforce short messages programmatically.
+ *
+ * Rules:
+ *   - Each bubble (split by |) must be max ~120 chars for Burmese, ~200 for others
+ *   - If a bubble is too long, split it at sentence boundaries
+ *   - Strip any remaining meta-commentary or analysis text
+ */
+function enforceShortMessages(content: string, isBurmese: boolean): string {
+    let cleaned = content;
+
+    if (isBurmese) {
+        // STEP 1: Strip English and Burmese reasoning patterns (even with embedded Myanmar quotes)
+        cleaned = cleaned
+            .replace(/^(The user|Let'?s think|I should|I need|I'll|My response|First,? I|Here'?s|Okay,? so|Now I|Looking at|Based on|Considering|Since the|The message|This means|In character|As \w+,?).*$/gim, "")
+            .replace(/^(အသုံးပြုသူက|သုံးသူက|ဒါပေမယ့် သုံးသူက|စာကြောင်းနှစ်ကြောင်း ဖလှယ်ကတည်းက|ဒီချက်တင်စကားဝိုင်းမှာ|ဘာကိုဆိုလိုတာလဲလို့|ဆိုလိုတာလဲလို့ မေးနေတယ်။|အခုနှစ်ဆိုတာ ဘာကိုဆိုလိုတာလဲ).*$/gim, "")
+            .replace(/\(.*?(why|what|how|because|means|translat|swear|said|asked|respond).*?\)/gi, "")
+            .replace(/\{[^}]*\}/g, "")
+            .trim();
+
+        // STEP 2: Split and filter using Myanmar character ratio
+        const segments = cleaned.split(/[\n]+/).filter(s => s.trim());
+        const validSegments: string[] = [];
+
+        for (const seg of segments) {
+            const t = seg.trim();
+            if (!t || t.length < 2) continue;
+            if (/\[\[(STICKER|REACT|REPLY|DAILY|TAROT|COMPATIBILITY|REMEDY|CHART|TABLE):/.test(t)) {
+                validSegments.push(t); continue;
+            }
+            const mc = (t.match(/[\u1000-\u109F\u104A\u104B]/g) || []).length;
+            const ac = (t.match(/[a-zA-Z]/g) || []).length;
+            const total = mc + ac;
+            if (total === 0) { if (t.length <= 20) validSegments.push(t); continue; }
+            const ratio = mc / total;
+            // If starts with English letter and Myanmar ratio is low → reasoning, skip
+            if (/^[a-zA-Z"'(]/.test(t) && ratio < 0.7) continue;
+            // Keep only if Myanmar chars dominate
+            if (ratio >= 0.4) validSegments.push(t);
+        }
+        cleaned = validSegments.join(" | ");
+    }
+
+    // Strip meta patterns (all languages)
+    cleaned = cleaned
+        .replace(/^(Analysis|Note|Reasoning|Strategy|Context|Understanding|Inner thoughts|Tone plan|Response plan|Emotional tone|User intent|Cognitive state|Output|Response|Translation|Approach):?\s*.*$/gim, "")
+        .replace(/\*\*[^*]+\*\*/g, "")
+        .replace(/^[-*]\s+.{0,30}:/gm, "")
+        .replace(/^\d+\.\s+/gm, "")
+        // Strip lines that look like prompt echo (system instructions leaking)
+        .replace(/^.*(CRITICAL|RULES:|DIRECTIVE|MUST|VIOLATION|OUTPUT FORMAT|ABSOLUTE|NEGATIVE PROMPT|NEVER output).*$/gim, "")
+        // Strip lines that are clearly English reasoning about the conversation
+        .replace(/^(The user|I should|I need|I will|Let me|Here'?s|Based on|Considering|Since the|This means|In character|Now I|Looking at)\b.*$/gim, "")
+        .trim();
+
+    // Split by existing pipe separators
+    const bubbles = cleaned.split(/\s*\|\s*/).filter(b => b.trim().length > 0);
+
+    const maxCharsPerBubble = isBurmese ? 120 : 200;
+    const finalBubbles: string[] = [];
+
+    for (const bubble of bubbles) {
+        const trimmed = bubble.trim();
+        if (!trimmed) continue;
+
+        // Bubble-level Myanmar ratio check
+        if (isBurmese) {
+            const mc = (trimmed.match(/[\u1000-\u109F]/g) || []).length;
+            const ac = (trimmed.match(/[a-zA-Z]/g) || []).length;
+            if (mc + ac > 0 && mc / (mc + ac) < 0.3 && !/\[\[(STICKER|REACT|REPLY)/.test(trimmed)) continue;
+        }
+
+        if (trimmed.length <= maxCharsPerBubble) {
+            finalBubbles.push(trimmed);
+        } else {
+            // Split at sentence boundaries
+            const sentenceDelimiters = isBurmese
+                ? /(?<=[\u104B\.!?\n])/g
+                : /(?<=[.!?\n])/g;
+
+            const sentences = trimmed.split(sentenceDelimiters).filter(s => s.trim().length > 0);
+
+            let currentBubble = "";
+            for (const sentence of sentences) {
+                const s = sentence.trim();
+                if (!s) continue;
+
+                if ((currentBubble + " " + s).trim().length <= maxCharsPerBubble) {
+                    currentBubble = (currentBubble + " " + s).trim();
+                } else {
+                    if (currentBubble) finalBubbles.push(currentBubble);
+                    // Hard truncate if a single sentence is still too long
+                    currentBubble = s.length > maxCharsPerBubble ? s.slice(0, maxCharsPerBubble) : s;
+                }
+            }
+            if (currentBubble) finalBubbles.push(currentBubble);
+        }
+    }
+
+    // Limit total number of bubbles
+    const maxBubbles = 4;
+    const limited = finalBubbles.slice(0, maxBubbles);
+
+    return limited.join(" | ");
 }
 
 // ─── Main API Route ──────────────────────────────────────────────────────────
@@ -363,6 +503,12 @@ Using this information, generate your response. Remember to format the output wi
         // ─── Post-Process Reply ──────────────────────────────────────
         let content = cleanResponseText(engineOutput.reply, characterName);
         content = sanitizeStickers(content, characterName);
+
+        // Enforce short messages at code level (regardless of what the model outputs)
+        const isBurmeseResponse = responseLanguage === "Burmese (Unicode)" ||
+            responseLanguage === "Burmese (Zawgyi)" ||
+            responseLanguage === "Mix (Burmese + English)";
+        content = enforceShortMessages(content, isBurmeseResponse);
 
         // ─── Save to Memory ──────────────────────────────────────────
         if (content && message) {

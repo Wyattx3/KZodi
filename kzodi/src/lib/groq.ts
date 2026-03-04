@@ -312,12 +312,14 @@ function generateCacheKey(params: GroqChatParams, prefix: string): string {
 export const PROVIDERS = {
   GROQ: "groq",
   XAI: "xai",
-  OLLAMA: "ollama"
+  OLLAMA: "ollama",
+  FIREWORKS: "fireworks"
 };
 
 function determineProvider(model: string): string {
   if (model.includes("grok")) return PROVIDERS.XAI;
   if (model.includes("ollama")) return PROVIDERS.OLLAMA;
+  if (model.includes("fireworks")) return PROVIDERS.FIREWORKS;
   return PROVIDERS.GROQ; // default to Groq
 }
 
@@ -413,6 +415,14 @@ class MultiProviderClient {
             return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
           }
           headers.Authorization = `Bearer ${apiKey}`;
+        } else if (provider === PROVIDERS.FIREWORKS) {
+          apiUrl = "https://api.fireworks.ai/inference/v1/chat/completions";
+          apiKey = process.env.FIREWORKS_API_KEY || "";
+          if (!apiKey) {
+            console.warn("[AI] FIREWORKS_API_KEY missing, falling back to Groq Kimi");
+            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+          }
+          headers.Authorization = `Bearer ${apiKey}`;
         } else if (provider === PROVIDERS.GROQ) {
           apiUrl = GROQ_URL;
           const currentKey = keyPool.getKey();
@@ -453,6 +463,14 @@ class MultiProviderClient {
           // presencePenalty, frequencyPenalty, stop, or reasoning_effort
           body.max_tokens = params.max_tokens ?? 1000;
           // Do NOT send response_format or temperature for grok-4
+        } else if (provider === PROVIDERS.FIREWORKS) {
+          // Fireworks (DeepSeek v3p2) — reasoning model
+          body.temperature = params.temperature ?? 0.7;
+          body.max_tokens = params.max_tokens ?? 1000;
+          // CRITICAL: Set reasoning_effort to "low" to minimize CoT reasoning tokens
+          // This tells the model to reason minimally, reducing think output
+          body.reasoning_effort = "low";
+          // Do NOT send response_format for DeepSeek — it causes malformed output
         } else {
           body.temperature = params.temperature ?? 0.7;
           body.max_tokens = params.max_tokens ?? 1000;
@@ -525,7 +543,30 @@ class MultiProviderClient {
           // Optional: map Ollama specific metrics here if wanted
         } else {
           const choice = data.choices?.[0];
+          // IMPORTANT: DeepSeek models return reasoning in `reasoning_content` (separate field).
+          // We ONLY want the `content` field, never the reasoning.
           content = choice?.message?.content || "";
+
+          // Debug: log if reasoning_content is present (to verify it's being separated)
+          if (provider === PROVIDERS.FIREWORKS && choice?.message?.reasoning_content) {
+            console.log(`[AI][FIREWORKS] reasoning_content present (${choice.message.reasoning_content.length} chars) — DISCARDED`);
+            console.log(`[AI][FIREWORKS] actual content: "${content.slice(0, 100)}..."`);
+          }
+
+          // Strip <think>...</think> tags that DeepSeek may embed in content
+          // Use GREEDY matching to catch everything between first <think> and last </think>
+          content = content.replace(/<think>[\s\S]*<\/think>/g, "").trim();
+          // Handle unclosed </think> tag (reasoning at start of content)
+          const thinkEndIdx = content.indexOf("</think>");
+          if (thinkEndIdx !== -1) {
+            content = content.slice(thinkEndIdx + 8).trim();
+          }
+          // Handle opening <think> without closing (cut off by max_tokens)
+          const thinkStartIdx = content.indexOf("<think>");
+          if (thinkStartIdx !== -1) {
+            content = content.slice(0, thinkStartIdx).trim();
+          }
+
           finishReason = choice?.finish_reason || "unknown";
           truncated = finishReason === "length";
 
@@ -556,7 +597,8 @@ class MultiProviderClient {
           await sleep(backoffs[attempt] || 4000);
           continue;
         }
-        if ((provider === PROVIDERS.XAI && model.includes("grok")) || provider === PROVIDERS.OLLAMA) {
+        if ((provider === PROVIDERS.XAI && model.includes("grok")) || provider === PROVIDERS.OLLAMA || provider === PROVIDERS.FIREWORKS) {
+          console.warn(`[AI] ${provider} failed, falling back to Groq ${FALLBACK_MODEL}`);
           return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
         }
         return { content: "", finish_reason: "exception", truncated: false, cached: false, provider };

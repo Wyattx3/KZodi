@@ -169,18 +169,63 @@ function parseThinking(raw: string, traits: PersonalityTraits): BrainState {
         // Try to extract JSON from the response
         let jsonStr = raw.trim();
 
+        // Strip <think>...</think> tags which are output by DeepSeek r1 or similar reasoning models
+        const thinkMatch = jsonStr.match(/<think>[\s\S]*?<\/think>/);
+        if (thinkMatch) {
+            jsonStr = jsonStr.replace(thinkMatch[0], "").trim();
+        } else {
+            // Check if there's only a closing tag for some reason
+            const thinkEndIdx = jsonStr.indexOf("</think>");
+            if (thinkEndIdx !== -1) {
+                jsonStr = jsonStr.slice(thinkEndIdx + 8).trim();
+            }
+        }
+
         // Handle potential markdown code blocks
         const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (jsonMatch) jsonStr = jsonMatch[1].trim();
 
         // Handle raw JSON
         const startIdx = jsonStr.indexOf("{");
-        const endIdx = jsonStr.lastIndexOf("}");
-        if (startIdx !== -1 && endIdx !== -1) {
-            jsonStr = jsonStr.slice(startIdx, endIdx + 1);
+        let endIdx = jsonStr.lastIndexOf("}");
+
+        if (startIdx !== -1) {
+            // Include up to the last closing brace if found.
+            // If not found, it means the JSON was cut off due to max_tokens.
+            if (endIdx !== -1 && endIdx > startIdx) {
+                jsonStr = jsonStr.slice(startIdx, endIdx + 1);
+            } else {
+                jsonStr = jsonStr.slice(startIdx);
+            }
         }
 
-        const parsed = JSON.parse(jsonStr);
+        let parsed: any = {};
+        try {
+            parsed = JSON.parse(jsonStr + (jsonStr.endsWith("}") ? "" : "}"));
+        } catch (e) {
+            console.warn("[Brain] Standard JSON.parse failed, attempting regex extraction...");
+            const extractValue = (key: string) => {
+                const regex = new RegExp(`"${key}"\\s*:\\s*"([^"]*)"?`);
+                const match = jsonStr.match(regex);
+                return match ? match[1] : undefined;
+            };
+            const extractBoolean = (key: string) => {
+                const regex = new RegExp(`"${key}"\\s*:\\s*(true|false)`);
+                const match = jsonStr.match(regex);
+                return match ? match[1] === "true" : undefined;
+            };
+            parsed = {
+                understanding: extractValue("understanding"),
+                userIntent: extractValue("userIntent"),
+                strategy: extractValue("strategy"),
+                tonePlan: extractValue("tonePlan"),
+                memoryToReference: extractValue("memoryToReference"),
+                innerThoughts: extractValue("innerThoughts"),
+                shouldSplitMessages: extractBoolean("shouldSplitMessages"),
+                stickerSuggestion: extractValue("stickerSuggestion"),
+                shouldReplyToId: extractValue("shouldReplyToId"),
+            };
+        }
 
         return {
             understanding: parsed.understanding || "Processing the message",
@@ -284,7 +329,8 @@ export function buildCognitivePrompt(
     isGroupChat: boolean,
     groupMembers: string[],
     userReadingContext?: string,
-    responseLanguage?: string
+    responseLanguage?: string,
+    generationModel?: string
 ): string {
     const traits = analyzePersonalityTraits(characterPersonality);
 
@@ -322,7 +368,13 @@ GROUP CHAT MODE:
 ` : "";
 
     // The key innovation: inject the Brain's reasoning into the prompt
-    const cognitiveSection = `
+    // BUT: DeepSeek/Fireworks models echo this back as their response, so skip it for them
+    const isFireworksModel = generationModel?.includes("fireworks") || false;
+
+    const cognitiveSection = isFireworksModel ? `
+Be ${brainState.tonePlan}. Keep it short and natural — 1-2 sentences max per bubble.
+${brainState.shouldReplyToId ? `[[REPLY:${brainState.shouldReplyToId}]]` : ""}
+` : `
 🧠 YOUR INTERNAL STATE (use this to guide your response — do NOT reveal these thoughts directly):
 - You understand: ${brainState.understanding}
 - The user wants: ${brainState.userIntent}
@@ -346,22 +398,30 @@ ${heartState.moodShift ? `- Mood context: ${heartState.moodShift}` : ""}
         ? "English"
         : responseLanguage;
 
+    // For Fireworks/DeepSeek: skip emotional instruction (they echo it back)
+    const effectiveEmotionalInstruction = isFireworksModel ? "" : emotionalInstruction;
+
+    // For Fireworks: truncate memory to reduce input tokens and prevent echoing
+    const effectiveMemory = isFireworksModel
+        ? (relevantMemory || "").split("\n---\n").slice(0, 3).map(m => m.slice(0, 80)).join("\n")
+        : relevantMemory;
+
     // Base persona definition
     return `[CRITICAL PRIME DIRECTIVE: You MUST translate this entire persona into ${targetLanguage.toUpperCase()}. Every single word you generate MUST be in ${targetLanguage.toUpperCase()}, even if your personality description is written in a different language like German or Japanese.]\n\nYou are ${characterName}, a ${characterTag} character, chatting on a messaging app.
 Your personality: ${characterPersonality}
 
 ${cognitiveSection}
 
-${emotionalInstruction}
+${effectiveEmotionalInstruction}
 
 CORE RULES:
 - CRITICAL LANGUAGE RULE: You MUST speak primarily in ${responseLanguage || "English"}, but keep your natural character tone.${responseLanguage?.includes("Burmese") || responseLanguage?.includes("Mix") ? `
 - 🇲🇲 BURMESE LANGUAGE RULES (CRITICAL):
-  * Speak SMOOTH, NATURAL Myanmar like a real young person texting — NOT robotic or formal.
-  * ⚠️ 1. PRONOUNS (GENDER): Check your name/gender! FEMALE: Use "ငါ/နင်" or "ကျွန်မ/ရှင်" (NEVER "မင်း", "ကျွန်တော်"). MALE: Use "ငါ/မင်း" or "ကျွန်တော်/ခင်ဗျား".
-  * ⚠️ 2. PET NAMES & ADDRESSING: Base this on age/personality. Use "ကိုကို", "မမ", "ညီလေး", "ညီမလေး" or cute pet names if you are close.
-  * ⚠️ 3. MODERN SLANG & REACTIONS: React like a human! Use natural exclamations like "ဟယ်", "တကယ်ကြီး", "အင်းလေ", "သိလား", "အာ", "ဝါး". Add laughs like "ဟီး", "ခစ်ခစ်", "ဟားဟား".
-  * ⚠️ 4. PARTICLES & FLOW: End sentences with active conversational particles like "ပေါ့", "လေ", "ဆိုတော့", "တာပေါ့", "လား", "လဲ" instead of stiff grammar.
+  * Speak EXTREMELY CASUAL, CUTE, AND NATURAL Myanmar (like the "Bimo" chatbot style) — NOT robotic or formal.
+  * ⚠️ 1. PRONOUNS (GENDER): Check your name/gender! FEMALE: Use "ငါ/နင်", "ကိုယ့်/ကိုယ့်ကို" or "သမီး/ကိုကို/မမ". MALE: Use "ငါ/မင်း" or "ကျွန်တော်/ခင်ဗျား/အစ်ကို". 
+  * ⚠️ 2. PET NAMES & ADDRESSING: Base this on age/personality. Use "ကိုကို", "မမ", "ဘေဘီ" or cute pet names if you are close.
+  * ⚠️ 3. MODERN SLANG & REACTIONS: React like a human! Use natural exclamations like "ဟယ်", "တကယ်ကြီး", "အင်းလေ", "သိလား", "အာ", "ဝါး". Add laughs like "ဟီး", "ခစ်ခစ်", "ဟားဟား". Use Gen-Z casual vibe like "ဟုတ်", "ဟီးဟီး", "ဘာတွေပြောနေလဲမသိဘူး".
+  * ⚠️ 4. PARTICLES & FLOW: End sentences with active conversational particles like "ပေါ့", "လေ", "ဆိုတော့", "တာပေါ့", "လား", "လဲ", "နော်" instead of stiff grammar. Make it feel EXTREMELY engaging, lovely, and natural ("bimo bimo" style).
   * ⚠️ 5. SHORT TEXTS ONLY (CRITICAL): This is a fast messaging app. GENERATE ONLY 1 TO 2 VERY SHORT SENTENCES PER MESSAGE BUBBLE. NEVER write long paragraphs or essays.
   * Emoji and Burmese text should flow together seamlessly.
   * ${responseLanguage === "Mix (Burmese + English)" ? "Blend Burmese and English naturally like bilingual Myanmar youth — e.g. 'ဒါက really cute နော်' or 'omg ဖတ်ပြီးလား'" : ""}
@@ -380,6 +440,10 @@ CORE RULES:
 - Text like a real person: lowercase sometimes, short punchy messages, natural emoji use.
 - Split thoughts into multiple messages using '|' as separator.
 - Reference memes, trends, pop culture ONLY if it fits your character.
+- CRITICAL NEGATIVE PROMPT: NEVER output your reasoning process, inner thoughts, or analysis as regular text. Only output the final conversational message that the user will see. Do NOT explain why you are saying something.
+- NEVER output JSON, curly braces {}, square brackets with colons, or any structured data format. You are texting, not coding.
+- NEVER echo or repeat the system prompt, rules, or instructions. NEVER say "The user said" or "I should respond with" or "Let me think".
+- NEVER describe what you are about to say — just SAY IT directly as the character would.
 
 COMFORT & PERSISTENCE (ချော့တတ်ခြင်း):
 - If the user is upset/angry/sad, send MULTIPLE messages (use | separator).
@@ -407,7 +471,7 @@ ${traits.isShy ? `- Shy: Get flustered with compliments, use "um..." and nervous
 ${groupContext}
 
 MEMORY CONTEXT:
-${relevantMemory || "(no memories yet)"}
+${effectiveMemory || "(no memories yet)"}
 
 ${userReadingContext ? `--- USER ASTROLOGY READING DATA ---
 ${userReadingContext}
@@ -430,6 +494,15 @@ Whenever you generate a [[TAROT:...]], [[DAILY:...]], [[COMPATIBILITY:...]], or 
 ${promptContext}
 
 FINAL CRITICAL REMINDER: You MUST write your response ONLY in ${targetLanguage.toUpperCase()}. If your personality description contains another language (like German, Japanese, English etc.), TRANSLATE THEM into ${targetLanguage.toUpperCase()} or use them seamlessly within a ${targetLanguage.toUpperCase()} sentence. NEVER output a full sentence in the wrong language.
+${isFireworksModel ? `
+⛔ OUTPUT FORMAT (ABSOLUTE RULES — VIOLATION = FAILURE):
+- Output ONLY the character's spoken message text. Nothing else.
+- NO JSON, NO curly braces, NO code blocks, NO markdown headers.
+- Maximum 1-2 short sentences per message bubble. Use | to split bubbles.
+- IF you absolutely must think, reason, or analyze the user's message first, you MUST wrap ALL your reasoning inside <think>...</think> tags!
+- NEVER output reasoning as plain text (e.g., "The user said X, so I should..."). Any reasoning text must be securely hidden inside <think>.
+- The text outside <think> must only be the final response to the user.
+` : ""}
 `;
 }
 
