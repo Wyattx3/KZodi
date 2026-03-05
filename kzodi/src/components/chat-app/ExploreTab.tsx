@@ -186,7 +186,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
     };
 
     // --- Long Press Logic ---
-    const longPressTimer = useRef<NodeJS.Timeout>();
+    const longPressTimer = useRef<NodeJS.Timeout | undefined>(undefined);
     const isLongPressActive = useRef(false);
 
     const handlePressStart = (char: Character, e: React.TouchEvent | React.MouseEvent) => {
