@@ -40,7 +40,18 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Noto+Sans+Myanmar:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <link rel="icon" href="/logo.png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+               window.addEventListener('beforeinstallprompt', function(e) {
+                 e.preventDefault();
+                 window.deferredPWAEvent = e;
+               });
+             `,
+          }}
+        />
       </head>
       <body className="antialiased">
         <Providers>

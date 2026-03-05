@@ -1,7 +1,6 @@
 "use client";
 import React from "react";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 
 interface ChatLandingPageProps {
     onGetStarted: () => void;
@@ -65,11 +64,18 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
     React.useEffect(() => {
         const handleBeforeInstallPrompt = (e: any) => {
             e.preventDefault();
+            (window as any).deferredPWAEvent = e;
             setDeferredPrompt(e);
             setIsInstallable(true);
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+        // Check if it already fired before this component mounted
+        if (typeof window !== 'undefined' && (window as any).deferredPWAEvent) {
+            setDeferredPrompt((window as any).deferredPWAEvent);
+            setIsInstallable(true);
+        }
 
         return () => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -111,80 +117,49 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
                 {/* Center content */}
                 <div className="chat-landing-center">
                     {/* Logo */}
-                    <motion.div
-                        className="chat-landing-logo"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.2, duration: 0.5, type: "spring" }}
-                    >
+                    <div className="chat-landing-logo">
                         <Image src="/logo.png" alt="Kakoei Logo" width={64} height={64} className="object-contain" priority />
-                    </motion.div>
+                    </div>
 
                     {/* Title */}
-                    <motion.h1
-                        className="chat-landing-title"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.35, duration: 0.5 }}
-                    >
+                    <h1 className="chat-landing-title">
                         Kakoei Chat
-                    </motion.h1>
+                    </h1>
 
                     {/* Subtitle */}
-                    <motion.p
-                        className="chat-landing-subtitle"
-                        initial={{ opacity: 0, y: 16 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.45, duration: 0.5 }}
-                    >
+                    <p className="chat-landing-subtitle">
                         Chat with your favorite anime, K-pop &amp; BL characters powered by AI
-                    </motion.p>
+                    </p>
 
                     <div className="w-full flex flex-col gap-3 mt-4">
                         {/* Get Started button */}
-                        <motion.button
+                        <button
                             className="chat-landing-btn"
                             onClick={onGetStarted}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.6, duration: 0.5 }}
-                            whileTap={{ scale: 0.96 }}
                         >
                             Get Started
-                        </motion.button>
+                        </button>
 
                         {/* Install App button (PWA only) */}
-                        <AnimatePresence>
-                            {isInstallable && (
-                                <motion.button
-                                    onClick={handleInstallClick}
-                                    initial={{ opacity: 0, y: 10, height: 0 }}
-                                    animate={{ opacity: 1, y: 0, height: "auto" }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.3 }}
-                                    whileTap={{ scale: 0.96 }}
-                                    className="w-[280px] mx-auto py-3.5 rounded-full border border-white/20 bg-white/10 text-white font-600 backdrop-blur-md active:bg-white/20 transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <polyline points="7 10 12 15 17 10" />
-                                        <line x1="12" y1="15" x2="12" y2="3" />
-                                    </svg>
-                                    Install App
-                                </motion.button>
-                            )}
-                        </AnimatePresence>
+                        {isInstallable && (
+                            <button
+                                onClick={handleInstallClick}
+                                className="w-[280px] mx-auto py-3.5 rounded-full border border-white/20 bg-white/10 text-white font-600 backdrop-blur-md active:bg-white/20 transition-colors flex items-center justify-center gap-2"
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                Install App
+                            </button>
+                        )}
                     </div>
 
                     {/* Footer note */}
-                    <motion.p
-                        className="chat-landing-note mt-6"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.75, duration: 0.5 }}
-                    >
+                    <p className="chat-landing-note mt-6">
                         Sign in with Google to continue
-                    </motion.p>
+                    </p>
                 </div>
             </div>
         </div>

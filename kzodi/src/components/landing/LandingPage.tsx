@@ -38,12 +38,12 @@ const LandingPage: React.FC<LandingPageProps> = () => {
       <div className="absolute bottom-[200px] right-[-8px] puffy-pill-yellow w-[40px] h-[18px] opacity-30 pointer-events-none" />
 
       {/* Logo */}
-      <div className="kz-fade flex items-center mb-6 relative z-10" style={{ animationDelay: "0s" }}>
+      <div className="flex items-center mb-6 relative z-10">
         <Image src="/logo.png" alt="Kakoei Logo" width={48} height={48} className="object-contain" priority />
       </div>
 
       {/* Hero section */}
-      <div className="kz-fade mb-6 relative z-10" style={{ animationDelay: "0.05s" }}>
+      <div className="mb-6 relative z-10">
         <div className="flex items-center gap-2.5 mb-4">
           <div className="bg-pastel-yellow rounded-full px-3 py-1.5 shadow-sm border border-[#FBE058]">
             <span className="text-[11px] font-700 text-[#4A3728]">AI-Powered</span>
@@ -61,7 +61,7 @@ const LandingPage: React.FC<LandingPageProps> = () => {
       </div>
 
       {/* Zodiac orbit */}
-      <div className="kz-fade mb-7 relative z-10" style={{ animationDelay: "0.1s" }}>
+      <div className="mb-7 relative z-10">
         <div className="relative h-[140px] flex items-center justify-center">
           {/* Orbit ring line */}
           <svg className="absolute inset-0 m-auto" width="130" height="130" viewBox="0 0 130 130" fill="none">
@@ -92,7 +92,7 @@ const LandingPage: React.FC<LandingPageProps> = () => {
       </div>
 
       {/* CTA buttons */}
-      <div className="kz-fade flex flex-col gap-2.5 mb-7 relative z-10" style={{ animationDelay: "0.15s" }}>
+      <div className="flex flex-col gap-2.5 mb-7 relative z-10">
         <Link href="/personality" className="w-full flex items-center justify-center gap-2.5 text-[15px] font-700 bg-pastel-yellow text-[#4A3728] py-4 rounded-2xl shadow-[0_4px_0_#d4be4a,0_8px_16px_rgba(0,0,0,0.1)] active:translate-y-[2px] active:shadow-[0_2px_0_#d4be4a,0_4px_8px_rgba(0,0,0,0.1)] transition-all">
           <span>Want to Know Personality</span>
           <ArrowRight size={17} />
@@ -103,7 +103,7 @@ const LandingPage: React.FC<LandingPageProps> = () => {
       </div>
 
       {/* Stats row */}
-      <div className="kz-fade flex items-center justify-between mb-7 relative z-10" style={{ animationDelay: "0.2s" }}>
+      <div className="flex items-center justify-between mb-7 relative z-10">
         {[
           { num: "12", label: "Zodiac" },
           { num: "16", label: "MBTI" },
@@ -120,7 +120,7 @@ const LandingPage: React.FC<LandingPageProps> = () => {
       </div>
 
       {/* How it works */}
-      <div className="kz-fade mb-7 relative z-10" style={{ animationDelay: "0.25s" }}>
+      <div className="mb-7 relative z-10">
         <h3 className="font-[var(--font-display)] font-700 text-[14px] tracking-[-0.01em] mb-4 text-[#4A3728]">How it works</h3>
         <div className="flex flex-col gap-3">
           {[
@@ -142,7 +142,7 @@ const LandingPage: React.FC<LandingPageProps> = () => {
       </div>
 
       {/* What you'll discover */}
-      <div className="kz-fade mb-7 relative z-10" style={{ animationDelay: "0.3s" }}>
+      <div className="mb-7 relative z-10">
         <h3 className="font-[var(--font-display)] font-700 text-[14px] tracking-[-0.01em] mb-3 text-[#4A3728]">What you&apos;ll discover</h3>
         <div className="flex flex-wrap gap-1.5">
           {["Full birth chart", "Rising sign", "Moon sign", "Planet positions", "House meanings", "Personality deep dive", "Love style", "Compatibility", "MBTI + Astro fusion", "AI chat"].map((item) => (
@@ -152,7 +152,7 @@ const LandingPage: React.FC<LandingPageProps> = () => {
       </div>
 
       {/* Bottom CTA */}
-      <div className="kz-fade relative z-10" style={{ animationDelay: "0.35s" }}>
+      <div className="relative z-10">
         <Link href="/personality" className="w-full flex items-center justify-center gap-2.5 text-[15px] font-700 bg-[#4A3728] text-white py-4 rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.8),0_8px_16px_rgba(0,0,0,0.2)] active:translate-y-[2px] active:shadow-[0_2px_0_rgba(0,0,0,0.8),0_4px_8px_rgba(0,0,0,0.2)] transition-all mb-3">
           <span>Get Started</span>
           <ArrowRight size={17} />
