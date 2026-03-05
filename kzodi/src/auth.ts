@@ -16,6 +16,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         strategy: "jwt",
     },
     callbacks: {
+        async signIn({ user, account, profile, email, credentials }) {
+            // Explicitly allow sign in to proceed, NextAuth will handle linking automatically if allowDangerousEmailAccountLinking is true.
+            // When signIn returns true, NextAuth proceeds with the session generation.
+            return true;
+        },
         async jwt({ token, account, profile }) {
             // Always resolve the user ID from the database by email.
             // This ensures the SAME user ID is used across all devices/sessions,
