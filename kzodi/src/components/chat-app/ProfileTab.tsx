@@ -28,15 +28,11 @@ export default function ProfileTab() {
                 <div className="explore-hero-content">
                     <motion.h1
                         className="explore-hero-title"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
                     >
                         Profile
                     </motion.h1>
                     <motion.p
                         className="explore-hero-subtitle"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
                     >
                         Your identity and settings
                     </motion.p>
@@ -45,8 +41,6 @@ export default function ProfileTab() {
 
             <motion.div
                 className="explore-section"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
             >
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", padding: "32px 0" }}>
                     {session?.user ? (

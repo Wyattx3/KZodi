@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import Image from "next/image";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ChatLandingPageProps {
     onGetStarted: () => void;
@@ -21,11 +21,10 @@ const CHARACTERS = [
     { name: "Pat & Pran", tag: "BL", image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?q=80&w=300&auto=format&fit=crop" },
 ];
 
-/* ── Single character card ──────────────────────────────────────────────── */
 function CharCard({ char }: { char: typeof CHARACTERS[number] }) {
     return (
         <div className="char-card">
-            <img src={char.image} alt={char.name} className="char-card-img" />
+            <Image src={char.image} alt={char.name} fill sizes="(max-width: 768px) 140px, 160px" className="char-card-img object-cover object-center" />
             <div className="chat-landing-overlay-card" />
             <div className="char-card-info">
                 <span className="char-card-tag-small">{char.tag}</span>
@@ -60,6 +59,33 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
     const row1 = CHARACTERS.slice(0, 5);
     const row2 = CHARACTERS.slice(5);
 
+    const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
+    const [isInstallable, setIsInstallable] = React.useState(false);
+
+    React.useEffect(() => {
+        const handleBeforeInstallPrompt = (e: any) => {
+            e.preventDefault();
+            setDeferredPrompt(e);
+            setIsInstallable(true);
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+        return () => {
+            window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        };
+    }, []);
+
+    const handleInstallClick = async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+            setIsInstallable(false);
+        }
+        setDeferredPrompt(null);
+    };
+
     return (
         <div className="chat-landing">
             {/* Background rows — fill the oversized rotated container */}
@@ -82,20 +108,6 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
 
             {/* Content */}
             <div className="chat-landing-content">
-                {/* Back button */}
-                <motion.button
-                    className="chat-landing-back"
-                    onClick={onBack}
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1, duration: 0.4 }}
-                    aria-label="Go back"
-                >
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                        <path d="M13 4L7 10L13 16" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                </motion.button>
-
                 {/* Center content */}
                 <div className="chat-landing-center">
                     {/* Logo */}
@@ -128,21 +140,45 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
                         Chat with your favorite anime, K-pop &amp; BL characters powered by AI
                     </motion.p>
 
-                    {/* Get Started button */}
-                    <motion.button
-                        className="chat-landing-btn"
-                        onClick={onGetStarted}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.6, duration: 0.5 }}
-                        whileTap={{ scale: 0.96 }}
-                    >
-                        Get Started
-                    </motion.button>
+                    <div className="w-full flex flex-col gap-3 mt-4">
+                        {/* Get Started button */}
+                        <motion.button
+                            className="chat-landing-btn"
+                            onClick={onGetStarted}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.6, duration: 0.5 }}
+                            whileTap={{ scale: 0.96 }}
+                        >
+                            Get Started
+                        </motion.button>
+
+                        {/* Install App button (PWA only) */}
+                        <AnimatePresence>
+                            {isInstallable && (
+                                <motion.button
+                                    onClick={handleInstallClick}
+                                    initial={{ opacity: 0, y: 10, height: 0 }}
+                                    animate={{ opacity: 1, y: 0, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.3 }}
+                                    whileTap={{ scale: 0.96 }}
+                                    className="w-[280px] mx-auto py-3.5 rounded-full border border-white/20 bg-white/10 text-white font-600 backdrop-blur-md active:bg-white/20 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                    Install App
+                                </motion.button>
+                            )}
+                        </AnimatePresence>
+                    </div>
 
                     {/* Footer note */}
                     <motion.p
-                        className="chat-landing-note"
+                        className="chat-landing-note mt-6"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.75, duration: 0.5 }}

@@ -1,12 +1,10 @@
 "use client";
 import React from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { ArrowRight } from "@/components/svg/ZodiacIcons";
 
-interface LandingPageProps {
-  onLearnPersonality: () => void;
-  onStartChat: () => void;
-}
+interface LandingPageProps { }
 
 import { publicZodiacIcons } from "@/components/svg/PublicZodiacIcons";
 
@@ -31,7 +29,7 @@ const ORBIT_POS = [
   [0, 58], [-29, 50], [-50, 29], [-58, 0], [-50, -29], [-29, -50],
 ];
 
-const LandingPage: React.FC<LandingPageProps> = ({ onLearnPersonality, onStartChat }) => {
+const LandingPage: React.FC<LandingPageProps> = () => {
   return (
     <div className="chat-app-content px-5 pt-8 pb-6 safe-top safe-bottom relative overflow-hidden">
       {/* Puffy 3D decorative floating shapes */}
@@ -95,13 +93,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLearnPersonality, onStartCh
 
       {/* CTA buttons */}
       <div className="kz-fade flex flex-col gap-2.5 mb-7 relative z-10" style={{ animationDelay: "0.15s" }}>
-        <button onClick={onLearnPersonality} className="w-full flex items-center justify-center gap-2.5 text-[15px] font-700 bg-pastel-yellow text-[#4A3728] py-4 rounded-2xl shadow-[0_4px_0_#d4be4a,0_8px_16px_rgba(0,0,0,0.1)] active:translate-y-[2px] active:shadow-[0_2px_0_#d4be4a,0_4px_8px_rgba(0,0,0,0.1)] transition-all">
+        <Link href="/personality" className="w-full flex items-center justify-center gap-2.5 text-[15px] font-700 bg-pastel-yellow text-[#4A3728] py-4 rounded-2xl shadow-[0_4px_0_#d4be4a,0_8px_16px_rgba(0,0,0,0.1)] active:translate-y-[2px] active:shadow-[0_2px_0_#d4be4a,0_4px_8px_rgba(0,0,0,0.1)] transition-all">
           <span>Want to Know Personality</span>
           <ArrowRight size={17} />
-        </button>
-        <button onClick={onStartChat} className="w-full text-[14px] font-700 bg-white text-[#4A3728] border-2 border-[#E5E2DC] py-4 rounded-2xl shadow-sm active:bg-light-gray transition-all">
+        </Link>
+        <Link href="/?view=chat-landing" className="w-full flex items-center justify-center text-[14px] font-700 bg-white text-[#4A3728] border-2 border-[#E5E2DC] py-4 rounded-2xl shadow-sm active:bg-light-gray transition-all">
           Start Chat
-        </button>
+        </Link>
       </div>
 
       {/* Stats row */}
@@ -155,10 +153,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLearnPersonality, onStartCh
 
       {/* Bottom CTA */}
       <div className="kz-fade relative z-10" style={{ animationDelay: "0.35s" }}>
-        <button onClick={onLearnPersonality} className="w-full flex items-center justify-center gap-2.5 text-[15px] font-700 bg-[#4A3728] text-white py-4 rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.8),0_8px_16px_rgba(0,0,0,0.2)] active:translate-y-[2px] active:shadow-[0_2px_0_rgba(0,0,0,0.8),0_4px_8px_rgba(0,0,0,0.2)] transition-all mb-3">
+        <Link href="/personality" className="w-full flex items-center justify-center gap-2.5 text-[15px] font-700 bg-[#4A3728] text-white py-4 rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.8),0_8px_16px_rgba(0,0,0,0.2)] active:translate-y-[2px] active:shadow-[0_2px_0_rgba(0,0,0,0.8),0_4px_8px_rgba(0,0,0,0.2)] transition-all mb-3">
           <span>Get Started</span>
           <ArrowRight size={17} />
-        </button>
+        </Link>
         <p className="text-center text-[11px] text-[#4A3728] opacity-60">Free to use. No account needed.</p>
       </div>
     </div>

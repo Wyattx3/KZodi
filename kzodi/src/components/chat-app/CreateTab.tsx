@@ -99,10 +99,6 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
 const LibraryView = ({ onCreateClick, onEditClick, onChatClick, characters = [] }: { onCreateClick: () => void, onEditClick: (char: any) => void, onChatClick: (char: any) => void, characters: Character[] }) => {
     return (
         <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3 }}
             style={{ paddingBottom: "100px" }}
         >
             <div className="explore-hero" style={{ paddingBottom: '20px' }}>
@@ -259,12 +255,7 @@ const SetupView = ({
     onBack: () => void
 }) => {
     return (
-        <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.3 }}
-        >
+        <motion.div>
             <div style={{ display: "flex", alignItems: "center", marginBottom: "20px" }}>
                 <button
                     onClick={onBack}
@@ -337,10 +328,6 @@ const SetupView = ({
 
             <motion.div
                 key={mode}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3 }}
             >
                 {mode === "manual" ? (
                     <CreateCharacterForm initialData={importedData} onSuccess={onSuccess} />
@@ -355,9 +342,6 @@ const SetupView = ({
 const SuccessView = ({ onLibrary, onChat, isUpdate }: { onLibrary: () => void, onChat: () => void, isUpdate?: boolean }) => {
     return (
         <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.1 }}
             style={{
                 height: "80vh",
                 display: "flex",

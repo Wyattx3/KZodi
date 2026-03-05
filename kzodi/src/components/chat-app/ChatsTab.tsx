@@ -587,7 +587,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
 
             {/* Search bar */}
             {conversations.length > 0 && (
-                <motion.div className="chats-search-wrap" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                <motion.div className="chats-search-wrap">
                     <div className="chats-search-box">
                         <svg className="chats-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
                             <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
@@ -608,9 +608,6 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             {conversations.length > 0 && (
                 <motion.div
                     className="chats-online-strip no-scrollbar"
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
                 >
                     {conversations.filter(c => !c.isGroup).map((convo) => {
                         const char = charMap[convo.characterId];
@@ -886,9 +883,6 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             {conversations.length === 0 && (
                 <motion.div
                     key="chats-empty-state-final"
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.5, ease: "easeOut" }}
                     style={{
                         padding: "80px 24px", textAlign: "center",
                         display: "flex", flexDirection: "column",
@@ -938,8 +932,6 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             {conversations.length > 0 && filteredConvos.length === 0 && searchQuery && (
                 <motion.div
                     className="chats-empty-search"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
                     style={{ padding: "40px 24px", textAlign: "center" }}
                 >
                     <p style={{ fontWeight: 700, color: "#4A3728", fontSize: "18px" }}>No results</p>

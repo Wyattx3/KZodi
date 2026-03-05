@@ -233,6 +233,50 @@ export default function ChatApp() {
         }
     }, [mounted, allCharacters, myCharacters, searchParams, router]);
 
+    // Handle Shared Character Link Routing
+    useEffect(() => {
+        if (!mounted) return;
+        const charId = searchParams.get("character");
+        if (!charId) return;
+
+        const loadSharedCharacter = async () => {
+            // 1. Check if already loaded in our arrays
+            let charToRoute = allCharacters.find(c => c.id === charId) || myCharacters.find(c => c.id === charId);
+
+            // 2. If not, fetch it directly
+            if (!charToRoute) {
+                try {
+                    const res = await fetch(`/api/characters/${charId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.character) {
+                            charToRoute = data.character;
+                            // Optionally push to local state so charMap has it, though charMap relies on the arrays
+                            // Since we don't have a state for one-off fetched chars, let's append it to allCharacters
+                            setAllCharacters(prev => [...prev, data.character]);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Failed to load shared character param", err);
+                }
+            }
+
+            if (charToRoute) {
+                // Ensure conversation exists in store
+                const store = useChatStore.getState();
+                if (!store.conversations[charToRoute.id]) {
+                    store.ensureConversation(charToRoute.id);
+                }
+                // Auto select and jump into chat
+                handleSelectCharacter(charToRoute, false);
+                // Clean up URL so refresh doesn't trigger it again
+                router.replace("/chat");
+            }
+        };
+
+        loadSharedCharacter();
+    }, [mounted, searchParams, router, allCharacters, myCharacters]);
+
     const handleSelectCharacter = (char: Character, openProfile = false) => {
         setShowProfileOnLoad(openProfile);
         setActiveCharacter(char);

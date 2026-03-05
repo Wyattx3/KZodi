@@ -47,17 +47,6 @@ export default function RootLayout({
           <main className="min-h-dvh relative bg-cream">
             {children}
           </main>
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                if ('serviceWorker' in navigator) {
-                  window.addEventListener('load', () => {
-                    navigator.serviceWorker.register('/sw.js');
-                  });
-                }
-              `,
-            }}
-          />
         </Providers>
       </body>
     </html>

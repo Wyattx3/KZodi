@@ -79,14 +79,15 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
     };
 
     const handleShare = () => {
+        const shareUrl = `${window.location.origin}/chat/character/${character.id}`;
         if (navigator.share) {
             navigator.share({
                 title: `Chat with ${character.name} on K-Zodi`,
                 text: character.description,
-                url: window.location.href,
+                url: shareUrl,
             }).catch(() => { });
         } else {
-            navigator.clipboard.writeText(window.location.href);
+            navigator.clipboard.writeText(shareUrl);
             alert("Link copied to clipboard!");
         }
         setShowOptions(false);
@@ -182,9 +183,6 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 <div className="profile-hero-content">
                     <motion.div
                         className="profile-avatar-container"
-                        initial={{ scale: 0.9, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ delay: 0.2 }}
                     >
                         <img src={character.image} alt={character.name} className="profile-avatar" />
                         <div className="profile-online-badge" />
@@ -192,9 +190,6 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
 
                     <motion.div
                         className="profile-title-block"
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.3 }}
                     >
                         <h1 className="profile-name">{character.name}</h1>
                         {character.nickname && (
@@ -216,9 +211,6 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 {/* Stats Row */}
                 <motion.div
                     className="profile-stats"
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.4 }}
                 >
                     <div className="profile-stat-item">
                         <span className="profile-stat-value">{messageCount}</span>
@@ -254,14 +246,11 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                     <>
                         <motion.div
                             className="profile-stats"
-                            style={{ padding: "0 24px", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}
-                            initial={{ y: 20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ delay: 0.45 }}
+                            style={{ padding: "0 16px", gap: "12px", flexWrap: "wrap", justifyContent: "center", borderBottom: "none" }}
                         >
                             {character.zodiac_sign && (
-                                <div className="profile-stat-item" style={{ background: "rgba(255,255,255,0.5)", padding: "8px 16px", borderRadius: "16px" }}>
-                                    <span className="profile-stat-value" style={{ fontSize: "16px" }}>{character.zodiac_sign}</span>
+                                <div className="profile-stat-item" style={{ background: "transparent", padding: "4px 8px" }}>
+                                    <span className="profile-stat-value" style={{ fontSize: "14px" }}>{character.zodiac_sign}</span>
                                     <span className="profile-stat-label">Zodiac Sign</span>
                                 </div>
                             )}
@@ -269,8 +258,8 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                                 <div className="profile-stat-sep" />
                             )}
                             {character.birthday && (
-                                <div className="profile-stat-item" style={{ background: "rgba(255,255,255,0.5)", padding: "8px 16px", borderRadius: "16px" }}>
-                                    <span className="profile-stat-value" style={{ fontSize: "16px" }}>{character.birthday}</span>
+                                <div className="profile-stat-item" style={{ background: "transparent", padding: "4px 8px" }}>
+                                    <span className="profile-stat-value" style={{ fontSize: "14px" }}>{character.birthday}</span>
                                     <span className="profile-stat-label">Birthday</span>
                                 </div>
                             )}
@@ -282,9 +271,6 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 {/* About Section - Prefer Long Description */}
                 <motion.div
                     className="profile-section"
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.5 }}
                 >
                     <h3 className="profile-section-title">About</h3>
                     <p className="profile-description" style={{ whiteSpace: "pre-wrap" }}>
@@ -296,14 +282,11 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 {character.tags && character.tags.length > 0 && (
                     <motion.div
                         className="profile-section"
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.55 }}
                     >
                         <h3 className="profile-section-title">Tags</h3>
                         <div className="profile-traits">
                             {character.tags.map(tag => (
-                                <span key={tag} className="profile-trait" style={{ background: "#FFF8D6", border: "1px solid #FCE57C" }}>#{tag}</span>
+                                <span key={tag} className="profile-trait" style={{ background: "transparent", border: "1px solid #E5E7EB", padding: "4px 10px", fontSize: "12px" }}>#{tag}</span>
                             ))}
                         </div>
                     </motion.div>
@@ -312,9 +295,6 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 {/* Personality Section */}
                 <motion.div
                     className="profile-section"
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.6 }}
                 >
                     <h3 className="profile-section-title">Personality</h3>
                     <div className="profile-traits">
@@ -328,12 +308,9 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 {character.scenario && (
                     <motion.div
                         className="profile-section"
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.65 }}
                     >
                         <h3 className="profile-section-title">Scenario</h3>
-                        <p className="profile-description" style={{ fontSize: "14px", fontStyle: "italic", background: "#FFF", padding: "12px", borderRadius: "12px", border: "1px solid #FCE57C" }}>
+                        <p className="profile-description" style={{ fontSize: "14px", fontStyle: "italic", background: "transparent", padding: "0" }}>
                             {character.scenario}
                         </p>
                     </motion.div>
@@ -342,9 +319,6 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 {/* First Message */}
                 <motion.div
                     className="profile-section"
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.7 }}
                 >
                     <h3 className="profile-section-title">First Message</h3>
                     <div className="profile-greeting-card">
@@ -356,18 +330,14 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                 {character.exampleDialogue && (
                     <motion.div
                         className="profile-section"
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.75 }}
                     >
                         <h3 className="profile-section-title">Example Dialogue</h3>
                         <div className="profile-description" style={{
                             fontSize: "13px",
                             whiteSpace: "pre-wrap",
-                            background: "#FFF8D6",
-                            padding: "16px",
-                            borderRadius: "16px",
-                            border: "1px solid #FFE566",
+                            background: "rgba(0,0,0,0.02)",
+                            padding: "10px",
+                            borderRadius: "10px",
                             color: "#4A3728"
                         }}>
                             {character.exampleDialogue}
@@ -381,9 +351,6 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
             {/* Floating Action Button */}
             <motion.div
                 className="profile-footer"
-                initial={{ y: 100 }}
-                animate={{ y: 0 }}
-                transition={{ delay: 0.8 }}
             >
                 <motion.button className="profile-chat-btn"
                     onTap={() => setTimeout(() => onBack(), 10)}

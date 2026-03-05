@@ -1,11 +1,11 @@
 {
-  "name": "KZodi - Zodiac Personality",
-  "short_name": "KZodi",
-  "description": "Discover your zodiac personality with AI-powered insights",
-  "start_url": "/",
+  "name": "Kakoei Chat",
+  "short_name": "Kakoei",
+  "description": "Chat with your favorite anime, K-pop & BL characters powered by AI",
+  "start_url": "/?view=chat-landing",
   "display": "standalone",
-  "background_color": "#FFFDF7",
-  "theme_color": "#FFE566",
+  "background_color": "#111111",
+  "theme_color": "#111111",
   "orientation": "portrait",
   "icons": [
     {

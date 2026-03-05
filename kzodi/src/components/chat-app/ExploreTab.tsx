@@ -222,10 +222,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                     /* ══════════ SEARCH PAGE ══════════ */
                     <motion.div
                         key="search-page"
-                        initial={{ opacity: 0, x: 40 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 40 }}
-                        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                         style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
                     >
                         {/* Sticky Search Header */}
@@ -314,10 +310,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                                     onMouseDown={(e) => handlePressStart(char, e)}
                                                     onMouseUp={handlePressEnd}
                                                     onMouseLeave={handlePressEnd}
-                                                    initial={{ opacity: 0, y: 24, scale: 0.95 }}
-                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                    exit={{ opacity: 0, scale: 0.9 }}
-                                                    transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
                                                     whileTap={{ scale: 0.97 }}
                                                     layout
                                                 >
@@ -355,9 +347,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                             ) : (
                                 <motion.div
                                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center' }}
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ duration: 0.5 }}
                                 >
                                     <svg width="140" height="140" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginBottom: '16px', opacity: 0.9, filter: 'drop-shadow(0px 8px 16px rgba(0,0,0,0.06))' }}>
                                         <circle cx="100" cy="90" r="60" fill="#F9FAFB" stroke="#E5E7EB" strokeWidth="8" />
@@ -377,9 +366,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                     /* ══════════ EXPLORE PAGE ══════════ */
                     <motion.div
                         key="explore-page"
-                        initial={{ opacity: 1 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        transition={{ duration: 0.2 }}
                         style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
                     >
                         {/* ── Sticky Header ────────────────────────────────── */}
@@ -387,9 +373,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                             <div className="explore-hero" style={{ padding: '24px 0 8px' }}>
                                 <motion.div
                                     className="explore-hero-content"
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
                                 >
                                     <div className="explore-hero-top-row">
                                         <div style={{ paddingLeft: "4px" }}>
@@ -403,9 +386,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                             {/* ── Search Bar (Fake — opens search page) ─── */}
                             <motion.div
                                 className="explore-search-wrap"
-                                initial={{ opacity: 0, scale: 0.98, y: 10 }}
-                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
                                 onClick={() => setSearchMode(true)}
                                 style={{ cursor: 'pointer' }}
                             >
@@ -426,9 +406,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                             {/* ── Category chips ─────────────────────────── */}
                             <motion.div
                                 className="explore-chips no-scrollbar"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ duration: 0.4 }}
                                 style={{ padding: '8px 0 12px' }}
                             >
                                 {CATEGORIES.map((cat) => (
@@ -474,9 +451,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                                         onMouseDown={(e) => handlePressStart(char, e)}
                                                         onMouseUp={handlePressEnd}
                                                         onMouseLeave={handlePressEnd}
-                                                        initial={{ opacity: 0, x: 40 }}
-                                                        animate={{ opacity: 1, x: 0 }}
-                                                        transition={{ duration: 0.45, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] }}
                                                         whileTap={{ scale: 0.96 }}
                                                     >
                                                         <img src={char.image} alt={char.name} className="explore-specialist-img" />
@@ -508,9 +482,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                         return (
                                             <motion.div
                                                 className="explore-featured"
-                                                initial={{ opacity: 0, y: 16 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ duration: 0.5 }}
                                                 style={{ position: 'relative' }}
                                                 onTouchStart={handleTouchStart}
                                                 onTouchMove={handleTouchMove}
@@ -591,9 +562,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                                         onMouseDown={(e) => handlePressStart(char, e)}
                                                         onMouseUp={handlePressEnd}
                                                         onMouseLeave={handlePressEnd}
-                                                        initial={{ opacity: 0, x: 30 }}
-                                                        animate={{ opacity: 1, x: 0 }}
-                                                        transition={{ duration: 0.4 }}
                                                         whileTap={{ scale: 0.96 }}
                                                     >
                                                         <div className="explore-fy-img-wrap">
@@ -640,10 +608,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                                         onMouseDown={(e) => handlePressStart(char, e)}
                                                         onMouseUp={handlePressEnd}
                                                         onMouseLeave={handlePressEnd}
-                                                        initial={{ opacity: 0, y: 24, scale: 0.95 }}
-                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                        exit={{ opacity: 0, scale: 0.9 }}
-                                                        transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
                                                         whileTap={{ scale: 0.97 }}
                                                         layout
                                                     >

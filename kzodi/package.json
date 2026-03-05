@@ -3,14 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@astrodraw/astrochart": "^3.0.2",
     "@auth/pg-adapter": "^1.11.1",
+    "@ducanh2912/next-pwa": "^10.2.9",
     "@neondatabase/serverless": "^1.0.2",
     "@pinecone-database/pinecone": "^7.0.0",
     "@xenova/transformers": "^2.17.2",
