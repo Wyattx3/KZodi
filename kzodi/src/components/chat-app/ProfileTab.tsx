@@ -23,7 +23,7 @@ export default function ProfileTab() {
     }, []);
 
     return (
-        <div className="explore-container safe-top">
+        <div className="safe-top" style={{ padding: "0 18px 120px" }}>
             <div className="explore-hero">
                 <div className="explore-hero-content">
                     <motion.h1

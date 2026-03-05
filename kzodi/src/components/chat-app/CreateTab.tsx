@@ -45,7 +45,7 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
     };
 
     return (
-        <div className="explore-container no-scrollbar" style={{ height: "100%", overflowY: "auto", position: "relative" }}>
+        <div className="no-scrollbar" style={{ height: "100%", overflowY: "auto", position: "relative", padding: "0 18px 120px" }}>
             <AnimatePresence mode="wait">
                 {view === "library" && (
                     <LibraryView
