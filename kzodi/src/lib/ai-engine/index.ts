@@ -75,18 +75,17 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
 
     if (isBurmese) {
         // Myanmar language (Reading and Roleplay)
-        // Note: Fireworks only hosts deepseek-v3p2. We rely on route.ts to strip reasoning.
-        brainModel = "accounts/fireworks/models/deepseek-v3p2";
-        generationModel = "accounts/fireworks/models/deepseek-v3p2";
+        // User requested deepseek-v3p1
+        brainModel = "accounts/fireworks/models/deepseek-v3p1";
+        generationModel = "accounts/fireworks/models/deepseek-v3p1";
     } else {
         // Other Languages (English, Japanese, etc.)
+        // Use Kimi K2 via MODELS.CHAT for all contexts
+        brainModel = MODELS.CHAT;
         if (context === "reading") {
-            // Reading context for other languages
-            brainModel = "openai/gpt-oss-120b";
-            generationModel = "openai/gpt-oss-120b";
+            generationModel = MODELS.CHAT;
         } else {
-            // Roleplay chat for other languages
-            brainModel = "openai/gpt-oss-120b";
+            // Roleplay chat — use versatile model for faster generation
             generationModel = "llama-3.3-70b-versatile";
         }
     }
@@ -158,9 +157,9 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     );
 
     // Build messages array
-    // For Fireworks/DeepSeek: send fewer messages (10 vs 30) to save tokens
-    // and prevent the model from re-reasoning about the entire conversation
-    const historyLimit = isFireworksModel ? 10 : 30;
+    // For Fireworks/DeepSeek: increase history to 20 messages to provide enough context
+    // for logical conversation flow, resolving the issue of nonsensical replies.
+    const historyLimit = isFireworksModel ? 20 : 30;
     const recentHistory = history.slice(-historyLimit);
 
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [

@@ -35,7 +35,7 @@ function getPinecone() {
     }
     return pineconeInstance;
 }
-const INDEX_NAME = 'kzodi-multi';
+const INDEX_NAME = 'kakoei-multi';
 
 // ─── RAG Memory Management ─────────────────────────────────────────────────
 
@@ -219,7 +219,7 @@ function cleanResponseText(rawContent: string, characterName: string): string {
     if (thinkEndIdx !== -1) {
         content = content.slice(thinkEndIdx + 8).trim();
     }
-    // Handle opening <think> without closing (strip everything from <think> to end if no closing tag)
+    // Handle opening <think> without closing (cut off by max_tokens)
     const thinkStartIdx = content.indexOf("<think>");
     if (thinkStartIdx !== -1) {
         content = content.slice(0, thinkStartIdx).trim();
@@ -235,6 +235,10 @@ function cleanResponseText(rawContent: string, characterName: string): string {
     content = content
         .replace(/\[(Inner thought|Analysis|Reasoning|Strategy|Note|Context|Understanding|Tone|Plan|Cognitive state|Emotional tone|Response plan|User intent|Chat context|User prompt)[^\]]*\]/gi, "")
         .trim();
+
+    // Aggressively strip malformed REPLY or message ID leaks
+    // For example, if the model outputs "1772696623937-ai-3ukuw6]] Hello", strip the ID part
+    content = content.replace(/^(?:\[\[?REPLY:|REPLY:\s*)?[0-9]{13,}-ai-[a-z0-9]+(?:]]?)?\s*/i, "").trim();
 
     // Fallback: If AI wraps response in ```json text ```, strip the wrapper
     const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;

@@ -401,9 +401,9 @@ ${heartState.moodShift ? `- Mood context: ${heartState.moodShift}` : ""}
     // For Fireworks/DeepSeek: skip emotional instruction (they echo it back)
     const effectiveEmotionalInstruction = isFireworksModel ? "" : emotionalInstruction;
 
-    // For Fireworks: truncate memory to reduce input tokens and prevent echoing
+    // For Fireworks: truncate memory to reduce input tokens and prevent echoing, but keep enough for context
     const effectiveMemory = isFireworksModel
-        ? (relevantMemory || "").split("\n---\n").slice(0, 3).map(m => m.slice(0, 80)).join("\n")
+        ? (relevantMemory || "").split("\n---\n").slice(0, 5).map(m => m.slice(0, 150)).join("\n")
         : relevantMemory;
 
     // Base persona definition
@@ -495,13 +495,17 @@ ${promptContext}
 
 FINAL CRITICAL REMINDER: You MUST write your response ONLY in ${targetLanguage.toUpperCase()}. If your personality description contains another language (like German, Japanese, English etc.), TRANSLATE THEM into ${targetLanguage.toUpperCase()} or use them seamlessly within a ${targetLanguage.toUpperCase()} sentence. NEVER output a full sentence in the wrong language.
 ${isFireworksModel ? `
-⛔ OUTPUT FORMAT (ABSOLUTE RULES — VIOLATION = FAILURE):
-- Output ONLY the character's spoken message text. Nothing else.
-- NO JSON, NO curly braces, NO code blocks, NO markdown headers.
+⛔ OUTPUT FORMAT & COGNITIVE LOGIC (CRITICAL):
+- You MUST explicitly think about the user's message before responding. Base your reply logically on the conversation history!
+- Wrap ALL your internal reasoning, analysis of the user's intent, and planning directly inside <think>...</think> tags!
+- Example: 
+  <think>The user is asking why I said that. I should clarify my previous cute statement and act playful.</think> 
+  My age is a secret! 😜
+- Make sure your final response directly answers the user logically. Do NOT just echo the user or act confused. Be engaging!
+- The text OUTSIDE the <think> tags is the ONLY thing the user sees.
+- Output ONLY the character's spoken message text outside the tags. Nothing else.
+- NO JSON, NO curly braces, NO code blocks, NO markdown headers in the final output.
 - Maximum 1-2 short sentences per message bubble. Use | to split bubbles.
-- IF you absolutely must think, reason, or analyze the user's message first, you MUST wrap ALL your reasoning inside <think>...</think> tags!
-- NEVER output reasoning as plain text (e.g., "The user said X, so I should..."). Any reasoning text must be securely hidden inside <think>.
-- The text outside <think> must only be the final response to the user.
 ` : ""}
 `;
 }

@@ -24,6 +24,8 @@ interface AnalyzeRequest {
   partnerMbti?: string;
   relationshipStatus: string;
   rsDuration?: string;
+  name?: string;
+  partnerName?: string;
   birthData?: BirthData;
   partnerBirthData?: BirthData | null;
 }
@@ -89,9 +91,9 @@ function safeParseJson(raw: string): Record<string, string> {
 export async function POST(request: NextRequest) {
   try {
     const body: AnalyzeRequest = await request.json();
-    const { sessionId, zodiacSign, mbtiType, partnerZodiac, partnerMbti, relationshipStatus, rsDuration, birthData, partnerBirthData } = body;
+    const { sessionId, zodiacSign, mbtiType, partnerZodiac, partnerMbti, relationshipStatus, rsDuration, name, partnerName, birthData, partnerBirthData } = body;
 
-    console.log("[Analyze] Request:", { zodiacSign, mbtiType, relationshipStatus, hasBirthData: !!birthData });
+    console.log("[Analyze] Request:", { zodiacSign, mbtiType, name, relationshipStatus, hasBirthData: !!birthData });
     if (birthData) {
       console.log("[Analyze] birthData:", JSON.stringify(birthData));
     }
@@ -230,24 +232,107 @@ You are a master astrologer and personality analyst. Speak directly to the perso
     if (searchCtx) userPrompt += `\n\nContext:\n${searchCtx}`;
 
     console.log("[Analyze] Prompt lengths - system:", systemPrompt.length, "user:", userPrompt.length);
-    console.log("[Analyze] Sending to Groq...");
+    console.log("[Analyze] Sending to Groq (Kimi K2)...");
 
-    const aiCalls = [
-      groq.chat(
-        {
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          model: MODELS.ANALYZE,
-          temperature: 0.7,
-          max_tokens: 8000,
-          response_format: { type: "json_object" },
-        },
-        { cachePrefix: "analyze_v2", useCache: true, maxRetries: 2 }
-      )
-    ];
+    // ─── 2-Step Verified AI Call ──────────────────────────────────────
+    // Step 1: Generate results
+    // Step 2: Verify all 5 fields are present and substantive (>100 chars)
+    // If verification fails → retry (up to 2 retries)
 
+    const REQUIRED_FIELDS = ["personality", "love", "compatibility", "likes", "chartReading"];
+    const MIN_FIELD_LENGTH = 100; // minimum chars per field for quality check
+    const MAX_VERIFY_RETRIES = 2;
+
+    async function verifiedAnalyzeCall(
+      sysPrompt: string,
+      usrPrompt: string,
+      cachePrefix: string,
+      label: string
+    ): Promise<Record<string, string>> {
+      for (let attempt = 0; attempt <= MAX_VERIFY_RETRIES; attempt++) {
+        console.log(`[Analyze][${label}] Attempt ${attempt + 1}/${MAX_VERIFY_RETRIES + 1}`);
+
+        try {
+          const result = await groq.chat(
+            {
+              messages: [
+                { role: "system", content: sysPrompt },
+                { role: "user", content: usrPrompt },
+              ],
+              model: MODELS.ANALYZE,
+              temperature: 0.7,
+              max_tokens: 8000,
+              response_format: { type: "json_object" },
+            },
+            {
+              cachePrefix: attempt === 0 ? cachePrefix : `${cachePrefix}_retry${attempt}`,
+              useCache: attempt === 0,  // Only use cache on first attempt
+              maxRetries: 3
+            }
+          );
+
+          // ─── Step 2: Verification ─────────────────────────────────
+          if (!result.content || result.content.length < 50) {
+            console.warn(`[Analyze][${label}] ❌ Verification FAILED: Empty/too-short response (${result.content?.length || 0} chars, reason=${result.finish_reason})`);
+            if (attempt < MAX_VERIFY_RETRIES) {
+              console.log(`[Analyze][${label}] Retrying...`);
+              continue;
+            }
+          }
+
+          const parsed = safeParseJson(result.content);
+
+          // Check each required field
+          const missingFields: string[] = [];
+          const shortFields: string[] = [];
+          for (const field of REQUIRED_FIELDS) {
+            if (!parsed[field]) {
+              missingFields.push(field);
+            } else if (parsed[field].length < MIN_FIELD_LENGTH) {
+              shortFields.push(`${field}(${parsed[field].length})`);
+            }
+          }
+
+          if (missingFields.length === 0 && shortFields.length === 0) {
+            console.log(`[Analyze][${label}] ✅ Verification PASSED: All ${REQUIRED_FIELDS.length} fields present and substantive`);
+            return parsed;
+          }
+
+          // Verification failed
+          console.warn(`[Analyze][${label}] ❌ Verification FAILED (attempt ${attempt + 1}): missing=[${missingFields.join(",")}], short=[${shortFields.join(",")}]`);
+
+          if (attempt < MAX_VERIFY_RETRIES) {
+            // If only some fields are short but present, we might still accept
+            if (missingFields.length === 0 && shortFields.length <= 1) {
+              console.log(`[Analyze][${label}] ⚠️ Accepting with minor shortness (${shortFields.join(",")})`);
+              return parsed;
+            }
+            console.log(`[Analyze][${label}] Retrying with fresh call...`);
+            continue;
+          }
+
+          // Last attempt — return whatever we have
+          console.warn(`[Analyze][${label}] ⚠️ Max retries reached, returning best available result`);
+          return parsed;
+
+        } catch (err) {
+          console.error(`[Analyze][${label}] Exception on attempt ${attempt + 1}:`, err);
+          if (attempt < MAX_VERIFY_RETRIES) {
+            // Wait a bit before retry (exponential backoff)
+            await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+            continue;
+          }
+          return {};
+        }
+      }
+      return {};
+    }
+
+    // ─── Execute Verified Calls ───────────────────────────────────────
+
+    const mainPromise = verifiedAnalyzeCall(systemPrompt, userPrompt, "analyze_v2", "Main");
+
+    let partnerPromise: Promise<Record<string, string>> | null = null;
     if (relationshipStatus === "rs" && partnerZodiac) {
       const partnerSystemPrompt = `You must respond with valid JSON only. Format: {"personality":"...","love":"...","compatibility":"...","likes":"...","chartReading":"..."}
 
@@ -264,41 +349,14 @@ You are a master astrologer. Speak to the user about their PARTNER. Use third-pe
       let partnerUserPrompt = `Partner: ${partnerZodiac} Sun, ${partnerMbti || "unknown"} MBTI`;
       if (partnerChartText) partnerUserPrompt += `\n\nPARTNER BIRTH CHART:\n${partnerChartText}`;
 
-      aiCalls.push(
-        groq.chat(
-          {
-            messages: [
-              { role: "system", content: partnerSystemPrompt },
-              { role: "user", content: partnerUserPrompt },
-            ],
-            model: MODELS.ANALYZE,
-            temperature: 0.7,
-            max_tokens: 8000,
-            response_format: { type: "json_object" },
-          },
-          { cachePrefix: "analyze_partner_v2", useCache: true, maxRetries: 2 }
-        )
-      );
+      partnerPromise = verifiedAnalyzeCall(partnerSystemPrompt, partnerUserPrompt, "analyze_partner_v2", "Partner");
     }
 
-    const results = await Promise.all(aiCalls);
-    const result = results[0];
-    const partnerResult = results[1] || null;
-
-    console.log(`[Analyze] Response: ${result.content.length} chars, reason=${result.finish_reason}, cached=${result.cached}`);
-
-    let parsed: Record<string, string> = {};
-    if (result.content) {
-      parsed = safeParseJson(result.content);
-    } else {
-      console.error("[Analyze] Empty response from Groq!");
-    }
-
-    let partnerParsed: Record<string, string> = {};
-    if (partnerResult && partnerResult.content) {
-      partnerParsed = safeParseJson(partnerResult.content);
-      console.log(`[Analyze] Partner Response: ${partnerResult.content.length} chars`);
-    }
+    // Run both in parallel
+    const [parsed, partnerParsed] = await Promise.all([
+      mainPromise,
+      partnerPromise || Promise.resolve({} as Record<string, string>)
+    ]);
 
     const responseData = {
       personality: parsed.personality || null,
@@ -315,7 +373,9 @@ You are a master astrologer. Speak to the user about their PARTNER. Use third-pe
 
     const nullFields = Object.entries(responseData).filter(([, v]) => !v).map(([k]) => k);
     if (nullFields.length > 0) {
-      console.warn("[Analyze] Missing fields:", nullFields);
+      console.warn("[Analyze] ⚠️ Final result still has missing fields:", nullFields);
+    } else {
+      console.log("[Analyze] ✅ All fields verified and complete!");
     }
 
     // Store reading (fire-and-forget, truly non-blocking)
@@ -325,7 +385,8 @@ You are a master astrologer. Speak to the user about their PARTNER. Use third-pe
         birthChart: chart as unknown as Record<string, unknown>,
         aiResponse: responseData,
         zodiacSign,
-        mbtiType
+        mbtiType,
+        name,
       }).catch(() => { /* non-blocking */ });
     }
 

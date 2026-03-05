@@ -27,7 +27,7 @@ export const useInteractionStore = create<InteractionStore>()(
             isLiked: (characterId) => get().likedCharacters[characterId] || false,
         }),
         {
-            name: "kzodi-interactions", // unique name for localStorage
+            name: "kakoei-interactions", // unique name for localStorage
         }
     )
 );

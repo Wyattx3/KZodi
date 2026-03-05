@@ -6,6 +6,7 @@ import ChatLandingPage from "@/components/landing/ChatLandingPage";
 import TargetStep from "@/components/form/TargetStep";
 import RelationshipStep from "@/components/form/RelationshipStep";
 import RsDurationStep from "@/components/form/RsDurationStep";
+import NameStep from "@/components/form/NameStep";
 import BirthdayStep from "@/components/form/BirthdayStep";
 import LocationStep from "@/components/form/LocationStep";
 import MBTIStep from "@/components/form/MBTIStep";
@@ -56,7 +57,7 @@ export default function Home() {
     if (store.sessionId) {
       localStorage.setItem("pendingAstrologerRedirect", "true");
       // Optionally store sessionId in localStorage just to be safe if Zustand loses it on hard redirect
-      localStorage.setItem("kzodi_session_id", store.sessionId);
+      localStorage.setItem("kakoei_session_id", store.sessionId);
     }
     setView("chat-landing");
   };
@@ -92,6 +93,11 @@ export default function Home() {
     goForward();
   };
 
+  const handleName1 = (name: string) => {
+    store.setPerson1({ name });
+    goForward();
+  };
+
   const handleBirthday1 = (data: { birthYear: number; birthMonth: number; birthDay: number; birthTime: string }) => {
     store.setPerson1(data);
     goForward();
@@ -99,6 +105,11 @@ export default function Home() {
 
   const handleLocation1 = (loc: BirthLocation) => {
     store.setPerson1({ birthLocation: loc });
+    goForward();
+  };
+
+  const handleName2 = (name: string) => {
+    store.setPerson2({ name });
     goForward();
   };
 
@@ -266,6 +277,17 @@ export default function Home() {
       });
     }
 
+    // Next: Person 1 Name
+    steps.push({
+      key: "name1",
+      component: (
+        <NameStep
+          personLabel={store.userTarget === "self" ? "Your" : "Person 1"}
+          onSubmit={handleName1}
+        />
+      ),
+    });
+
     // Next: Person 1 birthday
     steps.push({
       key: "birthday1",
@@ -300,8 +322,17 @@ export default function Home() {
       ),
     });
 
-    // If RS: Person 2 birthday + location + MBTI
+    // If RS: Person 2 Name + birthday + location + MBTI
     if (store.relationshipStatus === "rs") {
+      steps.push({
+        key: "name2",
+        component: (
+          <NameStep
+            personLabel="Partner"
+            onSubmit={handleName2}
+          />
+        ),
+      });
       steps.push({
         key: "birthday2",
         component: (

@@ -12,6 +12,7 @@ export interface BirthLocation {
 }
 
 export interface PersonInfo {
+  name: string;
   birthYear: number | null;
   birthMonth: number | null;
   birthDay: number | null;
@@ -72,6 +73,7 @@ export interface AppState {
 }
 
 const defaultPerson: PersonInfo = {
+  name: "",
   birthYear: null,
   birthMonth: null,
   birthDay: null,

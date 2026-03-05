@@ -128,11 +128,11 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ zodiacSign, mbtiType }) => {
       <div className="card-bordered overflow-hidden">
         {/* Header */}
         <div className="px-4 py-3.5 border-b border-border-light flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-[9px] bg-warm-black flex items-center justify-center">
-            <span className="text-[10px] font-800 text-pastel-yellow">K</span>
+          <div className="w-7 h-7 flex items-center justify-center">
+            <img src="/logo.png" alt="Kakoei Logo" className="w-full h-full object-contain" />
           </div>
           <div className="flex-1 min-w-0">
-            <span className="font-700 text-[13px] block leading-tight">KZodi Oracle</span>
+            <span className="font-700 text-[13px] block leading-tight">Kakoei Oracle</span>
             <span className="text-[11px] text-medium-gray font-500">Your personal astrologer</span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -158,9 +158,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ zodiacSign, mbtiType }) => {
                       <button
                         key={l.code}
                         onClick={() => handleLangChange(l.code)}
-                        className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors ${
-                          lang === l.code ? "bg-pastel-yellow-soft text-warm-black" : "text-warm-gray"
-                        }`}
+                        className={`w-full text-left px-3 py-1.5 text-[11px] font-600 transition-colors ${lang === l.code ? "bg-pastel-yellow-soft text-warm-black" : "text-warm-gray"
+                          }`}
                       >
                         {l.label}
                       </button>
@@ -193,9 +192,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ zodiacSign, mbtiType }) => {
               const displayText = msg.role === "assistant" && msg.translated ? msg.translated : msg.content;
               return (
                 <motion.div key={msg.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[85%] px-4 py-3 text-[14px] leading-[1.65] ${
-                    msg.role === "user" ? "bg-warm-black text-white rounded-[16px] rounded-br-[6px]" : "bg-light-gray text-warm-black rounded-[16px] rounded-bl-[6px]"
-                  }`}>
+                  <div className={`max-w-[85%] px-4 py-3 text-[14px] leading-[1.65] ${msg.role === "user" ? "bg-warm-black text-white rounded-[16px] rounded-br-[6px]" : "bg-light-gray text-warm-black rounded-[16px] rounded-bl-[6px]"
+                    }`}>
                     <AnimatePresence mode="wait">
                       <motion.span
                         key={displayText.slice(0, 40)}
@@ -203,7 +201,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ zodiacSign, mbtiType }) => {
                         animate={{ opacity: 1, filter: "blur(0px)" }}
                         exit={{ opacity: 0, filter: "blur(3px)" }}
                         transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
-                        className={`block ${lang === "my" ? "translated-text" : ["zh","ja","ko"].includes(lang) ? "translated-cjk" : lang === "ar" ? "translated-rtl" : ""}`}
+                        className={`block ${lang === "my" ? "translated-text" : ["zh", "ja", "ko"].includes(lang) ? "translated-cjk" : lang === "ar" ? "translated-rtl" : ""}`}
                       >
                         {displayText}
                       </motion.span>

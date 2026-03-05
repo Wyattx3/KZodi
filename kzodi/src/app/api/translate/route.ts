@@ -62,7 +62,7 @@ CRITICAL RULES:
 - Keep ALL MBTI types in English: INTJ, INFP, ENTJ, etc.
 - Keep planet names in English: Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
 - Keep astrological terms in English: Rising sign, Ascendant, Houses, Elements (Fire, Earth, Air, Water)
-- Keep the app name "KZodi" unchanged
+- Keep the app name "Kakoei" unchanged
 - Translate everything else naturally into ${langName}`
       },
       { role: "user", content: text }
@@ -114,7 +114,7 @@ CRITICAL RULES:
 - Keep ALL MBTI types in English: INTJ, INFP, ENTJ, etc.
 - Keep planet names in English: Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
 - Keep astrological terms in English: Rising sign, Ascendant, Houses, Elements (Fire, Earth, Air, Water)
-- Keep the app name "KZodi" unchanged
+- Keep the app name "Kakoei" unchanged
 - Translate everything else naturally into ${langName}`
       },
       { role: "user", content: numberedTexts }

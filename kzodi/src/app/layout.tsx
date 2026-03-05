@@ -3,13 +3,13 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "KZodi",
+  title: "Kakoei",
   description: "Zodiac personality insights powered by AI",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "KZodi",
+    title: "Kakoei",
   },
 };
 

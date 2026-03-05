@@ -108,14 +108,14 @@ async function idbSet(store: string, key: string, val: any): Promise<void> {
 }
 
 if (typeof window !== "undefined") {
-    const currentVer = localStorage.getItem("kzodi-sticker-cache-ver");
+    const currentVer = localStorage.getItem("kakoei-sticker-cache-ver");
     if (currentVer !== STICKER_CACHE_VERSION) {
         // Clear old caches
         for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i);
-            if (k && (k.startsWith("kzodi-sticker-proc-") || k.startsWith("kzodi-sticker-"))) localStorage.removeItem(k);
+            if (k && (k.startsWith("kakoei-sticker-proc-") || k.startsWith("kakoei-sticker-"))) localStorage.removeItem(k);
         }
-        localStorage.setItem("kzodi-sticker-cache-ver", STICKER_CACHE_VERSION);
+        localStorage.setItem("kakoei-sticker-cache-ver", STICKER_CACHE_VERSION);
 
         // Clear IDB
         getDB().then(db => {

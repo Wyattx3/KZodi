@@ -186,7 +186,7 @@ export default function ChatApp() {
 
         const isAstrologer = searchParams.get("astrologer") === "true";
         if (isAstrologer) {
-            const sid = localStorage.getItem("kzodi_session_id") || localStorage.getItem("pendingAstrologerRedirect");
+            const sid = localStorage.getItem("kakoei_session_id") || localStorage.getItem("pendingAstrologerRedirect");
 
             // Link the reading to the user
             if (sid) {

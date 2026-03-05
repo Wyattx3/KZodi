@@ -40,7 +40,7 @@ const LoadingScreen: React.FC = () => {
             style={{ transformOrigin: "center" }}
           />
           <circle cx="36" cy="36" r="16" fill="#FFFBEB" stroke="#FFE566" strokeWidth="1" />
-          <text x="36" y="40" textAnchor="middle" fontFamily="var(--font-display)" fontSize="14" fontWeight="800" fill="#111">K</text>
+          <image href="/logo.png" x="24" y="24" width="24" height="24" />
         </svg>
       </motion.div>
 

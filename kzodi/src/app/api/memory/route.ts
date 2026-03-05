@@ -13,7 +13,7 @@ function getPinecone() {
     }
     return pineconeInstance;
 }
-const INDEX_NAME = 'kzodi-multi';
+const INDEX_NAME = 'kakoei-multi';
 
 export async function DELETE(request: NextRequest) {
     try {

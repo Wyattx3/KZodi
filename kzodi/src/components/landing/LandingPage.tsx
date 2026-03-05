@@ -41,7 +41,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLearnPersonality, onStartCh
 
       {/* Logo */}
       <div className="kz-fade flex items-center mb-6 relative z-10" style={{ animationDelay: "0s" }}>
-        <Image src="/logo.png" alt="KZodi Logo" width={48} height={48} className="object-contain" priority />
+        <Image src="/logo.png" alt="Kakoei Logo" width={48} height={48} className="object-contain" priority />
       </div>
 
       {/* Hero section */}
@@ -71,7 +71,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLearnPersonality, onStartCh
           </svg>
           {/* Central logo */}
           <div className="w-[48px] h-[48px] flex items-center justify-center relative z-10 bg-white rounded-2xl shadow-sm border border-border-soft p-1">
-            <Image src="/logo.png" alt="KZodi Logo" width={40} height={40} className="object-contain" />
+            <Image src="/logo.png" alt="Kakoei Logo" width={40} height={40} className="object-contain" />
           </div>
           {/* 12 zodiac SVG glyphs */}
           <div className="absolute inset-0 flex items-center justify-center opacity-80">

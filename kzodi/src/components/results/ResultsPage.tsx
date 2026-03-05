@@ -2,6 +2,8 @@
 import React, { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toPng } from "html-to-image";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import { zodiacSvgIcons, ArrowLeft, ShareIcon, ChevronDown } from "@/components/svg/ZodiacIcons";
 import { getZodiacSign, getZodiacData, getCompatibilityScore, type ZodiacSign } from "@/lib/zodiac";
 import { mbtiDescriptions } from "@/data/mbtiQuestions";
@@ -11,6 +13,8 @@ import CompatibilityWheel from "./CompatibilityWheel";
 import BirthChartWheel from "./BirthChartWheel";
 import FeedbackSurvey from "./FeedbackSurvey";
 import ChatWidget from "@/components/chat/ChatWidget";
+import SaveInfoCard from "./SaveInfoCard";
+import PdfExportTemplate from "./PdfExportTemplate";
 
 interface ResultsPageProps {
   person1: PersonInfo;
@@ -41,7 +45,10 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
   const [activeTab, setActiveTab] = useState<TabKey>("personality");
   const [activePerson, setActivePerson] = useState<"person1" | "person2">("person1");
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
   const shareRef = useRef<HTMLDivElement>(null);
+  const infoCardRef = useRef<HTMLDivElement>(null);
+  const pdfRef = useRef<HTMLDivElement>(null);
   const { lang, translating, changeLang, getText } = useTranslate();
 
   const sign1Key = person1.birthMonth && person1.birthDay ? getZodiacSign(person1.birthMonth, person1.birthDay) : "aries";
@@ -94,21 +101,49 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
     });
   };
 
-  const handleShare = async () => {
-    if (!shareRef.current) return;
+  const handleSaveInfoCard = async () => {
+    setShowShareMenu(false);
+    if (!infoCardRef.current) return;
     try {
-      const dataUrl = await toPng(shareRef.current, { quality: 0.95, pixelRatio: 2, backgroundColor: "#111111" });
-      if (navigator.share) {
-        const blob = await (await fetch(dataUrl)).blob();
-        const file = new File([blob], "kzodi-personality.png", { type: "image/png" });
-        await navigator.share({ title: "My KZodi Personality", text: `${sign1.name} ${mbti1 ? `+ ${mbti1}` : ""}`, files: [file] });
-      } else {
-        const link = document.createElement("a");
-        link.download = "kzodi-personality.png";
-        link.href = dataUrl;
-        link.click();
+      const canvas = await html2canvas(infoCardRef.current, { scale: 3, useCORS: true, backgroundColor: "#fafafa" });
+      const dataUrl = canvas.toDataURL("image/png", 1.0);
+      const link = document.createElement("a");
+      link.download = `${person1.name || "kakoei"}-id-card.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (e) { console.error("Error saving ID card:", e); }
+  };
+
+  const handleDownloadPdf = async () => {
+    setShowShareMenu(false);
+    if (!pdfRef.current) return;
+    try {
+      const canvas = await html2canvas(pdfRef.current, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4"
+      });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      let heightLeft = pdfHeight;
+      let position = 0;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
       }
-    } catch { /* cancelled */ }
+
+      pdf.save(`${person1.name || "kakoei"}-reading.pdf`);
+    } catch (e) { console.error("Error saving PDF:", e); }
   };
 
   const renderFeedback = (section: string, sectionLabel: string) => {
@@ -133,8 +168,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
           <ArrowLeft size={16} />
         </button>
         <div className="flex items-center gap-2">
-          <div className="puffy-square-dark w-6 h-6 !rounded-[7px] flex items-center justify-center">
-            <span className="text-[9px] font-800 text-pastel-yellow">K</span>
+          <div className="w-6 h-6 flex items-center justify-center">
+            <img src="/logo.png" alt="Kakoei Logo" className="w-full h-full object-contain" />
           </div>
           <h2 className="font-[var(--font-display)] font-700 text-[15px] tracking-[-0.02em] text-3d">Your Reading</h2>
         </div>
@@ -171,10 +206,55 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
               )}
             </AnimatePresence>
           </div>
-          <button onClick={handleShare} className="w-9 h-9 rounded-[11px] bg-warm-black text-white flex items-center justify-center active:opacity-80 active:scale-95 transition-all">
-            <ShareIcon size={14} />
-          </button>
+          <div className="relative">
+            <button onClick={() => setShowShareMenu(!showShareMenu)} className="w-9 h-9 rounded-[11px] bg-warm-black text-white flex items-center justify-center active:opacity-80 active:scale-95 transition-all">
+              <ShareIcon size={14} />
+            </button>
+            <AnimatePresence>
+              {showShareMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-11 w-[180px] bg-white rounded-[14px] border border-border-soft shadow-lg z-50 py-1.5"
+                >
+                  <button
+                    onClick={handleSaveInfoCard}
+                    className="w-full text-left px-3.5 py-2.5 text-[12px] font-600 text-warm-gray hover:bg-light-gray transition-colors"
+                  >
+                    Save Info Card
+                  </button>
+                  <button
+                    onClick={handleDownloadPdf}
+                    className="w-full text-left px-3.5 py-2.5 text-[12px] font-600 text-warm-gray hover:bg-light-gray transition-colors"
+                  >
+                    Download PDF
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
+      </div>
+
+      {/* Hidden Templates for Exports */}
+      <div style={{ position: "absolute", top: "-9999px", left: "-9999px", pointerEvents: "none", zIndex: -1000 }}>
+        <SaveInfoCard
+          ref={infoCardRef}
+          person={person1}
+          sign={sign1}
+          signKey={sign1Key}
+          birthChartData={birthChartData || null}
+        />
+        <PdfExportTemplate
+          ref={pdfRef}
+          person={person1}
+          sign={sign1}
+          signKey={sign1Key}
+          aiInsights={aiInsights}
+          birthChartData={birthChartData || null}
+        />
       </div>
 
       {/* Translating indicator */}
@@ -261,7 +341,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
             <div className="w-4 h-4 rounded-[5px] bg-pastel-yellow flex items-center justify-center">
               <span className="text-[8px] font-800 text-warm-black">K</span>
             </div>
-            <span className="text-[9px] font-600 text-white/25">KZodi</span>
+            <span className="text-[9px] font-600 text-white/25">Kakoei</span>
           </div>
         </motion.div>
       </div>

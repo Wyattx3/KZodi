@@ -111,6 +111,7 @@ export async function ensureSchema() {
         ai_response JSONB,
         zodiac_sign TEXT,
         mbti_type TEXT,
+        name TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
@@ -204,7 +205,8 @@ export async function ensureSchema() {
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS zodiac_sign TEXT;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS mbti_type TEXT;`);
-    } catch(e) { /* ignore if already exists */ }
+      await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS name TEXT;`);
+    } catch (e) { /* ignore if already exists */ }
 
   } catch (e) {
     console.error("DB schema init error:", e);
@@ -234,11 +236,12 @@ export async function insertReading(data: {
   aiResponse: Record<string, unknown>;
   zodiacSign?: string;
   mbtiType?: string;
+  name?: string;
 }) {
   await ensureSchema();
   await query(
-    `INSERT INTO readings (session_id, birth_chart, ai_response, zodiac_sign, mbti_type) VALUES ($1, $2, $3, $4, $5)`,
-    [data.sessionId, JSON.stringify(data.birthChart), JSON.stringify(data.aiResponse), data.zodiacSign || null, data.mbtiType || null]
+    `INSERT INTO readings (session_id, birth_chart, ai_response, zodiac_sign, mbti_type, name) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [data.sessionId, JSON.stringify(data.birthChart), JSON.stringify(data.aiResponse), data.zodiacSign || null, data.mbtiType || null, data.name || null]
   );
 }
 

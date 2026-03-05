@@ -1,5 +1,5 @@
 /**
- * Centralized Groq API Client — moonshotai/kimi-k2-instruct-0905
+ * Centralized Groq API Client — moonshotai/kimi-k2-instruct-0905 (Kimi K2)
  *
  * Pay-as-you-go plan — high TPM limits
  *
@@ -47,24 +47,22 @@ class KeyPool {
     }));
   }
 
-  /** Get the next available API key (round-robin, skipping rate-limited keys) */
+  /** Get the next available API key (least-used-first for balanced distribution) */
   getKey(): { key: string; label: string } | null {
     if (this.keys.length === 0) return null;
 
     const now = Date.now();
-    const totalKeys = this.keys.length;
 
-    // Try each key starting from current index
-    for (let i = 0; i < totalKeys; i++) {
-      const idx = (this.currentIndex + i) % totalKeys;
-      const keyState = this.keys[idx];
+    // Filter to available (non-rate-limited) keys
+    const available = this.keys.filter(k => k.rateLimitedUntil <= now);
 
-      if (keyState.rateLimitedUntil <= now) {
-        // This key is available
-        this.currentIndex = (idx + 1) % totalKeys; // Advance for next call
-        keyState.requestCount++;
-        return { key: keyState.key, label: keyState.label };
-      }
+    if (available.length > 0) {
+      // Pick the key with the lowest requestCount (least-used-first)
+      available.sort((a, b) => a.requestCount - b.requestCount);
+      const chosen = available[0];
+      chosen.requestCount++;
+      console.log(`[Groq KeyPool] Using ${chosen.label} (requests: ${chosen.requestCount}, available: ${available.length}/${this.keys.length})`);
+      return { key: chosen.key, label: chosen.label };
     }
 
     // All keys are rate-limited — use the one that expires soonest
@@ -103,7 +101,7 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // ─── Model Configuration ─────────────────────────────────────────────────────
 
-const MODEL = "gpt-oss-120b";
+const MODEL = "moonshotai/kimi-k2-instruct-0905";
 const FALLBACK_MODEL = "llama-3.3-70b-versatile";
 
 export const MODELS = {
@@ -114,7 +112,7 @@ export const MODELS = {
 
 /** Pay-as-you-go TPM limits */
 const MODEL_TPM_LIMITS: Record<string, number> = {
-  [MODEL]: 100_000,
+  [MODEL]: 131_072,  // Kimi K2 context window is 131K
   [FALLBACK_MODEL]: 150_000,
 };
 
@@ -464,17 +462,16 @@ class MultiProviderClient {
           body.max_tokens = params.max_tokens ?? 1000;
           // Do NOT send response_format or temperature for grok-4
         } else if (provider === PROVIDERS.FIREWORKS) {
-          // Fireworks (DeepSeek v3p2) — reasoning model
+          // Fireworks (DeepSeek v3p1) — base model
           body.temperature = params.temperature ?? 0.7;
           body.max_tokens = params.max_tokens ?? 1000;
-          // CRITICAL: Set reasoning_effort to "low" to minimize CoT reasoning tokens
-          // This tells the model to reason minimally, reducing think output
-          body.reasoning_effort = "low";
           // Do NOT send response_format for DeepSeek — it causes malformed output
         } else {
           body.temperature = params.temperature ?? 0.7;
           body.max_tokens = params.max_tokens ?? 1000;
-          if (params.response_format) body.response_format = params.response_format;
+          if (params.response_format) {
+            body.response_format = params.response_format;
+          }
         }
 
         console.log(`[AI][${provider}] ${model} attempt ${attempt + 1}/${maxRetries + 1}`);
@@ -489,12 +486,20 @@ class MultiProviderClient {
         });
         clearTimeout(fetchTimeout);
 
-        // Rate Limit Handling
+        // Rate Limit Handling — mark key and immediately rotate to next available key
         if (res.status === 429 && provider === PROVIDERS.GROQ) {
           const retryAfter = res.headers.get("retry-after");
           const cooldownMs = retryAfter ? parseInt(retryAfter) * 1000 : 60000;
-          console.warn(`[AI] Rate limited (429) on ${model}. Cooldown ${cooldownMs}ms`);
+          console.warn(`[AI] Rate limited (429) on ${model}. Marking key for ${cooldownMs}ms cooldown`);
           keyPool.markRateLimited(apiKey, cooldownMs);
+          // Immediately try next available key instead of waiting
+          const nextKey = keyPool.getKey();
+          if (nextKey && attempt < maxRetries) {
+            apiKey = nextKey.key;
+            headers.Authorization = `Bearer ${apiKey}`;
+            console.log(`[AI] Rotated to ${nextKey.label}, retrying...`);
+            continue;
+          }
           if (attempt < maxRetries) continue;
           return { content: "", finish_reason: "rate_limited", truncated: false, cached: false, provider };
         }
@@ -565,6 +570,14 @@ class MultiProviderClient {
           const thinkStartIdx = content.indexOf("<think>");
           if (thinkStartIdx !== -1) {
             content = content.slice(0, thinkStartIdx).trim();
+          }
+
+          // CRITICAL: DeepSeek-v3p2 (Reasoner) ignores <think> instructions and dumps raw thought
+          // We instructed it to use 【REPLY】 as a hard delimiter. Extract only the content after it.
+          // Using a forgiving regex because models sometimes vary the brackets (e.g. [REPLY] or **REPLY**)
+          const replyMatch = content.match(/(?:【|\[|\*\*|<)?REPLY(?:】|\]|\*\*|>)?\s*:?\s*/i);
+          if (replyMatch && replyMatch.index !== undefined) {
+            content = content.slice(replyMatch.index + replyMatch[0].length).trim();
           }
 
           finishReason = choice?.finish_reason || "unknown";

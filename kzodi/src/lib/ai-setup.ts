@@ -21,7 +21,7 @@ function getPinecone() {
 }
 
 // 1024-dimension index for Pinecone Multilingual AI embeddings
-const INDEX_NAME = 'kzodi-multi';
+const INDEX_NAME = 'kakoei-multi';
 
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY || ''

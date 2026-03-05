@@ -3,7 +3,7 @@ import { Pinecone } from '@pinecone-database/pinecone';
 import { generateEmbeddings } from "@/lib/ai-setup";
 import { auth } from "@/auth";
 
-const INDEX_NAME = 'kzodi-multi';
+const INDEX_NAME = 'kakoei-multi';
 
 let pineconeInstance: Pinecone | null = null;
 function getPinecone() {

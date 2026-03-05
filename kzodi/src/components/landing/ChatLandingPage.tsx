@@ -105,7 +105,7 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: 0.2, duration: 0.5, type: "spring" }}
                     >
-                        <Image src="/logo.png" alt="KZodi Logo" width={64} height={64} className="object-contain" priority />
+                        <Image src="/logo.png" alt="Kakoei Logo" width={64} height={64} className="object-contain" priority />
                     </motion.div>
 
                     {/* Title */}
@@ -115,7 +115,7 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.35, duration: 0.5 }}
                     >
-                        KZodi Chat
+                        Kakoei Chat
                     </motion.h1>
 
                     {/* Subtitle */}

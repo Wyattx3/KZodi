@@ -35,7 +35,7 @@ const LocationStep: React.FC<LocationStepProps> = ({ personLabel, onSubmit }) =>
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=8&addressdetails=1&accept-language=en`,
-        { headers: { "User-Agent": "KZodi/1.0" } }
+        { headers: { "User-Agent": "Kakoei/1.0" } }
       );
       if (res.ok) {
         const data: NominatimResult[] = await res.json();

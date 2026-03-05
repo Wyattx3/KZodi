@@ -538,7 +538,7 @@ export const useChatStore = create<ChatStore>()(
             },
         }),
         {
-            name: "kzodi-chat-store",
+            name: "kakoei-chat-store",
             // Keep all conversations but truncate messages to the last 50 
             // so we don't blow up the 5MB localStorage limit, while preserving 
             // unread notifications and the last message preview for the Chats tab.

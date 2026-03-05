@@ -61,25 +61,25 @@ const SIGN_GLYPHS = [
 ];
 
 const SIGN_NAMES = [
-  "Aries","Taurus","Gemini","Cancer","Leo","Virgo",
-  "Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces",
+  "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+  "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
 ];
 
 /* -- Planet display info -- */
 const P_INFO: Record<string, string> = {
-  Sun:"Su", Moon:"Mo", Mercury:"Me", Venus:"Ve", Mars:"Ma",
-  Jupiter:"Ju", Saturn:"Sa", Uranus:"Ur", Neptune:"Ne", Pluto:"Pl",
-  NorthNode:"NN", Chiron:"Ch", Ceres:"Ce", Pallas:"Pa", Juno:"Jn", Vesta:"Vs",
+  Sun: "Su", Moon: "Mo", Mercury: "Me", Venus: "Ve", Mars: "Ma",
+  Jupiter: "Ju", Saturn: "Sa", Uranus: "Ur", Neptune: "Ne", Pluto: "Pl",
+  NorthNode: "NN", Chiron: "Ch", Ceres: "Ce", Pallas: "Pa", Juno: "Jn", Vesta: "Vs",
 };
 
 /* -- Aspect line styles -- */
 const A_STYLE: Record<string, { c: string; d?: string }> = {
   conjunction: { c: "#C8B400" },
-  opposition:  { c: "#D04040", d: "4 2" },
-  trine:       { c: "#3C8C50" },
-  square:      { c: "#D04040" },
-  sextile:     { c: "#4070B0" },
-  quincunx:    { c: "#805090", d: "2 2" },
+  opposition: { c: "#D04040", d: "4 2" },
+  trine: { c: "#3C8C50" },
+  square: { c: "#D04040" },
+  sextile: { c: "#4070B0" },
+  quincunx: { c: "#805090", d: "2 2" },
 };
 
 /* -- Math helpers -- */
@@ -361,9 +361,7 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
 
           {/* Center */}
           <circle cx={CX} cy={CY} r={R_CENTER} fill="#111" />
-          <text x={CX} y={CY} textAnchor="middle" dominantBaseline="central"
-            fontSize="14" fill="#FFE566" fontWeight="900"
-            fontFamily="var(--font-display)">K</text>
+          <image href="/logo.png" x={CX - 15} y={CY - 15} width="30" height="30" />
         </svg>
       </motion.div>
 

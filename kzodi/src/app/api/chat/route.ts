@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const langName = targetLang ? (LANG_NAMES[targetLang] || targetLang) : null;
 
     // Compact system prompt to save input tokens (every token counts toward TPM)
-    let systemPrompt = `You are KZodi Oracle, a warm and confident master astrologer.
+    let systemPrompt = `You are Kakoei Oracle, a warm and confident master astrologer.
 The user is ${zodiacSign}${mbtiType ? ` / ${mbtiType}` : ""}.
 Give personalized readings referencing their zodiac traits, planetary influences, and patterns. No emojis. 2-3 paragraphs max. Be specific and direct.
 
