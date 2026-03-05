@@ -147,6 +147,21 @@ export default function ChatApp() {
         }
     };
 
+    // Load User Preferences (Language etc.)
+    const loadUserPreferences = async () => {
+        try {
+            const res = await fetch("/api/user/language");
+            if (res.ok) {
+                const data = await res.json();
+                if (data.language) {
+                    useChatStore.getState().setResponseLanguage(data.language);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load user preferences:", err);
+        }
+    };
+
     // Load user's own characters for "Your Characters" tab
     const loadMyCharacters = async () => {
         try {
@@ -175,6 +190,7 @@ export default function ChatApp() {
 
     useEffect(() => {
         setMounted(true);
+        loadUserPreferences();
         loadConversations();
         loadMyCharacters();
         loadAllCharacters();

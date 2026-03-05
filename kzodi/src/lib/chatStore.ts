@@ -71,7 +71,15 @@ export const useChatStore = create<ChatStore>()(
             activeCharacterId: null,
             responseLanguage: "English (Default)",
 
-            setResponseLanguage: (lang) => set({ responseLanguage: lang }),
+            setResponseLanguage: (lang) => {
+                set({ responseLanguage: lang });
+                // Sync language to backend
+                fetch("/api/user/language", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ language: lang })
+                }).catch(err => console.error("Failed to sync language to DB", err));
+            },
             setActiveCharacter: (id) => set({ activeCharacterId: id }),
 
             clearConversation: (characterId) => {

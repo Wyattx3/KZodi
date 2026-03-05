@@ -43,6 +43,7 @@ export async function ensureSchema() {
         email VARCHAR(255),
         "emailVerified" TIMESTAMPTZ,
         image TEXT,
+        language VARCHAR(50) DEFAULT 'English (Default)',
         PRIMARY KEY (id)
       );
     `);
@@ -201,6 +202,7 @@ export async function ensureSchema() {
 
     // Alter existing tables just in case they were already created without user_id
     try {
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(50) DEFAULT 'English (Default)';`);
       await query(`ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS zodiac_sign TEXT;`);
