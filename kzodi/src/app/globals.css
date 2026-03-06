@@ -30,6 +30,7 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior: none;
   }
 
   body {
@@ -37,6 +38,7 @@
     background-color: #EEEDEA;
     color: var(--color-warm-black);
     min-height: 100dvh;
+    overscroll-behavior: none;
   }
 
   ::-webkit-scrollbar {
@@ -2182,9 +2184,9 @@ body {
   padding-top: max(12px, env(safe-area-inset-top));
   background: #FFFFFF;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  flex-shrink: 0;
   z-index: 50;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+  touch-action: none;
 }
 
 .chatroom-back {
@@ -2331,6 +2333,7 @@ body {
   /* Ensures flex container can scroll */
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
@@ -2646,6 +2649,7 @@ body {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   z-index: 50;
+  touch-action: none;
 }
 
 .chatroom-input-wrap {

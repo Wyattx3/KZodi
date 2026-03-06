@@ -1513,14 +1513,27 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             }
         };
 
+        const handleTouchMove = (e: TouchEvent) => {
+            // Allow scrolling ONLY inside the messages area
+            const target = e.target as HTMLElement;
+            if (!target.closest('.chatroom-messages-area') && !target.closest('.chatroom-info-drawer')) {
+                // Not inside a scrollable area? Prevent default drag.
+                e.preventDefault();
+            }
+        };
+
         if (window.visualViewport) {
             window.visualViewport.addEventListener("resize", handleResize);
             window.visualViewport.addEventListener("scroll", handleResize);
             handleResize(); // Init
         }
 
+        // Must be passive: false to allow preventDefault
+        document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
+
         return () => {
             document.body.style.overflow = originalOverflow;
+            document.body.removeEventListener('touchmove', handleTouchMove);
             if (window.visualViewport) {
                 window.visualViewport.removeEventListener("resize", handleResize);
                 window.visualViewport.removeEventListener("scroll", handleResize);
