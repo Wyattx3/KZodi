@@ -1516,7 +1516,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         const handleTouchMove = (e: TouchEvent) => {
             // Allow scrolling ONLY inside the messages area
             const target = e.target as HTMLElement;
-            if (!target.closest('.chatroom-messages-area') && !target.closest('.chatroom-info-drawer')) {
+            if (!target.closest('.chatroom-messages-area') && !target.closest('.chatroom-info-drawer') && !target.closest('.sticker-drawer')) {
                 // Not inside a scrollable area? Prevent default drag.
                 e.preventDefault();
             }
