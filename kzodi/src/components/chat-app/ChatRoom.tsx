@@ -1518,7 +1518,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             // Only block touch-drag if inside the chatroom container
             if (!target.closest('.chatroom')) return;
             // Allow scrolling inside known scrollable children
-            if (target.closest('.chatroom-messages-area') || target.closest('.chatroom-info-drawer') || target.closest('.sticker-drawer')) return;
+            if (target.closest('.chatroom-messages-area') || target.closest('.chatroom-info-drawer') || target.closest('.sticker-drawer') || target.closest('.profile-page')) return;
             // Block everything else inside chatroom to prevent rubber-banding
             e.preventDefault();
         };
