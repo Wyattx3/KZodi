@@ -283,11 +283,29 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
 
                             {/* Search Results */}
                             {isLoading ? (
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', color: '#6B7280' }}>
-                                    <div className="explore-card-online" style={{ width: "20px", height: "20px", display: "inline-block", marginRight: "10px", verticalAlign: "middle" }}>
-                                        <span className="online-dot-sm" style={{ width: "20px", height: "20px", animation: "pulse 1.5s infinite" }} />
+                                <div style={{ paddingTop: '8px' }}>
+                                    <div className="explore-section-header">
+                                        <div style={{ width: '150px', height: '28px', background: '#F3F4F6', borderRadius: '8px', animation: 'pulse 1.5s infinite' }} />
+                                        <div style={{ width: '80px', height: '16px', background: '#F3F4F6', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                     </div>
-                                    <span style={{ fontSize: '15px' }}>Searching...</span>
+                                    <div className="explore-grid">
+                                        {[1, 2, 3, 4].map((i) => (
+                                            <div key={i} className="explore-card" style={{ pointerEvents: 'none' }}>
+                                                <div className="explore-card-img-wrap" style={{ background: '#F3F4F6', animation: 'pulse 1.5s infinite' }} />
+                                                <div className="explore-card-body">
+                                                    <div className="explore-card-name-row">
+                                                        <div style={{ width: '70%', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                    </div>
+                                                    <div style={{ width: '100%', height: '14px', background: '#e5e7eb', borderRadius: '4px', marginTop: '8px', animation: 'pulse 1.5s infinite' }} />
+                                                    <div style={{ width: '80%', height: '14px', background: '#e5e7eb', borderRadius: '4px', marginTop: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                    <div className="explore-card-footer" style={{ marginTop: '12px' }}>
+                                                        <div style={{ width: '50px', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                        <div style={{ width: '60px', height: '16px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             ) : characters.length > 0 ? (
                                 <div style={{ paddingTop: '8px' }}>
@@ -424,11 +442,32 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                         <div className="explore-scroll-content no-scrollbar">
 
                             {isLoading ? (
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: '#6B7280' }}>
-                                    <div className="explore-card-online" style={{ width: "20px", height: "20px", display: "inline-block", marginRight: "10px", verticalAlign: "middle" }}>
-                                        <span className="online-dot-sm" style={{ width: "20px", height: "20px", animation: "pulse 1.5s infinite" }} />
+                                <div style={{ padding: '0px' }}>
+                                    {/* Skeleton Section Header */}
+                                    <div className="explore-section">
+                                        <div className="explore-section-header">
+                                            <div style={{ width: '150px', height: '28px', background: '#F3F4F6', borderRadius: '8px', animation: 'pulse 1.5s infinite' }} />
+                                            <div style={{ width: '80px', height: '16px', background: '#F3F4F6', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                        </div>
+                                        <div className="explore-grid">
+                                            {[1, 2, 3, 4, 5, 6].map((i) => (
+                                                <div key={i} className="explore-card" style={{ pointerEvents: 'none' }}>
+                                                    <div className="explore-card-img-wrap" style={{ background: '#F3F4F6', animation: 'pulse 1.5s infinite' }} />
+                                                    <div className="explore-card-body">
+                                                        <div className="explore-card-name-row">
+                                                            <div style={{ width: '70%', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                        </div>
+                                                        <div style={{ width: '100%', height: '14px', background: '#e5e7eb', borderRadius: '4px', marginTop: '8px', animation: 'pulse 1.5s infinite' }} />
+                                                        <div style={{ width: '80%', height: '14px', background: '#e5e7eb', borderRadius: '4px', marginTop: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                        <div className="explore-card-footer" style={{ marginTop: '12px' }}>
+                                                            <div style={{ width: '50px', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                            <div style={{ width: '60px', height: '16px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <span style={{ fontSize: '15px' }}>Loading characters...</span>
                                 </div>
                             ) : (
                                 <>

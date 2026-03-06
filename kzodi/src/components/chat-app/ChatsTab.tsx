@@ -463,9 +463,11 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
 
     // Fetch all characters to build charMap dynamically
     const [fetchedCharacters, setFetchedCharacters] = React.useState<Character[]>([]);
+    const [isLoading, setIsLoading] = React.useState(true);
 
     React.useEffect(() => {
         const fetchAllChars = async () => {
+            setIsLoading(true);
             try {
                 // Fetch a large limit or we could just fetch the ones we need based on conversations
                 const res = await fetch("/api/characters?limit=200");
@@ -475,6 +477,8 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                 }
             } catch (err) {
                 console.error("Failed to load characters for ChatsTab:", err);
+            } finally {
+                setIsLoading(false);
             }
         };
         fetchAllChars();
@@ -500,7 +504,8 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             }
             const char = charMap[convo.characterId];
             if (!char) return [];
-            const nameMatch = char.name.toLowerCase().includes(q);
+            const customNameMatch = convo.customName?.toLowerCase().includes(q);
+            const nameMatch = char.name.toLowerCase().includes(q) || customNameMatch;
             const matchedMsg = [...convo.messages].reverse().find(m => m.content.toLowerCase().includes(q));
             if (nameMatch || matchedMsg) {
                 return [{ convo, matchedMsg: nameMatch ? null : matchedMsg }];
@@ -612,6 +617,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                     {conversations.filter(c => !c.isGroup).map((convo) => {
                         const char = charMap[convo.characterId];
                         if (!char) return null;
+                        const displayName = convo.customName || char.name;
                         return (
                             <motion.div
                                 key={convo.characterId}
@@ -622,7 +628,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                 <div className="chats-online-avatar-ring">
                                     <img src={char.image} alt={char.name} />
                                 </div>
-                                <span className="chats-online-name">{char.name.split(" ")[0]}</span>
+                                <span className="chats-online-name">{displayName.split(" ")[0]}</span>
                             </motion.div>
                         );
                     })}
@@ -633,6 +639,22 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             {conversations.length > 0 && <div className="chats-divider" />}
 
             <div className="chats-list">
+                {isLoading ? (
+                    <div style={{ padding: "0" }}>
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <div key={i} style={{ display: "flex", padding: "16px 20px", gap: "14px", borderBottom: "1px solid rgba(0,0,0,0.03)" }}>
+                                <div style={{ width: "52px", height: "52px", borderRadius: "50%", background: "#F3F4F6", flexShrink: 0, animation: "pulse 1.5s infinite" }} />
+                                <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: "8px" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                        <div style={{ width: "40%", height: "16px", background: "#e5e7eb", borderRadius: "4px", animation: "pulse 1.5s infinite" }} />
+                                        <div style={{ width: "30px", height: "12px", background: "#f3f4f6", borderRadius: "4px", animation: "pulse 1.5s infinite" }} />
+                                    </div>
+                                    <div style={{ width: "80%", height: "14px", background: "#e5e7eb", borderRadius: "4px", animation: "pulse 1.5s infinite" }} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
                 <AnimatePresence>
                     {filteredConvos.map(({ convo, matchedMsg }, i) => {
                         // ── Group Chat Row ────────────────────────
@@ -759,6 +781,9 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         // ── Regular Chat Row ──────────────────────
                         const char = charMap[convo.characterId];
                         if (!char) return null;
+                        
+                        const displayName = convo.customName || char.name;
+                        
                         const msgToDisplay = matchedMsg || convo.messages[convo.messages.length - 1];
                         const isAiLast = msgToDisplay?.role === "assistant";
                         const displayContent = matchedMsg ? matchedMsg.content : convo.lastMessage;
@@ -856,12 +881,12 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                     </div>
                                     <div className="chats-item-info">
                                         <div className="chats-item-top">
-                                            <span className="chats-item-name">{char.name}</span>
+                                            <span className="chats-item-name">{displayName}</span>
                                             <span className="chats-item-time">{formatTime(convo.lastTimestamp)}</span>
                                         </div>
                                         <div className="chats-item-bottom">
                                             <p className="chats-item-preview">
-                                                {isAiLast && <span className="chats-item-preview-label">{char.name.split(" ")[0]}: </span>}
+                                                {isAiLast && <span className="chats-item-preview-label">{displayName.split(" ")[0]}: </span>}
                                                 {displayContent.length > 45
                                                     ? displayContent.slice(0, 45) + "..."
                                                     : displayContent}
@@ -877,10 +902,11 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         );
                     })}
                 </AnimatePresence>
+                )}
             </div>
 
             {/* Empty state */}
-            {conversations.length === 0 && (
+            {!isLoading && conversations.length === 0 && (
                 <motion.div
                     key="chats-empty-state-final"
                     style={{

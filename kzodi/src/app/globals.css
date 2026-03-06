@@ -1,4 +1,4 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
 
 /* stylelint-disable-next-line at-rule-no-unknown */
 /* csslint ignore:start */
@@ -2138,13 +2138,14 @@ body {
   position: fixed;
   inset: 0;
   width: 100%;
-  height: 100dvh;
+  height: 100%; /* Better for mobile keyboard resize than 100dvh */
   /* fallback */
   display: flex;
   flex-direction: column;
   background: var(--chatroom-bg, #FFFDF5) !important;
   overflow: hidden;
   z-index: 100;
+  touch-action: none; /* Prevent entire page from being dragged up */
 }
 
 /* Chatroom Themes */
@@ -2630,7 +2631,7 @@ body {
   }
 }
 
-/* Input Bar â€” Light */
+/* Input Bar — Light */
 .chatroom-input-bar {
   position: relative;
   width: 100%;
@@ -2639,9 +2640,9 @@ body {
   align-items: flex-end;
   gap: 8px;
   padding: 10px 18px;
+  /* Use standard padding, rely on visualViewport API or standard dynamic viewport units */
   padding-bottom: max(16px, env(safe-area-inset-bottom));
   background: rgba(255, 255, 255, 0.85);
-  /* Optional: add slight background if needed */
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   z-index: 50;

@@ -25,6 +25,7 @@ export interface Conversation {
     lastTimestamp: number;
     isBlocked?: boolean;
     theme?: string;
+    customName?: string;
     // Group chat fields
     isGroup?: boolean;
     groupName?: string;
@@ -48,6 +49,7 @@ interface ChatStore {
     getConversation: (characterId: string) => Conversation | undefined;
     getConversationList: () => Conversation[];
     setTheme: (characterId: string, theme: string) => void;
+    setCustomName: (characterId: string, customName: string) => void;
 
     // Reactions
     addReaction: (characterId: string, messageId: string, emoji: string, userId: string) => void;
@@ -202,6 +204,23 @@ export const useChatStore = create<ChatStore>()(
                             [characterId]: {
                                 ...existing,
                                 theme,
+                            }
+                        }
+                    };
+                });
+            },
+
+            setCustomName: (characterId, customName) => {
+                set((state) => {
+                    const existing = state.conversations[characterId];
+                    if (!existing) return state;
+
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: {
+                                ...existing,
+                                customName,
                             }
                         }
                     };

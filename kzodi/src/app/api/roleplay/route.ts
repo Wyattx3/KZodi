@@ -238,7 +238,8 @@ function cleanResponseText(rawContent: string, characterName: string): string {
 
     // Aggressively strip malformed REPLY or message ID leaks
     // For example, if the model outputs "1772696623937-ai-3ukuw6]] Hello", strip the ID part
-    content = content.replace(/^(?:\[\[?REPLY:|REPLY:\s*)?[0-9]{13,}-ai-[a-z0-9]+(?:]]?)?\s*/i, "").trim();
+    // Also strip "-user-" leaks
+    content = content.replace(/^(?:\[\[?REPLY:|\[\[?|REPLY:\s*)?[0-9]{13,}-(?:ai|user)-[a-z0-9]+(?:\]+)?\s*/i, "").trim();
 
     // Fallback: If AI wraps response in ```json text ```, strip the wrapper
     const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;

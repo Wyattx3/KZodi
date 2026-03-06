@@ -421,9 +421,8 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
                 width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
                 position: "relative"
             }}>
-                <div style={{ fontSize: smallMode ? "20px" : "40px", opacity: 0.5, filter: "blur(2px)" }}>{fallbackEmoji || "✨"}</div>
                 <motion.div
-                    style={{ position: "absolute", width: 20, height: 20, border: "2px solid rgba(0,0,0,0.5)", borderTop: "2px solid transparent", borderRadius: "50%" }}
+                    style={{ position: "absolute", width: 20, height: 20, border: "2px solid rgba(0,0,0,0.2)", borderTop: "2px solid transparent", borderRadius: "50%" }}
                     animate={{ rotate: 360 }}
                     transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
                 />
@@ -434,7 +433,6 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
     if (error === "quota") {
         return (
             <div style={{ fontSize: "16px", textAlign: "center", color: "red", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} title="API Credit Limit Reached">
-                <span style={{ fontSize: "24px" }}>💸</span>
                 <span style={{ fontSize: "10px" }}>No Credits</span>
             </div>
         );
@@ -453,9 +451,7 @@ const Sticker = ({ prompt, character, fallbackEmoji, smallMode }: { prompt: stri
     }
 
     return (
-        <div style={{ fontSize: smallMode ? "20px" : "48px", textAlign: "center", lineHeight: "1" }} title="Sticker generation failed">
-            {fallbackEmoji || "❓"}
-        </div>
+        <div style={{ width: 20, height: 20, border: "2px dashed rgba(0,0,0,0.2)", borderRadius: "4px" }} title="Sticker generation failed" />
     );
 };
 
@@ -529,7 +525,7 @@ const StickerGrid = ({
     prompts?: string[]
 }) => {
     // Default to character feelings if no prompts provided
-    const items = prompts ? prompts.map(p => ({ label: p, emoji: "✨" })) : STICKER_OPTIONS;
+    const items = prompts ? prompts.map(p => ({ label: p, emoji: "" })) : STICKER_OPTIONS.map(opt => ({...opt, emoji: ""}));
 
     return (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", overflowY: "auto", paddingRight: "4px" }}>
@@ -542,27 +538,23 @@ const StickerGrid = ({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        background: "rgba(255,255,255,0.5)",
-                        borderRadius: "12px",
-                        border: "1px solid rgba(0,0,0,0.05)",
+                        background: "transparent",
+                        border: "none",
                         cursor: "pointer",
                         transition: "all 0.2s",
-                        boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
                         position: "relative",
                         overflow: "hidden"
                     }}
                     onMouseEnter={(e) => {
                         e.currentTarget.style.transform = "scale(1.05)";
-                        e.currentTarget.style.background = "rgba(255,255,255,0.8)";
                     }}
                     onMouseLeave={(e) => {
                         e.currentTarget.style.transform = "scale(1)";
-                        e.currentTarget.style.background = "rgba(255,255,255,0.5)";
                     }}
                     title={opt.label}
                 >
                     <div style={{ position: "absolute", inset: 0, padding: "8px", pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Sticker prompt={opt.label} character={character} fallbackEmoji={opt.emoji} />
+                        <Sticker prompt={opt.label} character={character} fallbackEmoji="" />
                     </div>
                 </button>
             ))}
@@ -734,6 +726,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [showCharInfo, setShowCharInfo] = useState(initialShowProfile);
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
     const [isAstroProfileModalOpen, setIsAstroProfileModalOpen] = useState(false);
     const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
@@ -764,6 +757,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
     const isBlocked = useChatStore(state => state.conversations[character.id]?.isBlocked) || false;
     const conversationTheme = useChatStore(state => state.conversations[character.id]?.theme) || "theme-default";
+    const customName = useChatStore(state => state.conversations[character.id]?.customName) || "";
+    const displayName = customName || character.name;
 
     // Close menu when clicking outside
     const menuRef = useRef<HTMLDivElement>(null);
@@ -1578,7 +1573,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         <span className="chatroom-header-online-ring" />
                     </div>
                     <div className="chatroom-header-info">
-                        <span className="chatroom-header-name">{character.name}</span>
+                        <span className="chatroom-header-name">{displayName}</span>
                         <span className="chatroom-header-status">
                             <span className="chatroom-status-dot" />
                             Online
@@ -1697,21 +1692,11 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     </button>
 
                                     <button
-                                        onClick={async (e) => {
+                                        onClick={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            if (window.confirm(`Are you sure you want to delete this chat with ${character.name}?`)) {
-                                                useChatStore.getState().deleteConversation(character.id);
-                                                setShowMenu(false);
-                                                onBack();
-                                                try {
-                                                    await fetch("/api/memory", {
-                                                        method: "DELETE",
-                                                        headers: { "Content-Type": "application/json" },
-                                                        body: JSON.stringify({ characterId: character.id })
-                                                    });
-                                                } catch (err) { }
-                                            }
+                                            setShowMenu(false);
+                                            setShowDeleteModal(true);
                                         }}
                                         style={{
                                             display: "flex", alignItems: "center", gap: "8px",
@@ -2134,6 +2119,103 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     }
                 }}
             />
+
+            {/* Delete Chat Confirmation Modal */}
+            <AnimatePresence>
+                {showDeleteModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        style={{
+                            position: "fixed",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: "rgba(0, 0, 0, 0.5)",
+                            backdropFilter: "blur(4px)",
+                            zIndex: 1000,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: "20px"
+                        }}
+                        onClick={() => setShowDeleteModal(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            style={{
+                                backgroundColor: "white",
+                                borderRadius: "16px",
+                                padding: "24px",
+                                width: "100%",
+                                maxWidth: "340px",
+                                boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "16px"
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <h3 style={{ margin: 0, color: "#4A3728", fontSize: "18px", fontWeight: 700 }}>Delete Chat</h3>
+                            <p style={{ margin: 0, color: "#6B7280", fontSize: "14px" }}>
+                                Are you sure you want to delete this chat with {character.name}? This action cannot be undone.
+                            </p>
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
+                                <button
+                                    onClick={() => setShowDeleteModal(false)}
+                                    style={{
+                                        padding: "10px 16px",
+                                        borderRadius: "10px",
+                                        border: "none",
+                                        backgroundColor: "rgba(0,0,0,0.05)",
+                                        color: "#4A3728",
+                                        fontWeight: 600,
+                                        fontSize: "14px",
+                                        cursor: "pointer",
+                                        transition: "background 0.2s"
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        setShowDeleteModal(false);
+                                        useChatStore.getState().deleteConversation(character.id);
+                                        onBack();
+                                        try {
+                                            await fetch("/api/memory", {
+                                                method: "DELETE",
+                                                headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ characterId: character.id })
+                                            });
+                                        } catch (err) { }
+                                    }}
+                                    style={{
+                                        padding: "10px 16px",
+                                        borderRadius: "10px",
+                                        border: "none",
+                                        backgroundColor: "#EF4444",
+                                        color: "white",
+                                        fontWeight: 600,
+                                        fontSize: "14px",
+                                        cursor: "pointer",
+                                        transition: "background 0.2s"
+                                    }}
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
         </div >
     );
 }

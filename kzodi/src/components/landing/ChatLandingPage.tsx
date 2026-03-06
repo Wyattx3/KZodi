@@ -60,13 +60,27 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
 
     const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
     const [isInstallable, setIsInstallable] = React.useState(false);
+    const [isIOS, setIsIOS] = React.useState(false);
+    const [showIOSInstructions, setShowIOSInstructions] = React.useState(false);
 
     React.useEffect(() => {
+        // iOS detection
+        const userAgent = window.navigator.userAgent.toLowerCase();
+        const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
+        const isStandalone = ('standalone' in window.navigator) && (window.navigator as any).standalone;
+        
+        if (isIOSDevice && !isStandalone) {
+            setIsIOS(true);
+            setIsInstallable(true);
+        }
+
         const handleBeforeInstallPrompt = (e: any) => {
             e.preventDefault();
             (window as any).deferredPWAEvent = e;
             setDeferredPrompt(e);
-            setIsInstallable(true);
+            if (!isIOSDevice) {
+                setIsInstallable(true);
+            }
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -74,7 +88,9 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
         // Check if it already fired before this component mounted
         if (typeof window !== 'undefined' && (window as any).deferredPWAEvent) {
             setDeferredPrompt((window as any).deferredPWAEvent);
-            setIsInstallable(true);
+            if (!isIOSDevice) {
+                setIsInstallable(true);
+            }
         }
 
         return () => {
@@ -83,6 +99,10 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
     }, []);
 
     const handleInstallClick = async () => {
+        if (isIOS) {
+            setShowIOSInstructions(true);
+            return;
+        }
         if (!deferredPrompt) return;
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
@@ -161,7 +181,49 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
                         Sign in with Google to continue
                     </p>
                 </div>
-            </div>
+        </div>            {/* iOS Install Instructions Modal */}
+            {showIOSInstructions && (
+                <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 sm:p-8 max-w-sm w-full mx-auto shadow-2xl animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 relative mb-4 sm:mb-0">
+                        <button 
+                            onClick={() => setShowIOSInstructions(false)}
+                            className="absolute top-5 right-5 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full p-2"
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                        
+                        <div className="flex flex-col items-center text-center mt-2">
+                            <div className="w-16 h-16 bg-gradient-to-tr from-white/10 to-white/5 rounded-2xl flex items-center justify-center mb-5 border border-white/10 shadow-inner">
+                                <Image src="/logo.png" alt="Kakoei Logo" width={40} height={40} className="object-contain" priority/>
+                            </div>
+                            <h3 className="text-2xl font-bold text-white tracking-tight mb-2">Install Kakoei App</h3>
+                            <p className="text-warm-gray text-[15px] mb-8 leading-relaxed">Install this application on your home screen for quick and easy access, full screen experience and more.</p>
+                            
+                            <div className="bg-black/40 rounded-2xl p-5 w-full text-left space-y-4 border border-white/5 shadow-inner">
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-white/10 rounded-full w-7 h-7 flex items-center justify-center text-[13px] font-bold text-white shrink-0 mt-0.5">1</div>
+                                    <p className="text-white/80 text-[15px]">Tap the <span className="font-semibold text-white">Share</span> button at the bottom of Safari.</p>
+                                </div>
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-white/10 rounded-full w-7 h-7 flex items-center justify-center text-[13px] font-bold text-white shrink-0 mt-0.5">2</div>
+                                    <p className="text-white/80 text-[15px]">Scroll down and tap <span className="font-semibold text-white">"Add to Home Screen"</span>.</p>
+                                </div>
+                                <div className="flex items-start gap-4">
+                                    <div className="bg-white/10 rounded-full w-7 h-7 flex items-center justify-center text-[13px] font-bold text-white shrink-0 mt-0.5">3</div>
+                                    <p className="text-white/80 text-[15px]">Tap <span className="font-semibold text-white">"Add"</span> in the top right corner.</p>
+                                </div>
+                            </div>
+                            
+                            <button 
+                                onClick={() => setShowIOSInstructions(false)}
+                                className="w-full mt-8 py-3.5 rounded-xl bg-white text-black font-600 hover:bg-white/90 active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
