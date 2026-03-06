@@ -78,9 +78,7 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
             e.preventDefault();
             (window as any).deferredPWAEvent = e;
             setDeferredPrompt(e);
-            if (!isIOSDevice) {
-                setIsInstallable(true);
-            }
+            setIsInstallable(true);
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -88,9 +86,7 @@ const ChatLandingPage: React.FC<ChatLandingPageProps> = ({ onGetStarted, onBack 
         // Check if it already fired before this component mounted
         if (typeof window !== 'undefined' && (window as any).deferredPWAEvent) {
             setDeferredPrompt((window as any).deferredPWAEvent);
-            if (!isIOSDevice) {
-                setIsInstallable(true);
-            }
+            setIsInstallable(true);
         }
 
         return () => {
