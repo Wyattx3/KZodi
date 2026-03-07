@@ -2,7 +2,7 @@
   "name": "Kakoei Chat",
   "short_name": "Kakoei",
   "description": "Chat with your favorite anime, K-pop & BL characters powered by AI",
-  "start_url": "/?view=chat-landing",
+  "start_url": "/chat",
   "display": "standalone",
   "background_color": "#111111",
   "theme_color": "#111111",

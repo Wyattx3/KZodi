@@ -14,6 +14,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     ],
     session: {
         strategy: "jwt",
+        maxAge: 90 * 24 * 60 * 60, // 90 days
+    },
+    jwt: {
+        maxAge: 90 * 24 * 60 * 60, // 90 days
+    },
+    cookies: {
+        sessionToken: {
+            name: process.env.NODE_ENV === "production" ? "__Secure-authjs.session-token" : "authjs.session-token",
+            options: {
+                httpOnly: true,
+                sameSite: "lax",
+                path: "/",
+                secure: process.env.NODE_ENV === "production",
+                maxAge: 90 * 24 * 60 * 60, // 90 days — persist across PWA restarts
+            },
+        },
     },
     callbacks: {
         async signIn({ user, account, profile, email, credentials }) {

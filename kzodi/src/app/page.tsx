@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import dynamic from "next/dynamic";
 import { AnimatePresence } from "framer-motion";
 import LandingPage from "@/components/landing/LandingPage";
@@ -10,7 +11,15 @@ const ChatLandingPage = dynamic(() => import("@/components/landing/ChatLandingPa
 function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
   const view = searchParams.get("view") === "chat-landing" ? "chat-landing" : "landing";
+
+  // Auto-redirect to /chat if already logged in (PWA persistence)
+  useEffect(() => {
+    if (status === "authenticated" && session) {
+      router.replace("/chat");
+    }
+  }, [status, session, router]);
 
   const handleChatGetStarted = () => {
     const isAstrologerRedirect = typeof window !== 'undefined' ? localStorage.getItem("pendingAstrologerRedirect") : null;
