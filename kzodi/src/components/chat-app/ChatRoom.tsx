@@ -1508,10 +1508,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         if (typeof window === "undefined") return;
 
         const handleResize = () => {
-            if (window.visualViewport && !isIOS) {
-                // On Android ONLY: visualViewport height tells us exactly how much space is left above keyboard.
+            if (window.visualViewport) {
+                // Strictly lock the container height to the visual viewport
                 setViewportHeight(window.visualViewport.height);
-                window.scrollTo(0, 0); // categorically prevent visual viewport drift on Android
+                window.scrollTo(0, 0); // prevent underlying scroll drift
             }
         };
 

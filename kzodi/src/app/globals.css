@@ -771,6 +771,11 @@ body {
   margin: 0;
   padding: 0;
   background: #FAFAFA;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100%;
+  overflow: hidden;
 }
 
 .no-scrollbar::-webkit-scrollbar {
