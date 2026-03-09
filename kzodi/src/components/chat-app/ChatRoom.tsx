@@ -1515,11 +1515,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             }
         };
 
-        // Lock the body to strictly prevent native scrolling up (only on Android)
+        // Lock the body to strictly prevent native scrolling up
         const originalOverflow = document.body.style.overflow;
-        if (!isIOS) {
-            document.body.style.overflow = "hidden";
-        }
+        document.body.style.overflow = "hidden";
 
         const handleTouchMove = (e: TouchEvent) => {
             const target = e.target as HTMLElement;
