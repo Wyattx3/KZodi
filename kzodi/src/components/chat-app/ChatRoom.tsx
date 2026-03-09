@@ -1508,21 +1508,18 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         if (typeof window === "undefined") return;
 
         const handleResize = () => {
-            if (window.visualViewport) {
-                // Set CSS variables for true visual viewport height and offset (critical for iOS)
-                document.documentElement.style.setProperty('--vvh', `${window.visualViewport.height}px`);
-                document.documentElement.style.setProperty('--vvo', `${window.visualViewport.offsetTop}px`);
-                
-                if (!isIOS) {
-                    setViewportHeight(window.visualViewport.height);
-                    window.scrollTo(0, 0); // categorically prevent visual viewport drift on Android
-                }
+            if (window.visualViewport && !isIOS) {
+                // On Android ONLY: visualViewport height tells us exactly how much space is left above keyboard.
+                setViewportHeight(window.visualViewport.height);
+                window.scrollTo(0, 0); // categorically prevent visual viewport drift on Android
             }
         };
 
-        // Lock the body to strictly prevent native scrolling up
+        // Lock the body to strictly prevent native scrolling up (only on Android)
         const originalOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
+        if (!isIOS) {
+            document.body.style.overflow = "hidden";
+        }
 
         const handleTouchMove = (e: TouchEvent) => {
             const target = e.target as HTMLElement;
@@ -1556,11 +1553,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     return (
         <div
             className={`chatroom ${conversationTheme}`}
-            style={{ 
-                height: isIOS ? 'var(--vvh, 100dvh)' : (typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight),
-                transform: isIOS ? 'translateY(var(--vvo, 0px))' : 'none',
-                transition: isIOS ? 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1), height 0.3s cubic-bezier(0.32, 0.72, 0, 1)' : 'none'
-             }}
+            style={{ height: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight }}
         >
             <div className="chatroom-bg-pattern" />
             {/* ── Header ─────────────────────────── */}
