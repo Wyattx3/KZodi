@@ -1501,19 +1501,23 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     useEffect(() => {
         if (typeof window === "undefined") return;
 
-        // Lock the body to strictly prevent native scrolling up
-        const originalOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
         const handleResize = () => {
             if (window.visualViewport) {
-                // Force layout flush and strict pixel height
+                // On Android, visualViewport height tells us exactly how much space is left above keyboard.
+                // On iOS, we WANT the native behavior (which pushes the page up), so we do NOT force scrollTo(0,0) constantly
+                // because forcing scrollTo(0,0) fights iOS's native scroll-to-caret behavior.
                 setViewportHeight(window.visualViewport.height);
-                window.scrollTo(0, 0); // categorically prevent visual viewport drift
+                if (!isIOS) {
+                    window.scrollTo(0, 0); // Only prevent drift on Android
+                }
             }
         };
 
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        // Lock the body to strictly prevent native scrolling up
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
 
         const handleTouchMove = (e: TouchEvent) => {
             const target = e.target as HTMLElement;
@@ -1525,7 +1529,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             e.preventDefault();
         };
 
-        if (window.visualViewport && !isIOS) {
+        if (window.visualViewport) {
             window.visualViewport.addEventListener("resize", handleResize);
             window.visualViewport.addEventListener("scroll", handleResize);
             handleResize(); // Init
@@ -1537,7 +1541,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         return () => {
             document.body.style.overflow = originalOverflow;
             document.body.removeEventListener('touchmove', handleTouchMove);
-            if (window.visualViewport && !isIOS) {
+            if (window.visualViewport) {
                 window.visualViewport.removeEventListener("resize", handleResize);
                 window.visualViewport.removeEventListener("scroll", handleResize);
             }
