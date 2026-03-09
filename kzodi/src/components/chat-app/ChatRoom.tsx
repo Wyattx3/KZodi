@@ -719,6 +719,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const isTrueAstrologer = character.id === 'astrologer-specialist' || character.id === 'astrologer_specialist';
     const [showStandardMenu, setShowStandardMenu] = useState(!isTrueAstrologer);
     const [input, setInput] = useState("");
+    const chatroomRef = useRef<HTMLDivElement>(null);
     const [viewportHeight, setViewportHeight] = useState<number | string>("100dvh");
     const [isTyping, setIsTyping] = useState(false);
     const [isFetchingMessages, setIsFetchingMessages] = useState(true);
@@ -1508,10 +1509,19 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         if (typeof window === "undefined") return;
 
         const handleResize = () => {
-            if (window.visualViewport) {
-                // Strictly lock the container height to the visual viewport
+            if (!window.visualViewport) return;
+            
+            if (isIOS) {
+                // HIGH PERFORMANCE 60fps iOS FIX: Direct DOM mutation avoids React render cycle lag.
+                // Mutating transform: translateY() forces the fixed chatroom to slide down perfectly with the visual viewport offset!
+                if (chatroomRef.current) {
+                    chatroomRef.current.style.height = `${window.visualViewport.height}px`;
+                    chatroomRef.current.style.transform = `translateY(${window.visualViewport.offsetTop}px)`;
+                }
+            } else {
+                // On Android, visualViewport height tells us exactly how much space is left above keyboard.
                 setViewportHeight(window.visualViewport.height);
-                window.scrollTo(0, 0); // prevent underlying scroll drift
+                window.scrollTo(0, 0); // categorically prevent visual viewport drift on Android
             }
         };
 
@@ -1550,8 +1560,11 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
     return (
         <div
+            ref={chatroomRef}
             className={`chatroom ${conversationTheme}`}
-            style={{ height: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight }}
+            style={{ 
+                height: isIOS ? '100%' : (typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight)
+             }}
         >
             <div className="chatroom-bg-pattern" />
             {/* ── Header ─────────────────────────── */}
