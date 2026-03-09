@@ -1558,7 +1558,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             className={`chatroom ${conversationTheme}`}
             style={{ 
                 height: isIOS ? 'var(--vvh, 100dvh)' : (typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight),
-                transform: isIOS ? 'translateY(var(--vvo, 0px))' : 'none'
+                transform: isIOS ? 'translateY(var(--vvo, 0px))' : 'none',
+                transition: isIOS ? 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1), height 0.3s cubic-bezier(0.32, 0.72, 0, 1)' : 'none'
              }}
         >
             <div className="chatroom-bg-pattern" />
