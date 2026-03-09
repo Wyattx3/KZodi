@@ -9,15 +9,15 @@ interface ChatLandingPageProps {
 
 /* ── Character data for the slideshow ────────────────────────────────────── */
 const CHARACTERS = [
-    { name: "Gojo Satoru", tag: "Anime", image: "https://images.unsplash.com/photo-1578632292335-df3abbb0d586?q=80&w=300&auto=format&fit=crop" },
-    { name: "Levi Ackerman", tag: "Anime", image: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=300&auto=format&fit=crop" },
-    { name: "Anya Forger", tag: "Anime", image: "https://images.unsplash.com/photo-1541562232579-512a21360020?q=80&w=300&auto=format&fit=crop" },
-    { name: "Tanjiro", tag: "Anime", image: "https://images.unsplash.com/photo-1618336753974-aae8e04506aa?q=80&w=300&auto=format&fit=crop" },
-    { name: "V / Taehyung", tag: "K-pop", image: "https://images.unsplash.com/photo-1533107862482-0e3574ff682a?q=80&w=300&auto=format&fit=crop" },
-    { name: "Cha Eunwoo", tag: "K-pop", image: "https://images.unsplash.com/photo-1621570074981-ee6a0145c8b5?q=80&w=300&auto=format&fit=crop" },
-    { name: "Lisa", tag: "K-pop", image: "https://images.unsplash.com/photo-1503104834685-7205e8607eb9?q=80&w=300&auto=format&fit=crop" },
-    { name: "Kinn & Porsche", tag: "BL", image: "https://images.unsplash.com/photo-1581022295087-35e593704911?q=80&w=300&auto=format&fit=crop" },
-    { name: "Pat & Pran", tag: "BL", image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?q=80&w=300&auto=format&fit=crop" },
+    { name: "Gojo Satoru", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b88571-0010S6iU0wTq.jpg" },
+    { name: "Levi Ackerman", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b45627-1LPNhOAMk3QG.png" },
+    { name: "Anya Forger", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b137021-xLw2v11UINxP.jpg" },
+    { name: "Tanjiro", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b127518-eI4x7zD9o4k3.png" },
+    { name: "V / Taehyung", tag: "K-pop", image: "https://upload.wikimedia.org/wikipedia/commons/0/08/V_for_Dispatch_White_Day_Special%2C_27_February_2019_01.jpg" },
+    { name: "Cha Eunwoo", tag: "K-pop", image: "https://upload.wikimedia.org/wikipedia/commons/d/df/Cha_Eun-woo_in_October_2023.jpg" },
+    { name: "Lisa", tag: "K-pop", image: "https://upload.wikimedia.org/wikipedia/commons/1/13/2023_BLACKPINK_-_Lalisa_Manobal_%28%EB%A6%AC%EC%82%AC%29_16.jpg" },
+    { name: "Kinn Anakinn", tag: "BL", image: "https://upload.wikimedia.org/wikipedia/commons/2/29/Mile_Phakphum_Romsaithong.jpg" },
+    { name: "Porsche", tag: "BL", image: "https://upload.wikimedia.org/wikipedia/commons/5/53/Apo_Nattawin_Wattanagitiphat.jpg" },
 ];
 
 function CharCard({ char }: { char: typeof CHARACTERS[number] }) {

@@ -14,6 +14,7 @@ import BirthChartWheel from "./BirthChartWheel";
 import FeedbackSurvey from "./FeedbackSurvey";
 import ChatWidget from "@/components/chat/ChatWidget";
 import SaveInfoCard from "./SaveInfoCard";
+import RelationshipCard from "./RelationshipCard";
 import PdfExportTemplate from "./PdfExportTemplate";
 
 interface ResultsPageProps {
@@ -48,6 +49,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
   const [showShareMenu, setShowShareMenu] = useState(false);
   const shareRef = useRef<HTMLDivElement>(null);
   const infoCardRef = useRef<HTMLDivElement>(null);
+  const partnerInfoCardRef = useRef<HTMLDivElement>(null);
+  const rsCardRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<HTMLDivElement>(null);
   const { lang, translating, changeLang, getText } = useTranslate();
 
@@ -103,15 +106,33 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
 
   const handleSaveInfoCard = async () => {
     setShowShareMenu(false);
-    if (!infoCardRef.current) return;
-    try {
-      const canvas = await html2canvas(infoCardRef.current, { scale: 3, useCORS: true, backgroundColor: "#fafafa" });
-      const dataUrl = canvas.toDataURL("image/png", 1.0);
-      const link = document.createElement("a");
-      link.download = `${person1.name || "kakoei"}-id-card.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (e) { console.error("Error saving ID card:", e); }
+    
+    // Define an async helper to generate and download a canvas
+    const downloadCard = async (ref: React.RefObject<HTMLDivElement | null>, filename: string) => {
+        if (!ref.current) return;
+        try {
+            const canvas = await html2canvas(ref.current, { scale: 3, useCORS: true, backgroundColor: "#fafafa" });
+            const dataUrl = canvas.toDataURL("image/png", 1.0);
+            const link = document.createElement("a");
+            link.download = filename;
+            link.href = dataUrl;
+            link.click();
+        } catch (e) {
+            console.error(`Error saving ${filename}:`, e);
+        }
+    };
+
+    // Always download person 1
+    await downloadCard(infoCardRef, `${person1.name || "kakoei"}-id-card.png`);
+
+    // If relationship mode, download the other two cards
+    if (relationshipStatus === "rs" && person2 && sign2) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // slight delay to allow first download to start
+        await downloadCard(partnerInfoCardRef, `${person2.name || "partner"}-id-card.png`);
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await downloadCard(rsCardRef, `${person1.name || "p1"}-${person2.name || "p2"}-rs-card.png`);
+    }
   };
 
   const handleDownloadPdf = async () => {
@@ -247,6 +268,28 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
           signKey={sign1Key}
           birthChartData={birthChartData || null}
         />
+        {relationshipStatus === "rs" && sign2 && sign2Key && (
+          <>
+            <SaveInfoCard
+              ref={partnerInfoCardRef}
+              person={person2!}
+              sign={sign2}
+              signKey={sign2Key}
+              birthChartData={partnerBirthChartData || null}
+            />
+            <RelationshipCard
+              ref={rsCardRef}
+              person1={person1}
+              sign1={sign1}
+              sign1Key={sign1Key}
+              person2={person2!}
+              sign2={sign2}
+              sign2Key={sign2Key}
+              compatScore={compatScore}
+              rsDuration={rsDuration}
+            />
+          </>
+        )}
         <PdfExportTemplate
           ref={pdfRef}
           person={person1}

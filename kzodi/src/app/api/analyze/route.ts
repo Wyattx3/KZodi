@@ -206,33 +206,31 @@ export async function POST(request: NextRequest) {
     } catch { /* skip context gathering on failure */ }
     console.log(`[Analyze] Context gathered: feedback=${feedbackCtx.length}chars, search=${searchCtx.length}chars`);
 
-    // ──── SYSTEM PROMPT (detailed, JSON-first) ────
+    // ──── SYSTEM PROMPT (detailed, JSON-first, static for caching) ────
     const systemPrompt = `You must respond with valid JSON only. Format: {"personality":"...","love":"...","compatibility":"...","likes":"...","chartReading":"..."}
 
-Each value should be rich and detailed — write 3-5 substantial paragraphs per section, separated by \\n\\n. Each paragraph should be 3-5 sentences. Be thorough, insightful, and specific. Do NOT be brief — the user wants an in-depth, comprehensive reading.
+You are Kakoei Oracle, a master astrologer and personality analyst. Speak directly to the person in second person ("you"). Reference their specific planet positions, signs, houses, and degrees from the chart data to make it feel uniquely theirs.
 
-You are a master astrologer and personality analyst. Speak directly to the person in second person ("you"). Reference their specific planet positions, signs, houses, and degrees from the chart data. Make it feel personal and uniquely theirs.
+**TONE & STYLE (CRITICAL):**
+Write in a smooth, engaging, warm, and highly conversational tone. Avoid sounding like a dry, clinical textbook. Use natural phrasing, insightful warmth, and keep your paragraphs easily digestible (1-3 short, flowing sentences per paragraph). Be meaningful, deep, and highly specific, but format it like a wise friend explaining their chart over coffee. Do NOT write walls of text.
 
-- personality: Start with their Rising sign (how they appear to others, first impressions, physical mannerisms). Then explore their Moon sign (emotional world, inner needs, what makes them feel secure, how they process feelings). Cover their Sun sign purpose and life direction. Discuss Mercury (communication style, how they think and learn). Mention their dominant element balance and what it means. End with how their MBTI type interweaves with their astrological profile to create their unique personality blend.
+- personality: Start with their Rising sign (first impressions). Explore their Moon sign (emotional world) and Sun sign purpose. Discuss Mercury (communication style). Mention their dominant element balance. End with how their MBTI type interweaves with their astrological profile.
+- love: Begin with Venus placement (love language, romantic ideals). Explore Mars (passion, desire). Analyze their 7th house (what kind of partner they need). Discuss their 5th house (dating style). Mention significant Venus/Mars aspects.
+- compatibility: Discuss their best matches based on element harmony. Explain WHY certain signs work well with them based on their chart. If a partner's sign is provided, give a deep analysis of that pairing.
+- likes: Explore career paths (10th house/Midheaven), creative interests (5th house), hobbies, intellectual interests (Mercury), and social preferences (11th house).
+- chartReading: Give a comprehensive, easy-to-read planet-by-planet breakdown. For major planets state the sign, house, and degree, then explain what it means. Mention aspects, retrogrades, and stelliums.`;
 
-- love: Begin with Venus placement (love language, what they find beautiful, how they show affection, their romantic ideals). Explore Mars (passion style, sexual energy, what ignites desire, how they pursue or attract). Analyze their 7th house (what kind of partner they need, relationship dynamics). Discuss their 5th house (dating style, romance, flirtation). Include how their Moon sign affects emotional intimacy. Mention any significant Venus/Mars aspects.
-
-- compatibility: Discuss their best zodiac matches based on element harmony (fire-air, earth-water). Explain WHY certain signs work well with them based on their specific chart. Cover challenging matches and what makes them difficult. Discuss their Venus-Mars dynamic and what it attracts. If a partner's sign is provided, give detailed analysis of that specific pairing.
-
-- likes: Explore career paths suggested by their 10th house and Midheaven sign. Discuss creative interests from 5th house placements. Cover hobbies and leisure from their element and modality. Mention intellectual interests from Mercury placement. Discuss social preferences based on their 11th house. Include lifestyle preferences that align with their chart energy.
-
-- chartReading: Give a comprehensive planet-by-planet breakdown. For each major planet (Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn), state the sign, house, and degree, then explain what it means for this person. Mention any notable aspects (conjunctions, oppositions, trines, squares). Discuss any retrograde planets and their significance. Note the Ascendant and Midheaven. Highlight any stelliums or patterns.${feedbackCtx ? `\nPrevious user feedback to incorporate: ${feedbackCtx}` : ""}`;
-
-    // ──── USER PROMPT ────
+    // ──── USER PROMPT (Dynamic data) ────
     let userPrompt = `Person: ${zodiacSign} Sun, ${mbtiType || "unknown"} MBTI, ${relationshipStatus}`;
     if (partnerZodiac) userPrompt += `, partner: ${partnerZodiac}${partnerMbti ? ` / ${partnerMbti}` : ""}`;
     if (rsDuration) userPrompt += `, together: ${rsDuration}`;
     if (chartText) userPrompt += `\n\nBIRTH CHART:\n${chartText}`;
     if (partnerChartText) userPrompt += `\n\nPARTNER BIRTH CHART:\n${partnerChartText}`;
     if (searchCtx) userPrompt += `\n\nContext:\n${searchCtx}`;
+    if (feedbackCtx) userPrompt += `\n\nPrevious user feedback to incorporate:\n${feedbackCtx}`;
 
     console.log("[Analyze] Prompt lengths - system:", systemPrompt.length, "user:", userPrompt.length);
-    console.log("[Analyze] Sending to Groq (Kimi K2)...");
+    console.log("[Analyze] Sending request...");
 
     // ─── 2-Step Verified AI Call ──────────────────────────────────────
     // Step 1: Generate results
@@ -266,7 +264,7 @@ You are a master astrologer and personality analyst. Speak directly to the perso
             },
             {
               cachePrefix: attempt === 0 ? cachePrefix : `${cachePrefix}_retry${attempt}`,
-              useCache: attempt === 0,  // Only use cache on first attempt
+              useCache: true, // Enable full caching
               maxRetries: 3
             }
           );
@@ -336,15 +334,16 @@ You are a master astrologer and personality analyst. Speak directly to the perso
     if (relationshipStatus === "rs" && partnerZodiac) {
       const partnerSystemPrompt = `You must respond with valid JSON only. Format: {"personality":"...","love":"...","compatibility":"...","likes":"...","chartReading":"..."}
 
-Each value should be rich and detailed — write 3-5 substantial paragraphs per section, separated by \\n\\n. Each paragraph should be 3-5 sentences. Be thorough, insightful, and specific. Do NOT be brief.
+You are Kakoei Oracle, a master astrologer and personality analyst. Speak to the user about their PARTNER. Use third-person pronouns ("they", "your partner", "their") to describe the partner's traits, love style, likes, and chart. Do NOT say "you".
 
-You are a master astrologer. Speak to the user about their PARTNER. Use third-person pronouns ("they", "your partner") to describe the partner's traits, love style, likes, and chart. Do NOT say "you".
+**TONE & STYLE (CRITICAL):**
+Write in a smooth, engaging, warm, and highly conversational tone. Avoid sounding like a dry, clinical textbook. Use natural phrasing, insightful warmth, and keep your paragraphs easily digestible (1-3 short, flowing sentences per paragraph). Be meaningful, deep, and highly specific, but format it carefully. Do NOT write walls of text.
 
 - personality: Analyze the partner's Rising, Moon, Sun, and Mercury. Discuss their element balance and MBTI mix. Explain how they appear to others and their inner emotional world.
 - love: Analyze the partner's Venus, Mars, 5th, and 7th houses. Explain how they show affection, what they find beautiful, and their dating style.
 - compatibility: Discuss the partner's best matches generally and explain why they align with certain signs.
 - likes: Explore their career paths, hobbies, intellectual interests, and social preferences based on their chart.
-- chartReading: Give a comprehensive planet-by-planet breakdown of the partner's chart. Mention any notable aspects or stelliums.`;
+- chartReading: Give a comprehensive easy-to-read planet-by-planet breakdown of the partner's chart. Mention any notable aspects or stelliums.`;
 
       let partnerUserPrompt = `Partner: ${partnerZodiac} Sun, ${partnerMbti || "unknown"} MBTI`;
       if (partnerChartText) partnerUserPrompt += `\n\nPARTNER BIRTH CHART:\n${partnerChartText}`;

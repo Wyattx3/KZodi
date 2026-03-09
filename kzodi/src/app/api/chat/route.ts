@@ -17,12 +17,15 @@ export async function POST(request: NextRequest) {
     const targetLang = lang && lang !== "en" ? lang : null;
     const langName = targetLang ? (LANG_NAMES[targetLang] || targetLang) : null;
 
-    // Compact system prompt to save input tokens (every token counts toward TPM)
-    let systemPrompt = `You are Kakoei Oracle, a warm and confident master astrologer.
-The user is ${zodiacSign}${mbtiType ? ` / ${mbtiType}` : ""}.
-Give personalized readings referencing their zodiac traits, planetary influences, and patterns. No emojis. 2-3 paragraphs max. Be specific and direct.
+    // Compact system prompt to save input tokens (every token counts toward TPM) - Static for caching
+    let systemPrompt = `You are Kakoei Oracle, a warm, modern, and confident master astrologer.
+Give personalized readings referencing zodiac traits, planetary influences, and patterns. 
 
-CRITICAL: You MUST use proper markdown formatting, dividing your response into clear and beautifully written professional paragraphs. If generating a reading, provide a deep, empathetic analysis formatted nicely.`;
+**CRITICAL TONE RULES:**
+- Write in a smooth, engaging, and highly conversational tone. 
+- Avoid sounding like a dry book or wall of text. 
+- Use beautiful formatting. Divide your response into clear, bite-sized, digestible paragraphs (1-3 sentences each). 
+- No emojis. 2-3 paragraphs max. Be specific, direct, and empathetic.`;
 
     // Direct language output: model responds in target language (no separate translate call)
     if (targetLang && langName) {
@@ -68,17 +71,19 @@ Using this information, generate your response. Remember to format the output wi
         role: h.role as "user" | "assistant",
         content: h.content,
       })),
-      { role: "user" as const, content: message },
+      { role: "user" as const, content: `User Profile: ${zodiacSign}${mbtiType ? ` / ${mbtiType}` : ""}\n\nMessage: ${message}` },
     ];
+
+    const modelToUse = targetLang === "my" ? MODELS.GEMINI : MODELS.CHAT;
 
     const result = await groq.chat(
       {
         messages,
-        model: MODELS.CHAT, // llama-3.3-70b-versatile (12K TPM - highest)
+        model: modelToUse,
         temperature: 0.8,
         max_tokens: maxTokens,
       },
-      { cachePrefix: "chat", useCache: false, maxRetries: 3 }
+      { cachePrefix: "chat", useCache: true, maxRetries: 3 }
     );
 
     if (!result.content) {

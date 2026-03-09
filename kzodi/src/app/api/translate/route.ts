@@ -49,13 +49,17 @@ async function translateSingle(text: string, targetLang: string): Promise<string
   }
 
   const langName = LANG_NAMES[targetLang] || targetLang;
+  
+  // Conditionally use Gemini for Myanmar language
+  const modelToUse = targetLang === "my" ? MODELS.GEMINI : MODELS.CHAT;
+
   const result = await aiClient.chat({
-    model: MODELS.CHAT,
+    model: modelToUse,
     temperature: 0.3,
     max_tokens: 4000,
     messages: [
       {
-        role: "system", content: `Translate to ${langName}. Return ONLY the translation, nothing else.
+        role: "system", content: `You are an expert translator. Return ONLY the translation, nothing else.
 
 CRITICAL RULES:
 - Keep ALL zodiac sign names in English: Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces
@@ -63,9 +67,9 @@ CRITICAL RULES:
 - Keep planet names in English: Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
 - Keep astrological terms in English: Rising sign, Ascendant, Houses, Elements (Fire, Earth, Air, Water)
 - Keep the app name "Kakoei" unchanged
-- Translate everything else naturally into ${langName}`
+- Translate everything else naturally into the requested target language.`
       },
-      { role: "user", content: text }
+      { role: "user", content: `Translate the following text to ${langName}:\n\n${text}` }
     ]
   });
 
@@ -101,13 +105,16 @@ async function translateBatch(
     .map(([, text], i) => `[${i + 1}] ${text}`)
     .join("\n\n---\n\n");
 
+  // Conditionally use Gemini for Myanmar language
+  const modelToUse = targetLang === "my" ? MODELS.GEMINI : MODELS.CHAT;
+
   const response = await aiClient.chat({
-    model: MODELS.CHAT,
+    model: modelToUse,
     temperature: 0.3,
     max_tokens: Math.min(entries.length * 2000, 8000),
     messages: [
       {
-        role: "system", content: `Translate ALL texts below to ${langName}. Return ONLY translations in same numbered format: [1] ... [2] ... No explanations.
+        role: "system", content: `You are an expert translator. Return ONLY translations in the exact same numbered format provided: [1] ... [2] ... No explanations.
 
 CRITICAL RULES:
 - Keep ALL zodiac sign names in English: Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces
@@ -115,9 +122,9 @@ CRITICAL RULES:
 - Keep planet names in English: Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
 - Keep astrological terms in English: Rising sign, Ascendant, Houses, Elements (Fire, Earth, Air, Water)
 - Keep the app name "Kakoei" unchanged
-- Translate everything else naturally into ${langName}`
+- Translate everything else naturally into the requested target language.`
       },
-      { role: "user", content: numberedTexts }
+      { role: "user", content: `Translate ALL texts below to ${langName}:\n\n${numberedTexts}` }
     ]
   });
 

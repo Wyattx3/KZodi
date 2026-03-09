@@ -36,8 +36,19 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "images.unsplash.com",
       },
+      {
+        protocol: "https",
+        hostname: "*.anilist.co",
+      },
+      {
+        protocol: "https",
+        hostname: "upload.wikimedia.org",
+      },
+      {
+        protocol: "https",
+        hostname: "api.dicebear.com",
+      },
     ],
-
   },
   serverExternalPackages: ["@xenova/transformers", "pdf-parse", "epub2", "onnxruntime-node"],
 };

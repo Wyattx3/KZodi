@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
         const search = searchParams.get("search") || "";
         const tag = searchParams.get("category") || "All";
         const limit = parseInt(searchParams.get("limit") || "50");
+        const offset = parseInt(searchParams.get("offset") || "0");
         const mine = searchParams.get("mine") === "true";
 
         // Base query - only fetch public characters or ones created by the current user
@@ -17,40 +18,65 @@ export async function GET(req: NextRequest) {
             FROM characters c 
         `;
 
+        // Count query for total
+        let countStr = `SELECT COUNT(*) FROM characters c `;
+
         // If mine=true, only show characters created by the logged-in user (any visibility)
         if (mine) {
             queryStr += ` WHERE c.creator_id = $1`;
+            countStr += ` WHERE c.creator_id = $1`;
         } else {
             // Explore page: only show public characters
             queryStr += ` WHERE c.visibility = 'public'`;
+            countStr += ` WHERE c.visibility = 'public'`;
         }
 
         let params: any[] = [null]; // Placeholder for user ID (can be null if not logged in)
+        let countParams: any[] = [null];
 
         const session = await auth();
         if (session?.user && (session.user as any).id) {
             params[0] = (session.user as any).id;
+            countParams[0] = (session.user as any).id;
         }
 
         // Add filters
         let paramCount = 2; // Since $1 is user_id
+        let countParamCount = 2;
         if (tag !== "All") {
-            queryStr += ` AND tag = $${paramCount}`;
+            if (tag === "Original") {
+                queryStr += ` AND (tag = $${paramCount} OR tag = 'Specialist')`;
+                countStr += ` AND (tag = $${countParamCount} OR tag = 'Specialist')`;
+            } else {
+                queryStr += ` AND tag = $${paramCount}`;
+                countStr += ` AND tag = $${countParamCount}`;
+            }
             params.push(tag);
+            countParams.push(tag);
             paramCount++;
+            countParamCount++;
         }
 
         if (search) {
             queryStr += ` AND (name ILIKE $${paramCount} OR description ILIKE $${paramCount} OR long_description ILIKE $${paramCount})`;
+            countStr += ` AND (name ILIKE $${countParamCount} OR description ILIKE $${countParamCount} OR long_description ILIKE $${countParamCount})`;
             params.push(`%${search}%`);
+            countParams.push(`%${search}%`);
             paramCount++;
+            countParamCount++;
         }
 
-        // Sort by trending (likes + msg count)
-        queryStr += ` ORDER BY (likes_count * 2 + msg_count) DESC NULLS LAST LIMIT $${paramCount}`;
-        params.push(limit);
+        // Sort by trending (likes + msg count) with pagination
+        queryStr += ` ORDER BY (likes_count * 2 + msg_count) DESC NULLS LAST LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
+        params.push(limit, offset);
 
-        const result = await pool.query(queryStr, params);
+        const [result, countResult] = await Promise.all([
+            pool.query(queryStr, params),
+            pool.query(countStr, countParams)
+        ]);
+
+        const total = parseInt(countResult.rows[0].count);
+        const hasMore = offset + limit < total;
 
         // Map snake_case to camelCase for frontend
         const characters = result.rows.map(row => {
@@ -84,7 +110,7 @@ export async function GET(req: NextRequest) {
             return char;
         });
 
-        return NextResponse.json(characters);
+        return NextResponse.json({ characters, total, hasMore, offset });
     } catch (error) {
         console.error("Failed to fetch characters:", error);
         return NextResponse.json({ error: "Failed to fetch characters" }, { status: 500 });

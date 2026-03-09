@@ -103,17 +103,20 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const MODEL = "moonshotai/kimi-k2-instruct-0905";
 const FALLBACK_MODEL = "llama-3.3-70b-versatile";
+const GEMINI_MODEL = "gemini-3-flash-preview";
 
 export const MODELS = {
   CHAT: MODEL,
   ANALYZE: MODEL,
   VISION: MODEL, // Fallback to text model since vision model is unavailable
+  GEMINI: GEMINI_MODEL,
 } as const;
 
 /** Pay-as-you-go TPM limits */
 const MODEL_TPM_LIMITS: Record<string, number> = {
-  [MODEL]: 131_072,  // Kimi K2 context window is 131K
-  [FALLBACK_MODEL]: 150_000,
+  "gemini-3-flash-preview": 1000000,
+  "moonshotai/kimi-k2-instruct-0905": 131_072,
+  "llama-3.3-70b-versatile": 150_000,
 };
 
 // ─── LRU Cache ───────────────────────────────────────────────────────────────
@@ -311,10 +314,12 @@ export const PROVIDERS = {
   GROQ: "groq",
   XAI: "xai",
   OLLAMA: "ollama",
-  FIREWORKS: "fireworks"
+  FIREWORKS: "fireworks",
+  GEMINI: "gemini"
 };
 
 function determineProvider(model: string): string {
+  if (model.includes("gemini")) return PROVIDERS.GEMINI;
   if (model.includes("grok")) return PROVIDERS.XAI;
   if (model.includes("ollama")) return PROVIDERS.OLLAMA;
   if (model.includes("fireworks")) return PROVIDERS.FIREWORKS;
@@ -419,6 +424,14 @@ class MultiProviderClient {
           if (!apiKey) {
             console.warn("[AI] FIREWORKS_API_KEY missing, falling back to Groq Kimi");
             return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+          }
+          headers.Authorization = `Bearer ${apiKey}`;
+        } else if (provider === PROVIDERS.GEMINI) {
+          apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+          apiKey = process.env.GEMINI_API_KEY || "";
+          if (!apiKey) {
+             console.warn("[AI] GEMINI_API_KEY missing, falling back to Groq Kimi");
+             return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
           }
           headers.Authorization = `Bearer ${apiKey}`;
         } else if (provider === PROVIDERS.GROQ) {
@@ -610,7 +623,7 @@ class MultiProviderClient {
           await sleep(backoffs[attempt] || 4000);
           continue;
         }
-        if ((provider === PROVIDERS.XAI && model.includes("grok")) || provider === PROVIDERS.OLLAMA || provider === PROVIDERS.FIREWORKS) {
+        if (provider === PROVIDERS.XAI || provider === PROVIDERS.OLLAMA || provider === PROVIDERS.FIREWORKS || provider === PROVIDERS.GEMINI) {
           console.warn(`[AI] ${provider} failed, falling back to Groq ${FALLBACK_MODEL}`);
           return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
         }

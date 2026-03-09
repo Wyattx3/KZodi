@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
    - Fully custom SVG, no library dependency
    - Proper zodiac glyph SVG paths
    - Planet collision resolution
-   - App-matched black/white/yellow theme
+   - Premium Cosmic Design with elemental colors and glow effects
    ================================================================ */
 
 interface BirthChartWheelProps {
@@ -58,6 +58,21 @@ const SIGN_GLYPHS = [
   /* Capricorn */ "M4 5C4 5 4 9 7 12C8 13 9 13 10 12L13 5C13.5 3.5 15 4 14.5 6C14 8.5 12 10 11 9",
   /* Aquarius  */ "M3 6.5L5 4.5L7 6.5L9 4.5L11 6.5L13 4.5M3 11L5 9L7 11L9 9L11 11L13 9",
   /* Pisces    */ "M5.5 3C5.5 3 2.5 5.5 2.5 8S5.5 13 5.5 13M10.5 3C10.5 3 13.5 5.5 13.5 8S10.5 13 10.5 13M2.5 8H13.5",
+];
+
+const SIGN_COLORS = [
+  "rgba(255,107,107,0.15)", // Aries (Fire)
+  "rgba(85,239,196,0.15)",  // Taurus (Earth)
+  "rgba(116,185,255,0.15)", // Gemini (Air)
+  "rgba(162,155,254,0.15)", // Cancer (Water)
+  "rgba(253,203,110,0.15)", // Leo (Fire)
+  "rgba(0,184,148,0.15)",   // Virgo (Earth)
+  "rgba(9,132,227,0.15)",   // Libra (Air)
+  "rgba(108,92,231,0.15)",  // Scorpio (Water)
+  "rgba(255,118,117,0.15)", // Sagittari (Fire)
+  "rgba(0,206,201,0.15)",   // Capricorn (Earth)
+  "rgba(129,236,236,0.15)", // Aquarius (Air)
+  "rgba(162,155,254,0.15)", // Pisces (Water)
 ];
 
 const SIGN_NAMES = [
@@ -165,24 +180,24 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
     const ma = adj(i * 30 + 15);
     const mp = polar(ma, (R_SIGN_OUT + R_SIGN_IN) / 2);
 
-    // alternating sector fill
+    // alternating sector fill using elemental colors
     signs.push(
       <path key={`sb${i}`} d={arcD(sa, ea, R_SIGN_OUT, R_SIGN_IN)}
-        fill={i % 2 === 0 ? "rgba(255,229,102,0.07)" : "rgba(17,17,17,0.015)"}
+        fill={SIGN_COLORS[i]}
         stroke="none" />
     );
     // sign divider
     const d1 = polar(sa, R_SIGN_OUT), d2 = polar(sa, R_SIGN_IN);
     signs.push(
       <line key={`sd${i}`} x1={d1.x} y1={d1.y} x2={d2.x} y2={d2.y}
-        stroke="#D8D6D0" strokeWidth="0.6" />
+        stroke="rgba(255,255,255,0.15)" strokeWidth="0.8" />
     );
     // zodiac glyph
     const gs = 14;
     signs.push(
       <g key={`sg${i}`} transform={`translate(${mp.x - gs / 2},${mp.y - gs / 2}) scale(${gs / 16})`}>
         <path d={SIGN_GLYPHS[i]} fill="none"
-          stroke={i % 2 === 0 ? "#222" : "#888"}
+          stroke="rgba(255,255,255,0.9)"
           strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </g>
     );
@@ -200,7 +215,7 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
     houseEls.push(
       <line key={`hl${h.number}`}
         x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-        stroke={isAng ? "#111" : "#E0DED8"}
+        stroke={isAng ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)"}
         strokeWidth={isAng ? "1.4" : "0.5"} />
     );
 
@@ -213,7 +228,7 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
       houseEls.push(
         <text key={`hn${h.number}`} x={np.x} y={np.y}
           textAnchor="middle" dominantBaseline="central"
-          fontSize="9" fill="#BBB" fontWeight="600"
+          fontSize="9" fill="rgba(255,255,255,0.4)" fontWeight="600"
           fontFamily="var(--font-display)">{h.number}</text>
       );
     }
@@ -237,9 +252,9 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
     angEls.push(
       <g key={`ag${k}`}>
         <line x1={o.x} y1={o.y} x2={i2.x} y2={i2.y}
-          stroke="#FFE566" strokeWidth="1.8" />
+          stroke="#FFE566" strokeWidth="1.8" filter="url(#glow)" />
         <rect x={lp.x - 14} y={lp.y - 7} width="28" height="14"
-          rx="4" fill="#111" />
+          rx="4" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" strokeWidth="0.5" />
         <text x={lp.x} y={lp.y} textAnchor="middle" dominantBaseline="central"
           fontSize="7.5" fill="#FFE566" fontWeight="800"
           fontFamily="var(--font-display)">{l}</text>
@@ -272,17 +287,17 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
     planetEls.push(
       <line key={`pc${p.name}`}
         x1={pos.x} y1={pos.y} x2={actualPt.x} y2={actualPt.y}
-        stroke="#D8D6D0" strokeWidth="0.5" />
+        stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
     );
 
     // planet circle
     planetEls.push(
       <g key={`pp${p.name}`}>
         <circle cx={pos.x} cy={pos.y} r={PLANET_CIRCLE_R}
-          fill="#111" stroke="#FFE566" strokeWidth="1.2" />
+          fill="rgba(20,20,25,0.8)" stroke="#FFE566" strokeWidth="1.2" filter="url(#glow)" />
         <text x={pos.x} y={pos.y + 0.5}
           textAnchor="middle" dominantBaseline="central"
-          fontSize="8.5" fill="white" fontWeight="700"
+          fontSize="8.5" fill="#FFE566" fontWeight="700"
           fontFamily="var(--font-display)">{label}</text>
         {p.retro && (
           <>
@@ -321,7 +336,7 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
     ticks.push(
       <line key={`tk${d}`}
         x1={o.x} y1={o.y} x2={i2.x} y2={i2.y}
-        stroke={isMajor ? "#AAA" : "#D0D0D0"} strokeWidth={isMajor ? "0.6" : "0.3"} />
+        stroke={isMajor ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)"} strokeWidth={isMajor ? "0.8" : "0.4"} />
     );
   }
 
@@ -333,13 +348,30 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5, ease: [0.32, 0.72, 0, 1] }}
         className="card-bordered p-3"
+        style={{
+             background: "radial-gradient(circle at center, #1E1E24 0%, #0F0F13 100%)",
+             border: "1px solid rgba(255,255,255,0.1)",
+             boxShadow: "inset 0px 0px 40px rgba(0,0,0,0.5), 0px 10px 30px rgba(0,0,0,0.15)",
+             borderRadius: "50%"
+        }}
       >
         <svg width="100%" viewBox={`0 0 ${W} ${W}`} className="block">
+          <defs>
+             <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+             </filter>
+             <radialGradient id="centerGradient" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#FFE566" stopOpacity="0.8"/>
+                <stop offset="100%" stopColor="#D4A300" stopOpacity="1"/>
+             </radialGradient>
+          </defs>
+
           {/* Structural circles */}
-          <circle cx={CX} cy={CY} r={R_OUTER} fill="none" stroke="#E0DED8" strokeWidth="0.6" />
-          <circle cx={CX} cy={CY} r={R_SIGN_OUT} fill="none" stroke="#D8D6D0" strokeWidth="0.4" />
-          <circle cx={CX} cy={CY} r={R_SIGN_IN} fill="none" stroke="#C8C6C0" strokeWidth="1" />
-          <circle cx={CX} cy={CY} r={R_INNER} fill="none" stroke="#E0DED8" strokeWidth="0.5" />
+          <circle cx={CX} cy={CY} r={R_OUTER} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1" filter="url(#glow)" />
+          <circle cx={CX} cy={CY} r={R_SIGN_OUT} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+          <circle cx={CX} cy={CY} r={R_SIGN_IN} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.2" />
+          <circle cx={CX} cy={CY} r={R_INNER} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="0.8" />
 
           {/* Degree ticks */}
           {ticks}
@@ -360,8 +392,9 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
           {planetEls}
 
           {/* Center */}
-          <circle cx={CX} cy={CY} r={R_CENTER} fill="#111" />
-          <image href="/logo.png" x={CX - 15} y={CY - 15} width="30" height="30" />
+          <circle cx={CX} cy={CY} r={R_CENTER} fill="url(#centerGradient)" stroke="rgba(255,255,255,0.3)" strokeWidth="2" filter="url(#glow)" />
+          <circle cx={CX} cy={CY} r={R_CENTER - 4} fill="rgba(25,25,30,0.8)" />
+          <image href="/logo.png" x={CX - 12} y={CY - 12} width="24" height="24" opacity="0.9" />
         </svg>
       </motion.div>
 

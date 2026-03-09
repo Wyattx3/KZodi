@@ -7,6 +7,8 @@ interface ExploreTabProps {
     onSelectCharacter: (character: Character) => void;
 }
 
+const PAGE_SIZE = 50;
+
 export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
     const [activeCategory, setActiveCategory] = useState<Category>("All");
     const [search, setSearch] = useState("");
@@ -17,33 +19,65 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
     const [specialCharacters, setSpecialCharacters] = useState<Character[]>([]);
     const [forYouCharacters, setForYouCharacters] = useState<Character[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(false);
+    const [currentOffset, setCurrentOffset] = useState(0);
     const [featuredIndex, setFeaturedIndex] = useState(0);
     const [dragOffset, setDragOffset] = useState(0);
     const touchStartX = useRef(0);
     const isDragging = useRef(false);
+    const sentinelRef = useRef<HTMLDivElement>(null);
 
-    // Fetch characters from the backend API
-    const fetchCharacters = async () => {
-        setIsLoading(true);
+    // Fetch characters (initial or reset)
+    const fetchCharacters = async (append = false, offset = 0) => {
+        if (append) setIsLoadingMore(true);
+        else setIsLoading(true);
         try {
-            const res = await fetch(`/api/characters?category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(search)}`);
+            const res = await fetch(`/api/characters?category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`);
             if (res.ok) {
                 const data = await res.json();
-                setCharacters(data);
+                const chars = data.characters || data;
+                if (append) {
+                    setCharacters(prev => [...prev, ...chars]);
+                } else {
+                    setCharacters(chars);
+                }
+                setHasMore(data.hasMore ?? false);
+                setCurrentOffset(offset + chars.length);
             }
         } catch (error) {
             console.error("Failed to fetch characters:", error);
         } finally {
             setIsLoading(false);
+            setIsLoadingMore(false);
         }
     };
+
+    // Load next page
+    const loadMore = useCallback(() => {
+        if (isLoadingMore || !hasMore) return;
+        fetchCharacters(true, currentOffset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoadingMore, hasMore, currentOffset, activeCategory, search]);
+
+    // IntersectionObserver for infinite scroll
+    useEffect(() => {
+        const sentinel = sentinelRef.current;
+        if (!sentinel) return;
+        const observer = new IntersectionObserver(
+            (entries) => { if (entries[0].isIntersecting) loadMore(); },
+            { rootMargin: "400px" }
+        );
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [loadMore]);
 
     const fetchSpecialCharacters = async () => {
         try {
             const res = await fetch(`/api/characters?category=Specialist&limit=10`);
             if (res.ok) {
                 const data = await res.json();
-                setSpecialCharacters(data);
+                setSpecialCharacters(data.characters || data);
             }
         } catch (error) {
             console.error("Failed to fetch special characters:", error);
@@ -63,7 +97,9 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
     };
 
     useEffect(() => {
-        fetchCharacters();
+        setCurrentOffset(0);
+        setHasMore(false);
+        fetchCharacters(false, 0);
         if (activeCategory === "All" && !search) {
             fetchSpecialCharacters();
             fetchForYou();
@@ -713,6 +749,23 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                             </AnimatePresence>
                                         </div>
                                     </div>
+
+                                    {/* ── Infinite scroll sentinel + loading ── */}
+                                    <div ref={sentinelRef} style={{ height: '1px' }} />
+                                    {isLoadingMore && (
+                                        <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0 40px' }}>
+                                            <div style={{
+                                                width: '32px', height: '32px', border: '3px solid #e5e7eb',
+                                                borderTop: '3px solid #4A3728', borderRadius: '50%',
+                                                animation: 'spin 0.8s linear infinite'
+                                            }} />
+                                        </div>
+                                    )}
+                                    {!isLoadingMore && hasMore && (
+                                        <div style={{ textAlign: 'center', padding: '16px 0 32px', color: '#9CA3AF', fontSize: '13px' }}>
+                                            Scroll for more...
+                                        </div>
+                                    )}
 
                                     {/* ── Empty state ────────────────────────────── */}
                                     {characters.length === 0 && (

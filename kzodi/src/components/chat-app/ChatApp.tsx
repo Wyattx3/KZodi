@@ -168,7 +168,7 @@ export default function ChatApp() {
             const res = await fetch("/api/characters?mine=true");
             if (res.ok) {
                 const data = await res.json();
-                setMyCharacters(data);
+                setMyCharacters(data.characters || data);
             }
         } catch (err) {
             console.error("Failed to load my characters:", err);
@@ -178,10 +178,10 @@ export default function ChatApp() {
     // Load all available characters for proactive messaging
     const loadAllCharacters = async () => {
         try {
-            const res = await fetch("/api/characters?limit=10");
+            const res = await fetch("/api/characters?limit=20");
             if (res.ok) {
                 const data = await res.json();
-                setAllCharacters(data);
+                setAllCharacters(data.characters || data);
             }
         } catch (err) {
             console.error("Failed to load characters:", err);

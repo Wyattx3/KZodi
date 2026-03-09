@@ -470,10 +470,10 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             setIsLoading(true);
             try {
                 // Fetch a large limit or we could just fetch the ones we need based on conversations
-                const res = await fetch("/api/characters?limit=200");
+                const res = await fetch("/api/characters?limit=500");
                 if (res.ok) {
                     const data = await res.json();
-                    setFetchedCharacters(data);
+                    setFetchedCharacters(data.characters || data);
                 }
             } catch (err) {
                 console.error("Failed to load characters for ChatsTab:", err);
