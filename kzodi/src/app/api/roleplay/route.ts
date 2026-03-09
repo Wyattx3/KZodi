@@ -237,9 +237,9 @@ function cleanResponseText(rawContent: string, characterName: string): string {
         .trim();
 
     // Aggressively strip malformed REPLY or message ID leaks
-    // For example, if the model outputs "1772696623937-ai-3ukuw6]] Hello", strip the ID part
-    // Also strip "-user-" leaks
-    content = content.replace(/^(?:\[\[?REPLY:|\[\[?|REPLY:\s*)?[0-9]{13,}-(?:ai|user)-[a-z0-9]+(?:\]+)?\s*/i, "").trim();
+    // ONLY strip IDs that are NOT properly enclosed in [[REPLY:xxx]]
+    // Because the frontend ChatRoom.tsx needs [[REPLY:xxx]] to show quotes
+    content = content.replace(/(?<!\[\[REPLY:\s*)[0-9]{13,}-(?:ai|user)-[a-z0-9]+/i, "").trim();
 
     // Fallback: If AI wraps response in ```json text ```, strip the wrapper
     const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;

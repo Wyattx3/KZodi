@@ -1513,6 +1513,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             }
         };
 
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
         const handleTouchMove = (e: TouchEvent) => {
             const target = e.target as HTMLElement;
             // Only block touch-drag if inside the chatroom container
@@ -1523,7 +1525,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             e.preventDefault();
         };
 
-        if (window.visualViewport) {
+        if (window.visualViewport && !isIOS) {
             window.visualViewport.addEventListener("resize", handleResize);
             window.visualViewport.addEventListener("scroll", handleResize);
             handleResize(); // Init
@@ -1535,7 +1537,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         return () => {
             document.body.style.overflow = originalOverflow;
             document.body.removeEventListener('touchmove', handleTouchMove);
-            if (window.visualViewport) {
+            if (window.visualViewport && !isIOS) {
                 window.visualViewport.removeEventListener("resize", handleResize);
                 window.visualViewport.removeEventListener("scroll", handleResize);
             }

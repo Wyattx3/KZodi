@@ -16,6 +16,15 @@ function HomeContent() {
 
   // Auto-redirect to /chat if already logged in (PWA persistence)
   useEffect(() => {
+    // If the app is installed and opened as a PWA (standalone mode),
+    // force redirect to /chat to prevent them from getting stuck on the landing page
+    const isStandalone = typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches;
+
+    if (isStandalone) {
+      router.replace("/chat");
+      return;
+    }
+
     if (status === "authenticated" && session) {
       router.replace("/chat");
     }

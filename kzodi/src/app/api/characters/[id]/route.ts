@@ -24,7 +24,7 @@ export async function GET(
 
         const queryStr = `
             SELECT c.*, 
-                   EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = $1) as user_has_liked
+                   EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = CAST($1 AS VARCHAR)) as user_has_liked
             FROM characters c 
             WHERE c.id = $2
         `;

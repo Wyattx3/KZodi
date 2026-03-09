@@ -73,7 +73,7 @@ export async function GET() {
         // 4. Get all public candidate characters (excluding already interacted ones)
         const candidateRes = await pool.query(
             `SELECT c.*,
-                    EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = $1) as user_has_liked
+                    EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = CAST($1 AS VARCHAR)) as user_has_liked
              FROM characters c
              WHERE c.visibility = 'public'
                AND c.id != ALL($2)
@@ -132,7 +132,7 @@ export async function GET() {
 async function getPopularCharacters(userId: string | null) {
     const result = await pool.query(
         `SELECT c.*,
-                EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = $1) as user_has_liked
+                EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = CAST($1 AS VARCHAR)) as user_has_liked
          FROM characters c
          WHERE c.visibility = 'public'
          ORDER BY (likes_count * 2 + msg_count) DESC NULLS LAST

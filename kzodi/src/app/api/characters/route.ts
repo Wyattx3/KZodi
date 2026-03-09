@@ -14,35 +14,35 @@ export async function GET(req: NextRequest) {
         // Base query - only fetch public characters or ones created by the current user
         let queryStr = `
             SELECT c.*, 
-                   EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = $1) as user_has_liked
+                   EXISTS(SELECT 1 FROM character_likes cl WHERE cl.character_id = c.id AND cl.user_id = CAST($1 AS VARCHAR)) as user_has_liked
             FROM characters c 
         `;
 
         // Count query for total
         let countStr = `SELECT COUNT(*) FROM characters c `;
 
+        let params: any[] = [null]; // Placeholder for user ID (can be null if not logged in)
+        let countParams: any[] = [];
+        let paramCount = 2; // Since $1 is user_id
+        let countParamCount = 1;
+
+        const session = await auth();
+        const userId = session?.user && (session.user as any).id ? (session.user as any).id : null;
+        params[0] = userId;
+
         // If mine=true, only show characters created by the logged-in user (any visibility)
         if (mine) {
             queryStr += ` WHERE c.creator_id = $1`;
-            countStr += ` WHERE c.creator_id = $1`;
+            countStr += ` WHERE c.creator_id = $${countParamCount}`;
+            countParams.push(userId);
+            countParamCount++;
         } else {
             // Explore page: only show public characters
             queryStr += ` WHERE c.visibility = 'public'`;
             countStr += ` WHERE c.visibility = 'public'`;
         }
 
-        let params: any[] = [null]; // Placeholder for user ID (can be null if not logged in)
-        let countParams: any[] = [null];
-
-        const session = await auth();
-        if (session?.user && (session.user as any).id) {
-            params[0] = (session.user as any).id;
-            countParams[0] = (session.user as any).id;
-        }
-
         // Add filters
-        let paramCount = 2; // Since $1 is user_id
-        let countParamCount = 2;
         if (tag !== "All") {
             if (tag === "Original") {
                 queryStr += ` AND (tag = $${paramCount} OR tag = 'Specialist')`;
