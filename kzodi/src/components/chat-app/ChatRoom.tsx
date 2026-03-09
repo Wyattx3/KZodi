@@ -1497,17 +1497,26 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         }
     };
 
+    // Calculate if it's iOS once on mount
+    const [isIOS, setIsIOS] = useState(false);
+    useEffect(() => {
+        setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+    }, []);
+
     // Extremely robust Android keyboard fix
     useEffect(() => {
         if (typeof window === "undefined") return;
 
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
         const handleResize = () => {
-            if (window.visualViewport && !isIOS) {
-                // On Android ONLY: visualViewport height tells us exactly how much space is left above keyboard.
-                setViewportHeight(window.visualViewport.height);
-                window.scrollTo(0, 0); // categorically prevent visual viewport drift
+            if (window.visualViewport) {
+                // Set CSS variables for true visual viewport height and offset (critical for iOS)
+                document.documentElement.style.setProperty('--vvh', `${window.visualViewport.height}px`);
+                document.documentElement.style.setProperty('--vvo', `${window.visualViewport.offsetTop}px`);
+                
+                if (!isIOS) {
+                    setViewportHeight(window.visualViewport.height);
+                    window.scrollTo(0, 0); // categorically prevent visual viewport drift on Android
+                }
             }
         };
 
@@ -1525,7 +1534,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             e.preventDefault();
         };
 
-        if (window.visualViewport && !isIOS) {
+        if (window.visualViewport) {
             window.visualViewport.addEventListener("resize", handleResize);
             window.visualViewport.addEventListener("scroll", handleResize);
             handleResize(); // Init
@@ -1537,17 +1546,20 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         return () => {
             document.body.style.overflow = originalOverflow;
             document.body.removeEventListener('touchmove', handleTouchMove);
-            if (window.visualViewport && !isIOS) {
+            if (window.visualViewport) {
                 window.visualViewport.removeEventListener("resize", handleResize);
                 window.visualViewport.removeEventListener("scroll", handleResize);
             }
         };
-    }, []);
+    }, [isIOS]);
 
     return (
         <div
             className={`chatroom ${conversationTheme}`}
-            style={{ height: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight }}
+            style={{ 
+                height: isIOS ? 'var(--vvh, 100dvh)' : (typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight),
+                transform: isIOS ? 'translateY(var(--vvo, 0px))' : 'none'
+             }}
         >
             <div className="chatroom-bg-pattern" />
             {/* ── Header ─────────────────────────── */}
