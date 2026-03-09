@@ -1504,14 +1504,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
         const handleResize = () => {
-            if (window.visualViewport) {
-                // On Android, visualViewport height tells us exactly how much space is left above keyboard.
-                // On iOS, we WANT the native behavior (which pushes the page up), so we do NOT force scrollTo(0,0) constantly
-                // because forcing scrollTo(0,0) fights iOS's native scroll-to-caret behavior.
+            if (window.visualViewport && !isIOS) {
+                // On Android ONLY: visualViewport height tells us exactly how much space is left above keyboard.
                 setViewportHeight(window.visualViewport.height);
-                if (!isIOS) {
-                    window.scrollTo(0, 0); // Only prevent drift on Android
-                }
+                window.scrollTo(0, 0); // categorically prevent visual viewport drift
             }
         };
 
@@ -1529,7 +1525,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             e.preventDefault();
         };
 
-        if (window.visualViewport) {
+        if (window.visualViewport && !isIOS) {
             window.visualViewport.addEventListener("resize", handleResize);
             window.visualViewport.addEventListener("scroll", handleResize);
             handleResize(); // Init
@@ -1541,7 +1537,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         return () => {
             document.body.style.overflow = originalOverflow;
             document.body.removeEventListener('touchmove', handleTouchMove);
-            if (window.visualViewport) {
+            if (window.visualViewport && !isIOS) {
                 window.visualViewport.removeEventListener("resize", handleResize);
                 window.visualViewport.removeEventListener("scroll", handleResize);
             }
