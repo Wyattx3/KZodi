@@ -874,7 +874,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         const data = await res.json();
                         if (data.action !== "ignore" && data.reply && data.reply !== "...") {
                             // Process response with correct member attribution
-                            await processAiResponse(data.reply, member.id, member.name, data.delayFactor);
+                            await processAiResponse(data.reply, member.id, member.name, data.delayFactor, data.replyToId);
                         }
                     }
                 } catch (err) {
@@ -915,7 +915,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     characterName: character.name,
                     characterPersonality: character.personality,
                     characterTag: character.tag,
-                    history: history.slice(-10),
+                    history: history.slice(-25),
                     context: "reply",
                     isGroupChat: false,
                     groupMembers: [],
@@ -946,7 +946,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     setIsTyping(false);
                     isAiRespondingRef.current = false;
                 } else {
-                    await processAiResponse(data.reply || "...", undefined, undefined, data.delayFactor);
+                    await processAiResponse(data.reply || "...", undefined, undefined, data.delayFactor, data.replyToId);
 
                     // 🔥 Comfort Follow-up: If user is upset/angry/sad, AI sends a second wave of comfort messages
                     if (data.needsComfort && data.detectedEmotion) {
@@ -1306,44 +1306,74 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     };
 
     // Process AI response and handle splitting
-    const processAiResponse = async (responseText: string, groupSenderId?: string, groupSenderName?: string, delayFactor = 1.0) => {
+    const processAiResponse = async (responseText: string, groupSenderId?: string, groupSenderName?: string, delayFactor = 1.0, replyToId?: string) => {
         let cleanText = responseText;
 
-        // 1. Extract and process REACT tags
-        const emojiToReactionId: Record<string, string> = {
-            "\uD83D\uDC4D": "like", "\uD83D\uDC4D\uFE0F": "like", "thumbs up": "like", "thumbsup": "like",
-            "\u2764\uFE0F": "love", "\u2764": "love", "heart": "love",
-            "\uD83D\uDE02": "haha", "laughing": "haha", "lol": "haha",
-            "\uD83D\uDE2E": "wow", "surprised": "wow", "shock": "wow",
-            "\uD83D\uDE22": "sad", "crying": "sad", "cry": "sad",
-        };
-        const validReactionIds = ["like", "love", "haha", "wow", "sad"];
-        const reactRegex = /\[\[\s*REACT\s*[:\s]\s*([^:,]+)\s*[,:]+\s*([^\]]+)\s*\]\]/gi;
-        let reactMatch;
-        while ((reactMatch = reactRegex.exec(cleanText)) !== null) {
-            const msgId = reactMatch[1].trim();
-            let reactionId = reactMatch[2].trim().toLowerCase();
-            // Normalize: if AI sent emoji or variant text, map it to our text ID
-            if (emojiToReactionId[reactionId]) {
-                reactionId = emojiToReactionId[reactionId];
-            } else if (emojiToReactionId[reactMatch[2].trim()]) {
-                reactionId = emojiToReactionId[reactMatch[2].trim()];
-            }
-            // Only store valid reaction IDs
-            if (validReactionIds.includes(reactionId)) {
-                useChatStore.getState().addReaction(character.id, msgId, reactionId, character.id);
-            }
-        }
-        cleanText = cleanText.replace(reactRegex, "");
+        // 1. Extract and process REACT tags (wrapped in try-catch for Myanmar text safety)
+        try {
+            const emojiToReactionId: Record<string, string> = {
+                "\uD83D\uDC4D": "like", "\uD83D\uDC4D\uFE0F": "like", "thumbs up": "like", "thumbsup": "like",
+                "\u2764\uFE0F": "love", "\u2764": "love", "heart": "love",
+                "\uD83D\uDE02": "haha", "laughing": "haha", "lol": "haha",
+                "\uD83D\uDE2E": "wow", "surprised": "wow", "shock": "wow",
+                "\uD83D\uDE22": "sad", "crying": "sad", "cry": "sad",
+            };
+            const validReactionIds = ["like", "love", "haha", "wow", "sad"];
 
-        // 2. Extract REPLY tag
-        let replyToId: string | undefined = undefined;
-        const replyRegex = /\[\[\s*REPLY\s*:\s*([^\]]+)\s*\]\]/i;
-        const replyMatch = replyRegex.exec(cleanText);
-        if (replyMatch) {
-            replyToId = replyMatch[1].trim();
-            cleanText = cleanText.replace(replyRegex, "");
+            // Broad regex: captures [[REACT:...]] with 1 or 2 colon-separated values
+            // Handles: [[REACT:msg_id:like]], [[REACT::like]], [[REACT:like]], [[REACT : like]]
+            const reactRegex = /\[\[\s*REACT\s*[:\s]\s*(.*?)\s*\]+/gi;
+            let reactMatch;
+            while ((reactMatch = reactRegex.exec(cleanText)) !== null) {
+                const inner = reactMatch[1].trim(); // e.g. "msg_id:like", ":like", "like"
+                const parts = inner.split(/[,:]+/).map(p => p.trim()).filter(p => p);
+                
+                let msgId = "";
+                let reactionRaw = "";
+                
+                if (parts.length >= 2) {
+                    msgId = parts[0];
+                    reactionRaw = parts[1];
+                } else if (parts.length === 1) {
+                    // AI omitted message ID, just sent the reaction type
+                    reactionRaw = parts[0];
+                }
+                
+                if (reactionRaw) {
+                    let reactionId = reactionRaw.toLowerCase();
+                    // Normalize emoji/text to standard reaction ID
+                    if (emojiToReactionId[reactionId]) {
+                        reactionId = emojiToReactionId[reactionId];
+                    } else if (emojiToReactionId[reactionRaw]) {
+                        reactionId = emojiToReactionId[reactionRaw];
+                    }
+                    // Only store valid reaction IDs and only if we have a message ID
+                    if (validReactionIds.includes(reactionId) && msgId) {
+                        useChatStore.getState().addReaction(character.id, msgId, reactionId, character.id);
+                    }
+                }
+            }
+            cleanText = cleanText.replace(reactRegex, "");
+        } catch (e) {
+            console.warn("[ChatRoom] REACT tag processing failed:", e);
         }
+        // Final safety: strip any remaining [[REACT...]] tags that weren't matched
+        // Using ]+ ensures we consume all closing brackets even if malformed
+        cleanText = cleanText.replace(/\[\[\s*REACT.*?\]+/gi, "");
+
+        // 2. Safety: Strip any leaked message IDs or reply tags from the AI output
+        // The AI no longer generates [[REPLY:xxx]] tags, but may still echo message IDs from history
+        cleanText = cleanText
+            .replace(/<Message ID:\s*[^>]+>/gi, "")           // <Message ID: xxx>
+            .replace(/\[MessageID:\s*[^\]]+\]/gi, "")          // [MessageID: xxx]
+            .replace(/\[\[\s*REPLY\s*:\s*[^\]]*\]+/gi, "")     // [[REPLY:xxx]] safety net
+            .replace(/\[REPLY\s*:\s*[^\]]*\]/gi, "")           // [REPLY:xxx] single bracket
+            .replace(/\[\[\s*RE?P?L?Y?[^\]]*\]*/gi, "")        // Catch partial broken tags like `[[RE` or `[[REP`
+            .replace(/[a-zA-Z0-9]{13,}-(?:ai|user)-[a-z0-9]+/gi, "")    // Raw message IDs
+            .replace(/^\]+\s*/g, "")                            // Aggressively strip `]]` or `]] ` at the very start
+            .replace(/(?<=^|\s)\]+(?=\s|[a-zA-Zက-အ])/g, "")      // Strip stray `]]` in the middle, even if joined to a word (English or Myanmar)
+            .replace(/\s{2,}/g, " ")                            // Clean double spaces
+            .trim();
 
         // Protect pipes inside [[ ]] blocks so UI elements don't get split into separate chat bubbles
         let protectedText = cleanText.replace(/\[{1,3}([\s\S]*?)(?:\]{1,3}|$)/g, (match) => match.replace(/\|/g, "@@PIPE@@"));

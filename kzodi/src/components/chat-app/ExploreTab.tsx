@@ -424,38 +424,30 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                     >
                         {/* ── Sticky Header ────────────────────────────────── */}
                         <div className="explore-header-sticky">
-                            <div className="explore-hero" style={{ padding: '24px 0 8px' }}>
-                                <motion.div
-                                    className="explore-hero-content"
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 4px 8px' }}>
+                                <div style={{ paddingLeft: "4px" }}>
+                                    <h1 className="explore-hero-title" style={{ fontSize: '26px', marginBottom: '2px' }}>Discover</h1>
+                                    <p className="explore-hero-subtitle" style={{ fontSize: '12px' }}>Find your next partner</p>
+                                </div>
+                                <motion.button
+                                    className="explore-header-search-btn"
+                                    onClick={() => setSearchMode(true)}
+                                    whileTap={{ scale: 0.95 }}
+                                    style={{
+                                        width: '40px', height: '40px', borderRadius: '50%',
+                                        background: '#F3F4F6', border: 'none',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        color: '#4A3728', cursor: 'pointer',
+                                        flexShrink: 0
+                                    }}
+                                    aria-label="Search characters"
                                 >
-                                    <div className="explore-hero-top-row">
-                                        <div style={{ paddingLeft: "4px" }}>
-                                            <h1 className="explore-hero-title">Discover</h1>
-                                            <p className="explore-hero-subtitle">Find your next conversation partner</p>
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            </div>
-
-                            {/* ── Search Bar (Fake — opens search page) ─── */}
-                            <motion.div
-                                className="explore-search-wrap"
-                                onClick={() => setSearchMode(true)}
-                                style={{ cursor: 'pointer' }}
-                            >
-                                <div className="explore-search-glass">
-                                    <svg className="explore-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ position: 'absolute', left: '16px', color: '#9CA3AF', pointerEvents: 'none' }}>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                                         <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
                                         <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                                     </svg>
-                                    <div
-                                        className="explore-search"
-                                        style={{ padding: '13px 40px 13px 42px', color: '#D1D5DB', fontSize: '14px', userSelect: 'none' }}
-                                    >
-                                        Search trending characters...
-                                    </div>
-                                </div>
-                            </motion.div>
+                                </motion.button>
+                            </div>
 
                             {/* ── Category chips ─────────────────────────── */}
                             <motion.div

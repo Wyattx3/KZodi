@@ -8,6 +8,7 @@ interface ChatsTabProps {
     onSelectCharacter: (character: Character, openProfile?: boolean) => void;
     onSelectGroup?: (groupId: string) => void;
     myCharacters?: Character[];
+    allCharacters?: Character[];
 }
 
 function formatTime(ts: number): string {
@@ -421,7 +422,7 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
 
 // ─── Main ChatsTab ───────────────────────────────────────────────────────────
 
-export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacters = [] }: ChatsTabProps) {
+export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacters = [], allCharacters = [] }: ChatsTabProps) {
     const [conversations, setConversations] = React.useState<Conversation[]>([]);
     const [searchQuery, setSearchQuery] = React.useState("");
     const [actionConvo, setActionConvo] = React.useState<string | null>(null);
@@ -461,36 +462,13 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
         return unsub;
     }, []);
 
-    // Fetch all characters to build charMap dynamically
-    const [fetchedCharacters, setFetchedCharacters] = React.useState<Character[]>([]);
-    const [isLoading, setIsLoading] = React.useState(true);
-
-    React.useEffect(() => {
-        const fetchAllChars = async () => {
-            setIsLoading(true);
-            try {
-                // Fetch a large limit or we could just fetch the ones we need based on conversations
-                const res = await fetch("/api/characters?limit=500");
-                if (res.ok) {
-                    const data = await res.json();
-                    setFetchedCharacters(data.characters || data);
-                }
-            } catch (err) {
-                console.error("Failed to load characters for ChatsTab:", err);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchAllChars();
-    }, []);
-
     const charMap = React.useMemo(() => {
         const map: Record<string, Character> = {};
-        fetchedCharacters.forEach((c) => (map[c.id] = c));
+        allCharacters.forEach((c) => (map[c.id] = c));
         // Override with the most recent edits from the active user's library
         myCharacters.forEach((c) => (map[c.id] = c));
         return map;
-    }, [fetchedCharacters, myCharacters]);
+    }, [allCharacters, myCharacters]);
 
     const filteredConvos = React.useMemo(() => {
         if (!searchQuery.trim()) return conversations.map(convo => ({ convo, matchedMsg: null as any }));
@@ -639,22 +617,6 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             {conversations.length > 0 && <div className="chats-divider" />}
 
             <div className="chats-list">
-                {isLoading ? (
-                    <div style={{ padding: "0" }}>
-                        {[1, 2, 3, 4, 5, 6].map((i) => (
-                            <div key={i} style={{ display: "flex", padding: "16px 20px", gap: "14px", borderBottom: "1px solid rgba(0,0,0,0.03)" }}>
-                                <div style={{ width: "52px", height: "52px", borderRadius: "50%", background: "#F3F4F6", flexShrink: 0, animation: "pulse 1.5s infinite" }} />
-                                <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: "8px" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                        <div style={{ width: "40%", height: "16px", background: "#e5e7eb", borderRadius: "4px", animation: "pulse 1.5s infinite" }} />
-                                        <div style={{ width: "30px", height: "12px", background: "#f3f4f6", borderRadius: "4px", animation: "pulse 1.5s infinite" }} />
-                                    </div>
-                                    <div style={{ width: "80%", height: "14px", background: "#e5e7eb", borderRadius: "4px", animation: "pulse 1.5s infinite" }} />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
                 <AnimatePresence>
                     {filteredConvos.map(({ convo, matchedMsg }, i) => {
                         // ── Group Chat Row ────────────────────────
@@ -902,11 +864,10 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         );
                     })}
                 </AnimatePresence>
-                )}
             </div>
 
             {/* Empty state */}
-            {!isLoading && conversations.length === 0 && (
+            {conversations.length === 0 && (
                 <motion.div
                     key="chats-empty-state-final"
                     style={{

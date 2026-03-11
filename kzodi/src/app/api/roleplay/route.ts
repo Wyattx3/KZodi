@@ -236,10 +236,19 @@ function cleanResponseText(rawContent: string, characterName: string): string {
         .replace(/\[(Inner thought|Analysis|Reasoning|Strategy|Note|Context|Understanding|Tone|Plan|Cognitive state|Emotional tone|Response plan|User intent|Chat context|User prompt)[^\]]*\]/gi, "")
         .trim();
 
-    // Aggressively strip malformed REPLY or message ID leaks
-    // ONLY strip IDs that are NOT properly enclosed in [[REPLY:xxx]]
-    // Because the frontend ChatRoom.tsx needs [[REPLY:xxx]] to show quotes
-    content = content.replace(/(?<!\[\[REPLY:\s*)[0-9]{13,}-(?:ai|user)-[a-z0-9]+/i, "").trim();
+    // Strip any leaked message IDs that the AI echoed from the history
+    // These come from the <Message ID: xxx> prefix we inject into user messages for context
+    content = content
+        .replace(/<Message ID:\s*[^>]+>/gi, "")           // <Message ID: xxx>
+        .replace(/\[MessageID:\s*[^\]]+\]/gi, "")          // [MessageID: xxx]
+        .replace(/\[\[REPLY\s*:\s*[^\]]*\]+/gi, "")        // [[REPLY:xxx]] (safety net)
+        .replace(/\[REPLY\s*:\s*[^\]]*\]/gi, "")           // [REPLY:xxx] single bracket variant
+        .replace(/\[\[\s*RE?P?L?Y?[^\]]*\]*/gi, "")        // Catch partial broken tags like `[[RE` or `[[REP`
+        .replace(/[a-zA-Z0-9]{13,}-(?:ai|user)-[a-z0-9]+/gi, "")    // Raw message IDs like 1773263175056-user-abc123 or 177326317S056-user-xxx
+        .replace(/^\]+\s*/g, "")                            // Aggressively strip `]]` or `]] ` at the very start
+        .replace(/(?<=^|\s)\]+(?=\s|[a-zA-Zက-အ])/g, "")      // Strip stray `]]` in the middle, even if joined to a word (English or Myanmar)
+        .replace(/\s{2,}/g, " ")                            // Clean up double spaces from removals
+        .trim();
 
     // Fallback: If AI wraps response in ```json text ```, strip the wrapper
     const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;
@@ -257,7 +266,16 @@ function cleanResponseText(rawContent: string, characterName: string): string {
             else if (parsed.content) content = parsed.content;
             else if (parsed.response) content = parsed.response;
             else if (parsed.message) content = parsed.message;
-        } catch { /* ignore if not JSON */ }
+        } catch {
+            // Myanmar text often breaks JSON.parse — try regex extraction as fallback
+            const replyExtract = content.match(/"(?:reply|text|content|response|message)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+            if (replyExtract) {
+                content = replyExtract[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+            } else {
+                // Last resort: strip the JSON wrapper characters and keep the inner text
+                content = content.replace(/^\{\s*"(?:reply|text|content|response|message)"\s*:\s*"?/i, '').replace(/"?\s*\}$/, '').trim();
+            }
+        }
     }
 
     // Strip partial JSON fragments embedded in text (e.g., {"reply": "..."} mixed with normal text)
@@ -300,34 +318,15 @@ function enforceShortMessages(content: string, isBurmese: boolean): string {
             .replace(/\(.*?(why|what|how|because|means|translat|swear|said|asked|respond).*?\)/gi, "")
             .replace(/\{[^}]*\}/g, "")
             .trim();
-
-        // STEP 2: Split and filter using Myanmar character ratio
-        const segments = cleaned.split(/[\n]+/).filter(s => s.trim());
-        const validSegments: string[] = [];
-
-        for (const seg of segments) {
-            const t = seg.trim();
-            if (!t || t.length < 2) continue;
-            if (/\[\[(STICKER|REACT|REPLY|DAILY|TAROT|COMPATIBILITY|REMEDY|CHART|TABLE):/.test(t)) {
-                validSegments.push(t); continue;
-            }
-            const mc = (t.match(/[\u1000-\u109F\u104A\u104B]/g) || []).length;
-            const ac = (t.match(/[a-zA-Z]/g) || []).length;
-            const total = mc + ac;
-            if (total === 0) { if (t.length <= 20) validSegments.push(t); continue; }
-            const ratio = mc / total;
-            // If starts with English letter and Myanmar ratio is low → reasoning, skip
-            if (/^[a-zA-Z"'(]/.test(t) && ratio < 0.7) continue;
-            // Keep only if Myanmar chars dominate
-            if (ratio >= 0.4) validSegments.push(t);
-        }
-        cleaned = validSegments.join(" | ");
+        
+        // Split newlines into bubbles so Gemini's paragraph breaks are respected
+        cleaned = cleaned.split(/[\n]+/).filter(s => s.trim().length > 0).join(" | ");
     }
 
     // Strip meta patterns (all languages)
     cleaned = cleaned
         .replace(/^(Analysis|Note|Reasoning|Strategy|Context|Understanding|Inner thoughts|Tone plan|Response plan|Emotional tone|User intent|Cognitive state|Output|Response|Translation|Approach):?\s*.*$/gim, "")
-        .replace(/\*\*[^*]+\*\*/g, "")
+        .replace(/\*\*/g, "") // Strip bolding asterisks but KEEP the text inside
         .replace(/^[-*]\s+.{0,30}:/gm, "")
         .replace(/^\d+\.\s+/gm, "")
         // Strip lines that look like prompt echo (system instructions leaking)
@@ -339,19 +338,12 @@ function enforceShortMessages(content: string, isBurmese: boolean): string {
     // Split by existing pipe separators
     const bubbles = cleaned.split(/\s*\|\s*/).filter(b => b.trim().length > 0);
 
-    const maxCharsPerBubble = isBurmese ? 120 : 200;
+    const maxCharsPerBubble = isBurmese ? 160 : 250;
     const finalBubbles: string[] = [];
 
     for (const bubble of bubbles) {
         const trimmed = bubble.trim();
         if (!trimmed) continue;
-
-        // Bubble-level Myanmar ratio check
-        if (isBurmese) {
-            const mc = (trimmed.match(/[\u1000-\u109F]/g) || []).length;
-            const ac = (trimmed.match(/[a-zA-Z]/g) || []).length;
-            if (mc + ac > 0 && mc / (mc + ac) < 0.3 && !/\[\[(STICKER|REACT|REPLY)/.test(trimmed)) continue;
-        }
 
         if (trimmed.length <= maxCharsPerBubble) {
             finalBubbles.push(trimmed);
@@ -368,23 +360,29 @@ function enforceShortMessages(content: string, isBurmese: boolean): string {
                 const s = sentence.trim();
                 if (!s) continue;
 
-                if ((currentBubble + " " + s).trim().length <= maxCharsPerBubble) {
+                if (!currentBubble) {
+                    currentBubble = s;
+                } else if ((currentBubble + " " + s).trim().length <= maxCharsPerBubble) {
                     currentBubble = (currentBubble + " " + s).trim();
                 } else {
-                    if (currentBubble) finalBubbles.push(currentBubble);
-                    // Hard truncate if a single sentence is still too long
-                    currentBubble = s.length > maxCharsPerBubble ? s.slice(0, maxCharsPerBubble) : s;
+                    finalBubbles.push(currentBubble);
+                    currentBubble = s;
                 }
             }
             if (currentBubble) finalBubbles.push(currentBubble);
         }
     }
 
-    // Limit total number of bubbles
-    const maxBubbles = 4;
-    const limited = finalBubbles.slice(0, maxBubbles);
+    // Limit total number of bubbles to prevent infinite distinct chat notifications,
+    // but NEVER delete the actual text. Just squash the remaining text into the last bubble.
+    if (finalBubbles.length > 6) {
+        const kept = finalBubbles.slice(0, 5);
+        const squashed = finalBubbles.slice(5).join(" ");
+        kept.push(squashed);
+        return kept.join(" | ");
+    }
 
-    return limited.join(" | ");
+    return finalBubbles.join(" | ");
 }
 
 // ─── Main API Route ──────────────────────────────────────────────────────────
@@ -515,6 +513,14 @@ Using this information, generate your response. Remember to format the output wi
             responseLanguage === "Mix (Burmese + English)";
         content = enforceShortMessages(content, isBurmeseResponse);
 
+        // Strip [[REACT:...]] tags from the final reply text.
+        // These are AI directives for reactions; they should not appear in the chat UI.
+        // The client-side (ChatRoom.tsx processAiResponse) also strips them, but this acts as
+        // a defense-in-depth to catch any format the client regex might miss.
+        // NOTE: [[REPLY:...]] tags are NOT stripped here — the frontend processAiResponse
+        // needs them to extract replyToId before removing them.
+        content = content.replace(/\[\[\s*REACT[^\]]*\]\]/gi, "").trim();
+
         // ─── Save to Memory ──────────────────────────────────────────
         if (content && message) {
             const cleanContent = content
@@ -556,6 +562,7 @@ Using this information, generate your response. Remember to format the output wi
             aiSentiment: engineOutput.aiSentiment,
             seenDelay: engineOutput.seenDelay,
             readDelay: engineOutput.readDelay,
+            replyToId: engineOutput.cognitiveState.brain.shouldReplyToId,
         });
     } catch (error) {
         console.error("Roleplay error:", error);

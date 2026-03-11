@@ -74,10 +74,10 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     let generationModel: string;
 
     if (isBurmese) {
-        // Myanmar language (Reading and Roleplay)
-        // User requested deepseek-v3p1
-        brainModel = "accounts/fireworks/models/deepseek-v3p1";
-        generationModel = "accounts/fireworks/models/deepseek-v3p1";
+        // Myanmar language — use Gemini Flash for strong Burmese text generation
+        // DeepSeek V3p1 was producing garbled/gibberish Myanmar Unicode
+        brainModel = MODELS.CHAT; // Use Kimi K2 for brain reasoning (structured JSON)
+        generationModel = MODELS.GEMINI; // Gemini Flash for actual Burmese text generation
     } else {
         // Other Languages (English, Japanese, etc.)
         // Use Kimi K2 via MODELS.CHAT for all contexts
@@ -93,16 +93,11 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     console.log(`[AI Routing] Language: ${responseLanguage || "English"}, Brain: ${brainModel}, Generation: ${generationModel}`);
 
     // ─── Phase 2: Brain Reasoning (LLM thinking call) ──────────────────
-    // Skip brain thinking for Fireworks/DeepSeek since it can't produce structured JSON
-    // and we already skip the cognitive state in the generation prompt for those models.
     const { getFallbackBrainStateFromHeart } = await import("./brain");
     const isFireworksModel = generationModel.includes("fireworks");
 
     let brainState;
-    if (isFireworksModel) {
-        console.log(`[AI Engine] Phase 2: 🧠 Brain skipped (Fireworks model — using Heart fallback)`);
-        brainState = getFallbackBrainStateFromHeart(heartState, characterPersonality);
-    } else if (message && message.trim() !== "") {
+    if (message && message.trim() !== "") {
         console.log(`[AI Engine] Phase 2: 🧠 Brain reasoning...`);
         try {
             const thinkingPromise = thinkAboutMessage(
@@ -171,8 +166,8 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
                 : (h.content || " ");
 
             // For Fireworks: truncate older messages to save input tokens
-            if (isFireworksModel && !isRecent && textContent.length > 80) {
-                textContent = textContent.slice(0, 80) + "...";
+            if (isFireworksModel && !isRecent && textContent.length > 200) {
+                textContent = textContent.slice(0, 200) + "...";
             }
 
             let finalContent = textContent;
@@ -193,10 +188,9 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     let maxTokens = isEmotional ? 800 : 600;
     const temperature = isEmotional ? 0.95 : 0.9;
 
-    // For Burmese, we allow a higher maxTokens threshold because DeepSeek V3
-    // may generate reasoning tokens before the actual message. Starving it of tokens
-    // causes it to truncate before outputting the actual Burmese reply.
-    // Length is still strictly enforced post-generation by enforceShortMessages().
+    // For Burmese, allow higher maxTokens since Myanmar Unicode characters
+    // use more tokens per word than English. Length is still enforced
+    // post-generation by enforceShortMessages().
     if (isBurmese) {
         maxTokens = isEmotional ? 1000 : 800;
     }

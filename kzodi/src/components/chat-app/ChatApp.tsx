@@ -134,11 +134,29 @@ export default function ChatApp() {
                 const data = await res.json();
                 if (data.conversations && data.conversations.length > 0) {
                     const store = useChatStore.getState();
+                    const newChars: Character[] = [];
+                    
                     for (const conv of data.conversations) {
                         // Only create placeholder if conversation doesn't already exist in store
                         if (!store.conversations[conv.characterId]) {
                             store.ensureConversation(conv.characterId);
                         }
+                        // If API returned character info, collect it to append to allCharacters
+                        if (conv.character && !allCharacters.some(c => c.id === conv.character.id) && !newChars.some(c => c.id === conv.character.id)) {
+                            // We construct a partial Character object with just enough info for the chat list row
+                            newChars.push({
+                                ...conv.character,
+                                description: "Conversation history",
+                                greeting: "Hello",
+                                personality: "Unknown",
+                                tags: [conv.character.tag],
+                                isPublic: true
+                            } as Character);
+                        }
+                    }
+                    
+                    if (newChars.length > 0) {
+                        setAllCharacters(prev => [...prev, ...newChars]);
                     }
                 }
             }
@@ -340,33 +358,25 @@ export default function ChatApp() {
                     key="tabs"
                     className="chat-app-view"
                 >
-                    {/* Tab content */}
+                    {/* Tab content — all tabs stay mounted to preserve state/data */}
                     <div className="chat-app-content no-scrollbar">
-                        {activeTab === "explore" && (
-                            <div style={{ width: "100%" }}>
-                                <ExploreTab onSelectCharacter={handleSelectCharacter} />
-                            </div>
-                        )}
-                        {activeTab === "chats" && (
-                            <div style={{ width: "100%" }}>
-                                <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} myCharacters={myCharacters} />
-                            </div>
-                        )}
-                        {activeTab === "create" && (
-                            <div style={{ width: "100%" }}>
-                                <CreateTab
-                                    onNavigate={(tab: Tab) => setActiveTab(tab)}
-                                    onSelectCharacter={handleSelectCharacter}
-                                    myCharacters={myCharacters}
-                                    setMyCharacters={setMyCharacters}
-                                />
-                            </div>
-                        )}
-                        {activeTab === "profile" && (
-                            <div style={{ width: "100%" }}>
-                                <ProfileTab />
-                            </div>
-                        )}
+                        <div style={{ width: "100%", display: activeTab === "explore" ? "block" : "none" }}>
+                            <ExploreTab onSelectCharacter={handleSelectCharacter} />
+                        </div>
+                        <div style={{ width: "100%", display: activeTab === "chats" ? "block" : "none" }}>
+                            <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} myCharacters={myCharacters} allCharacters={allCharacters} />
+                        </div>
+                        <div style={{ width: "100%", display: activeTab === "create" ? "block" : "none" }}>
+                            <CreateTab
+                                onNavigate={(tab: Tab) => setActiveTab(tab)}
+                                onSelectCharacter={handleSelectCharacter}
+                                myCharacters={myCharacters}
+                                setMyCharacters={setMyCharacters}
+                            />
+                        </div>
+                        <div style={{ width: "100%", display: activeTab === "profile" ? "block" : "none" }}>
+                            <ProfileTab />
+                        </div>
                     </div>
 
                     {/* Premium bottom tab bar */}

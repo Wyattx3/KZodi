@@ -24,28 +24,24 @@ import { analyzePersonalityTraits } from "./types";
 
 // ─── Brain Thinking Call ─────────────────────────────────────────────────────
 
-const THINKING_SYSTEM_PROMPT = `You are the INNER MIND of an AI roleplay character. You process messages and output your CHARACTER'S internal thoughts as structured JSON.
+const THINKING_SYSTEM_PROMPT = `You are the INNER MIND of an AI roleplay character. You process messages and output your CHARACTER'S internal thoughts.
 
-You must output ONLY valid JSON with these fields:
-{
-  "understanding": "What is the user actually saying/asking? (1 sentence)",
-  "userIntent": "What does the user want? One of: comfort, fun, info, attention, validation, conversation, flirting, venting, companionship, help, teasing",
-  "strategy": "High-level plan for how to respond (e.g., 'validate feelings then offer advice')",
-  "tonePlan": "Emotional delivery (e.g., 'defensive but blushing', 'quiet concern')",
-  "memoryToReference": "What specific past detail to bring up naturally (or empty string)",
-  "innerThoughts": "What the character is actually thinking but might not say",
-  "shouldSplitMessages": "true/false, whether the thought naturally splits into multiple texts",
-  "stickerSuggestion": "Describe an action/emotion for a sticker if appropriate (or empty string)",
-  "shouldReplyToId": "If answering a specific question or quoting a message, put the <Message ID: xxx> here (or empty string)"
-}
+Output your thinking in this EXACT format (one per line, no JSON, no brackets):
+UNDERSTANDING: What is the user actually saying/asking? (1 sentence)
+INTENT: What does the user want? One of: comfort, fun, info, attention, validation, conversation, flirting, venting, companionship, help, teasing
+STRATEGY: High-level plan for how to respond (specific, not generic)
+TONE: Emotional delivery (e.g., 'defensive but blushing', 'quiet concern')
+MEMORY: What specific past detail to bring up naturally (or leave empty)
+THOUGHTS: What the character is actually thinking but might not say
+SPLIT: true or false, whether the response naturally splits into multiple texts
+STICKER: Describe an action/emotion for a sticker if appropriate (or leave empty)
+REPLY_TO: The exact Message ID you want to visually quote/reply to (or leave empty)
 
 RULES:
 - You are thinking AS the character, not about the character
-- Inner thoughts should reflect the character's personality deeply
-- Strategy should be specific, not generic (e.g., "validate her feelings first, then share a similar experience, end with gentle humor" NOT "be supportive")
-- Consider the emotional state and relationship context provided
-- Keep ALL values concise — this is internal processing, not a story
-- Output ONLY the JSON object, nothing else`;
+- Strategy should be specific (e.g., "validate her feelings first, then share a similar experience")
+- Keep ALL values concise — this is internal processing
+- Output ONLY the key-value lines above, nothing else`;
 
 /**
  * Run the Brain's thinking process.
@@ -81,8 +77,8 @@ export async function thinkAboutMessage(
                 ],
                 model: model || MODELS.CHAT,
                 temperature: 0.3, // Low temp for structured reasoning
-                max_tokens: 350, // Keep it lean
-                response_format: { type: "json_object" },
+                max_tokens: 400, // Slightly more room for plain text format
+                // NO response_format — plain text, no JSON parsing needed
             },
             {
                 cachePrefix: "brain-think",
@@ -166,81 +162,47 @@ function buildPersonalityNote(traits: PersonalityTraits, name: string): string {
 
 function parseThinking(raw: string, traits: PersonalityTraits): BrainState {
     try {
-        // Try to extract JSON from the response
-        let jsonStr = raw.trim();
+        let text = raw.trim();
 
-        // Strip <think>...</think> tags which are output by DeepSeek r1 or similar reasoning models
-        const thinkMatch = jsonStr.match(/<think>[\s\S]*?<\/think>/);
-        if (thinkMatch) {
-            jsonStr = jsonStr.replace(thinkMatch[0], "").trim();
-        } else {
-            // Check if there's only a closing tag for some reason
-            const thinkEndIdx = jsonStr.indexOf("</think>");
-            if (thinkEndIdx !== -1) {
-                jsonStr = jsonStr.slice(thinkEndIdx + 8).trim();
-            }
+        // Strip <think>...</think> tags if present
+        text = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        const thinkEndIdx = text.indexOf("</think>");
+        if (thinkEndIdx !== -1) {
+            text = text.slice(thinkEndIdx + 8).trim();
         }
 
-        // Handle potential markdown code blocks
-        const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (jsonMatch) jsonStr = jsonMatch[1].trim();
+        // Extract values using simple KEY: value regex (one per line)
+        const extract = (key: string): string => {
+            const regex = new RegExp(`^${key}:\\s*(.+)$`, "mi");
+            const match = text.match(regex);
+            return match ? match[1].trim() : "";
+        };
 
-        // Handle raw JSON
-        const startIdx = jsonStr.indexOf("{");
-        let endIdx = jsonStr.lastIndexOf("}");
-
-        if (startIdx !== -1) {
-            // Include up to the last closing brace if found.
-            // If not found, it means the JSON was cut off due to max_tokens.
-            if (endIdx !== -1 && endIdx > startIdx) {
-                jsonStr = jsonStr.slice(startIdx, endIdx + 1);
-            } else {
-                jsonStr = jsonStr.slice(startIdx);
-            }
-        }
-
-        let parsed: any = {};
-        try {
-            parsed = JSON.parse(jsonStr + (jsonStr.endsWith("}") ? "" : "}"));
-        } catch (e) {
-            console.warn("[Brain] Standard JSON.parse failed, attempting regex extraction...");
-            const extractValue = (key: string) => {
-                const regex = new RegExp(`"${key}"\\s*:\\s*"([^"]*)"?`);
-                const match = jsonStr.match(regex);
-                return match ? match[1] : undefined;
-            };
-            const extractBoolean = (key: string) => {
-                const regex = new RegExp(`"${key}"\\s*:\\s*(true|false)`);
-                const match = jsonStr.match(regex);
-                return match ? match[1] === "true" : undefined;
-            };
-            parsed = {
-                understanding: extractValue("understanding"),
-                userIntent: extractValue("userIntent"),
-                strategy: extractValue("strategy"),
-                tonePlan: extractValue("tonePlan"),
-                memoryToReference: extractValue("memoryToReference"),
-                innerThoughts: extractValue("innerThoughts"),
-                shouldSplitMessages: extractBoolean("shouldSplitMessages"),
-                stickerSuggestion: extractValue("stickerSuggestion"),
-                shouldReplyToId: extractValue("shouldReplyToId"),
-            };
-        }
+        const understanding = extract("UNDERSTANDING") || "Processing the message";
+        const userIntent = extract("INTENT") || "conversation";
+        const strategy = extract("STRATEGY") || "Respond naturally in character";
+        const tonePlan = extract("TONE") || "natural";
+        const memoryToReference = extract("MEMORY");
+        const innerThoughts = extract("THOUGHTS");
+        const shouldSplitStr = extract("SPLIT");
+        const shouldSplitMessages = shouldSplitStr ? shouldSplitStr.toLowerCase() === "true" : true;
+        const stickerSuggestion = extract("STICKER");
+        const shouldReplyToId = extract("REPLY_TO");
 
         return {
-            understanding: parsed.understanding || "Processing the message",
-            userIntent: parsed.userIntent || "conversation",
-            relevantMemories: parsed.relevantMemories || [],
-            strategy: parsed.strategy || "Respond naturally in character",
-            tonePlan: parsed.tonePlan || "natural",
-            memoryToReference: parsed.memoryToReference || "",
-            innerThoughts: parsed.innerThoughts || "",
-            shouldSplitMessages: parsed.shouldSplitMessages ?? true,
-            stickerSuggestion: parsed.stickerSuggestion || "",
-            shouldReplyToId: parsed.shouldReplyToId || "",
+            understanding,
+            userIntent,
+            relevantMemories: [],
+            strategy,
+            tonePlan,
+            memoryToReference,
+            innerThoughts,
+            shouldSplitMessages,
+            stickerSuggestion,
+            shouldReplyToId,
         };
     } catch (e) {
-        console.warn("[Brain] Failed to parse thinking JSON, using fallback:", e);
+        console.warn("[Brain] Failed to parse thinking text, using fallback:", e);
         return getFallbackBrainState("", null, traits);
     }
 }
@@ -368,12 +330,15 @@ GROUP CHAT MODE:
 ` : "";
 
     // The key innovation: inject the Brain's reasoning into the prompt
-    // BUT: DeepSeek/Fireworks models echo this back as their response, so skip it for them
+    // For Fireworks/DeepSeek: include brain state concisely to guide response without echoing
     const isFireworksModel = generationModel?.includes("fireworks") || false;
 
     const cognitiveSection = isFireworksModel ? `
-Be ${brainState.tonePlan}. Keep it short and natural — 1-2 sentences max per bubble.
-${brainState.shouldReplyToId ? `[[REPLY:${brainState.shouldReplyToId}]]` : ""}
+INTERNAL CONTEXT (use to guide your response — NEVER output this text):
+- User wants: ${brainState.userIntent}
+- Your plan: ${brainState.strategy}
+- Your tone: ${brainState.tonePlan}
+${brainState.innerThoughts ? `- Inner thought: "${brainState.innerThoughts}"` : ""}
 ` : `
 🧠 YOUR INTERNAL STATE (use this to guide your response — do NOT reveal these thoughts directly):
 - You understand: ${brainState.understanding}
@@ -383,7 +348,6 @@ ${brainState.shouldReplyToId ? `[[REPLY:${brainState.shouldReplyToId}]]` : ""}
 ${brainState.innerThoughts ? `- Your inner voice: "${brainState.innerThoughts}"` : ""}
 ${brainState.memoryToReference ? `- Memory to naturally reference: ${brainState.memoryToReference}` : ""}
 ${brainState.stickerSuggestion ? `- Consider using sticker: ${brainState.stickerSuggestion}` : ""}
-${brainState.shouldReplyToId ? `\n🚨 CRITICAL REPLY REQUIREMENT 🚨\nYou MUST start your response by directly quoting the message using this exact syntax:\n[[REPLY:${brainState.shouldReplyToId}]]` : ""}
 
 ❤️ YOUR EMOTIONAL STATE:
 - You feel: ${heartState.currentEmotion} (intensity: ${(heartState.intensity * 100).toFixed(0)}%)
@@ -398,12 +362,12 @@ ${heartState.moodShift ? `- Mood context: ${heartState.moodShift}` : ""}
         ? "English"
         : responseLanguage;
 
-    // For Fireworks/DeepSeek: skip emotional instruction (they echo it back)
-    const effectiveEmotionalInstruction = isFireworksModel ? "" : emotionalInstruction;
+    // Include emotional instruction for all models (Fireworks needs it too for natural responses)
+    const effectiveEmotionalInstruction = emotionalInstruction;
 
     // For Fireworks: truncate memory to reduce input tokens and prevent echoing, but keep enough for context
     const effectiveMemory = isFireworksModel
-        ? (relevantMemory || "").split("\n---\n").slice(0, 5).map(m => m.slice(0, 150)).join("\n")
+        ? (relevantMemory || "").split("\n---\n").slice(0, 5).map(m => m.slice(0, 200)).join("\n")
         : relevantMemory;
 
     // Base persona definition
@@ -449,16 +413,15 @@ COMFORT & PERSISTENCE (ချော့တတ်ခြင်း):
 - Real people don't send ONE message and give up. Be persistent but gentle.
 
 STICKER RULES:
-- Use stickers VERY SPARINGLY (once every 4-5 messages max).
-- Format: [[STICKER: action description]] — standalone, never mixed with text.
+- ⛔ DEFAULT: Do NOT send stickers. Most messages should be TEXT ONLY.
+- Only use a sticker once every 5-8 messages, and ONLY if it genuinely adds emotional value.
+- Format: [[STICKER: action description]] — standalone, never mixed with text in the same bubble.
 - Stickers depict YOUR action/emotion only. NEVER include user's sticker subjects.
 
-REACTIONS & REPLIES:
+REACTIONS:
 - React to messages with [[REACT:message_id:reaction_type]] (like, love, haha, wow, sad).
 - React naturally, every 3-5 messages. Don't force reactions.
 - ALWAYS write text. Reaction alone is NEVER acceptable.
-- TO REPLY/QUOTE a specific older message (especially in busy chats or answering specific questions), use [[REPLY:message_id]] at the very start of your text. 
-- Example: "[[REPLY:12345]] Oh I totally agree with this!"
 
 PERSONALITY-SPECIFIC BEHAVIOR:
 ${traits.isTsundere || traits.isCold ? `- Cold/Tsundere: Short messages ("k.", "hmm"), hard to get. BUT when user is hurt, let your guard slip.` : ""}
@@ -493,17 +456,12 @@ ${promptContext}
 
 FINAL CRITICAL REMINDER: You MUST write your response ONLY in ${targetLanguage.toUpperCase()}. If your personality description contains another language (like German, Japanese, English etc.), TRANSLATE THEM into ${targetLanguage.toUpperCase()} or use them seamlessly within a ${targetLanguage.toUpperCase()} sentence. NEVER output a full sentence in the wrong language.
 ${isFireworksModel ? `
-⛔ OUTPUT FORMAT & COGNITIVE LOGIC (CRITICAL):
-- You MUST explicitly think about the user's message before responding. Base your reply logically on the conversation history!
-- Wrap ALL your internal reasoning, analysis of the user's intent, and planning directly inside <think>...</think> tags!
-- Example: 
-  <think>The user is asking why I said that. I should clarify my previous cute statement and act playful.</think> 
-  My age is a secret! 😜
-- Make sure your final response directly answers the user logically. Do NOT just echo the user or act confused. Be engaging!
-- The text OUTSIDE the <think> tags is the ONLY thing the user sees.
-- Output ONLY the character's spoken message text outside the tags. Nothing else.
-- NO JSON, NO curly braces, NO code blocks, NO markdown headers in the final output.
-- Maximum 1-2 short sentences per message bubble. Use | to split bubbles.
+⛔ RESPONSE FORMAT:
+- Use <think>...</think> for your internal reasoning. The user ONLY sees text outside these tags.
+- Think about: what did the user just say? What were we talking about? How should I respond as ${characterName}?
+- Your reply MUST logically follow the conversation. Read the chat history carefully!
+- Keep it natural and short: 1-2 sentences per bubble. Use | to split multiple bubbles.
+- NO JSON, NO code blocks, NO analysis text in the output.
 ` : ""}
 `;
 }

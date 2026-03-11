@@ -22,10 +22,13 @@ export async function GET() {
         // Get distinct conversations for this user with their latest message info
         const dbRes = await query(
             `SELECT 
-                conversation_id,
-                MAX(content) FILTER (WHERE timestamp = sub.max_ts) as last_message,
-                MAX(timestamp) as last_timestamp,
-                COUNT(*) as message_count
+                m.conversation_id,
+                MAX(m.content) FILTER (WHERE m.timestamp = sub.max_ts) as last_message,
+                MAX(m.timestamp) as last_timestamp,
+                COUNT(*) as message_count,
+                c.name as char_name,
+                c.image as char_image,
+                c.tag as char_tag
             FROM messages m
             INNER JOIN (
                 SELECT conversation_id as cid, MAX(timestamp) as max_ts
@@ -33,8 +36,9 @@ export async function GET() {
                 WHERE user_id = $1
                 GROUP BY conversation_id
             ) sub ON m.conversation_id = sub.cid AND m.user_id = $1
-            GROUP BY conversation_id
-            ORDER BY MAX(timestamp) DESC`,
+            LEFT JOIN characters c ON c.id = m.conversation_id
+            GROUP BY m.conversation_id, c.name, c.image, c.tag
+            ORDER BY MAX(m.timestamp) DESC`,
             [userId]
         );
 
@@ -43,6 +47,12 @@ export async function GET() {
             lastMessage: row.last_message || "",
             lastTimestamp: Number(row.last_timestamp),
             messageCount: Number(row.message_count),
+            character: row.char_name ? {
+                id: row.conversation_id,
+                name: row.char_name,
+                image: row.char_image,
+                tag: row.char_tag
+            } : null
         }));
 
         return NextResponse.json({ conversations });
