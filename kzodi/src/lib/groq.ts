@@ -585,13 +585,7 @@ class MultiProviderClient {
             content = content.slice(0, thinkStartIdx).trim();
           }
 
-          // CRITICAL: DeepSeek-v3p2 (Reasoner) ignores <think> instructions and dumps raw thought
-          // We instructed it to use 【REPLY】 as a hard delimiter. Extract only the content after it.
-          // Using a forgiving regex because models sometimes vary the brackets (e.g. [REPLY] or **REPLY**)
-          const replyMatch = content.match(/(?:【|\[|\*\*|<)?REPLY(?:】|\]|\*\*|>)?\s*:?\s*/i);
-          if (replyMatch && replyMatch.index !== undefined) {
-            content = content.slice(replyMatch.index + replyMatch[0].length).trim();
-          }
+
 
           finishReason = choice?.finish_reason || "unknown";
           truncated = finishReason === "length";

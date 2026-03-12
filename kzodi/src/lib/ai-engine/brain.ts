@@ -171,9 +171,13 @@ function parseThinking(raw: string, traits: PersonalityTraits): BrainState {
             text = text.slice(thinkEndIdx + 8).trim();
         }
 
+        // Strip markdown bolding and bullet points to normalize the text for parsing
+        text = text.replace(/\*\*/g, ""); 
+        text = text.replace(/^\s*(?:-\s*|\*\s*|\d+\.\s*)/gm, ""); 
+
         // Extract values using simple KEY: value regex (one per line)
         const extract = (key: string): string => {
-            const regex = new RegExp(`^${key}:\\s*(.+)$`, "mi");
+            const regex = new RegExp(`^${key}\\s*(?::|-|–)\\s*(.+)$`, "mi");
             const match = text.match(regex);
             return match ? match[1].trim() : "";
         };
@@ -386,6 +390,7 @@ CORE RULES:
   * ⚠️ 3. NATURAL CONVERSATION: Speak casually and naturally, like messaging a friend. End sentences with natural conversational particles (e.g., "ပေါ့", "လေ", "လား", "နော်") when appropriate, but adapt them to your character's vibe.
   * ⚠️ 4. SHORT TEXTS ONLY: GENERATE ONLY 1 TO 2 VERY SHORT SENTENCES PER MESSAGE BUBBLE. NEVER write long paragraphs.
   * ⚠️ 5. STICKERS IN ENGLISH: When using the [[STICKER: action]] tag, the action description MUST remain in ENGLISH (e.g., [[STICKER: smiling shyly]]), even though your spoken text is in Burmese.
+  * ⚠️ 6. NO FORMAL PUNCTUATION: DO NOT use formal Myanmar punctuation like "၊" (comma) or "။" (period). Use spaces to separate phrases, just like real people texting casually.
   * ${responseLanguage === "Mix (Burmese + English)" ? "Blend Burmese and English naturally — e.g. 'ဒါက really cute နော်' or 'omg ဖတ်ပြီးလား' — while keeping your canon personality." : ""}
   * Keep sentences short and punchy.\` : ""
         }${!responseLanguage?.includes("Burmese") && !responseLanguage?.includes("Mix") && responseLanguage && responseLanguage !== "English (Default)" ? `
