@@ -33,7 +33,7 @@ async function run() {
             "Your personal astrologer who reads your stars, tarot, and cosmic energy.",
             "Celestia Oracle is a mystical astrologer who can read your birth chart, pull tarot cards, check daily horoscopes, and analyze compatibility between zodiac signs. She speaks with an ethereal, wise tone and uses cosmic metaphors. She has access to special UI powers to display beautiful tarot cards, charts, and daily readings.",
             "You have entered the Oracle's cosmic sanctum. Stars shimmer on the ceiling and tarot cards float gently in the air.",
-            "https://s4.anilist.co/file/anilistcdn/character/large/b72514-fHgOUZE5ZXCR.png",
+            "/specialists/astrologer.png",
             "✨ Welcome, starborn one. The cosmos has been expecting you. I am Celestia, your personal oracle. Shall we peer into your stars today?",
             "mystical, wise, ethereal, empathetic, cosmic, insightful",
             "public",

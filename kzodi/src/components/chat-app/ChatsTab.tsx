@@ -494,127 +494,129 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
 
     return (
         <div className="chats-container">
-            {/* Header */}
-            <div className="chats-header">
-                <div>
-                    <h1 className="chats-title">Messages</h1>
-                    <p className="chats-header-sub">
-                        {conversations.length > 0
-                            ? `${conversations.length} conversation${conversations.length > 1 ? "s" : ""}`
-                            : "Start a conversation"}
-                    </p>
-                </div>
-                <div style={{ position: "relative" }}>
-                    <button
-                        className="chats-new-btn"
-                        aria-label="New chat"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            menuOpenedAt.current = Date.now();
-                            setShowNewMenu(!showNewMenu);
-                        }}
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                        </svg>
-                    </button>
-
-                    {/* New Chat / New Group dropdown */}
-                    <AnimatePresence>
-                        {showNewMenu && (
-                            <motion.div
-                                initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                                transition={{ duration: 0.15 }}
-                                onClick={e => e.stopPropagation()}
-                                style={{
-                                    position: "absolute", top: "44px", right: 0,
-                                    background: "rgba(255,255,255,0.95)",
-                                    backdropFilter: "blur(12px)",
-                                    border: "1px solid rgba(0,0,0,0.06)",
-                                    borderRadius: "16px",
-                                    boxShadow: "0 8px 30px rgba(0,0,0,0.12)",
-                                    padding: "6px", minWidth: "170px", zIndex: 100
-                                }}
-                            >
-                                <button
-                                    onClick={() => {
-                                        setShowNewMenu(false);
-                                        setShowGroupModal(true);
-                                    }}
-                                    style={{
-                                        display: "flex", alignItems: "center", gap: "10px",
-                                        background: "transparent", border: "none",
-                                        padding: "12px 14px", borderRadius: "12px",
-                                        cursor: "pointer", color: "#4A3728",
-                                        fontSize: "14px", fontWeight: 500, width: "100%",
-                                        transition: "background 0.15s"
-                                    }}
-                                    onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
-                                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                                        <circle cx="9" cy="7" r="3" stroke="currentColor" strokeWidth="1.5" />
-                                        <circle cx="17" cy="7" r="3" stroke="currentColor" strokeWidth="1.5" />
-                                        <path d="M2 21c0-3.87 3.13-7 7-7 1.5 0 2.88.47 4.02 1.27" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                        <path d="M17 14c3.87 0 7 3.13 7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    </svg>
-                                    New Group
-                                </button>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-            </div>
-
-            {/* Search bar */}
-            {conversations.length > 0 && (
-                <motion.div className="chats-search-wrap">
-                    <div className="chats-search-box">
-                        <svg className="chats-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                            <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                        </svg>
-                        <input
-                            className="chats-search-input"
-                            type="text"
-                            placeholder="Search conversations..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
+            <div className="chats-sticky-header">
+                {/* Header */}
+                <div className="chats-header">
+                    <div>
+                        <h1 className="chats-title">Messages</h1>
+                        <p className="chats-header-sub">
+                            {conversations.length > 0
+                                ? `${conversations.length} conversation${conversations.length > 1 ? "s" : ""}`
+                                : "Start a conversation"}
+                        </p>
                     </div>
-                </motion.div>
-            )}
+                    <div style={{ position: "relative" }}>
+                        <button
+                            className="chats-new-btn"
+                            aria-label="New chat"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                menuOpenedAt.current = Date.now();
+                                setShowNewMenu(!showNewMenu);
+                            }}
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                            </svg>
+                        </button>
 
-            {/* Online avatars */}
-            {conversations.length > 0 && (
-                <motion.div
-                    className="chats-online-strip no-scrollbar"
-                >
-                    {conversations.filter(c => !c.isGroup).map((convo) => {
-                        const char = charMap[convo.characterId];
-                        if (!char) return null;
-                        const displayName = convo.customName || char.name;
-                        return (
-                            <motion.div
-                                key={convo.characterId}
-                                className="chats-online-item"
-                                onClick={() => onSelectCharacter(char)}
-                                whileTap={{ scale: 0.9 }}
-                            >
-                                <div className="chats-online-avatar-ring">
-                                    <img src={char.image} alt={char.name} />
-                                </div>
-                                <span className="chats-online-name">{displayName.split(" ")[0]}</span>
-                            </motion.div>
-                        );
-                    })}
-                </motion.div>
-            )}
+                        {/* New Chat / New Group dropdown */}
+                        <AnimatePresence>
+                            {showNewMenu && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                                    transition={{ duration: 0.15 }}
+                                    onClick={e => e.stopPropagation()}
+                                    style={{
+                                        position: "absolute", top: "44px", right: 0,
+                                        background: "rgba(255,255,255,0.95)",
+                                        backdropFilter: "blur(12px)",
+                                        border: "1px solid rgba(0,0,0,0.06)",
+                                        borderRadius: "16px",
+                                        boxShadow: "0 8px 30px rgba(0,0,0,0.12)",
+                                        padding: "6px", minWidth: "170px", zIndex: 100
+                                    }}
+                                >
+                                    <button
+                                        onClick={() => {
+                                            setShowNewMenu(false);
+                                            setShowGroupModal(true);
+                                        }}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: "10px",
+                                            background: "transparent", border: "none",
+                                            padding: "12px 14px", borderRadius: "12px",
+                                            cursor: "pointer", color: "#4A3728",
+                                            fontSize: "14px", fontWeight: 500, width: "100%",
+                                            transition: "background 0.15s"
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
+                                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                                    >
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                            <circle cx="9" cy="7" r="3" stroke="currentColor" strokeWidth="1.5" />
+                                            <circle cx="17" cy="7" r="3" stroke="currentColor" strokeWidth="1.5" />
+                                            <path d="M2 21c0-3.87 3.13-7 7-7 1.5 0 2.88.47 4.02 1.27" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                            <path d="M17 14c3.87 0 7 3.13 7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                        </svg>
+                                        New Group
+                                    </button>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                </div>
 
-            {/* Divider */}
-            {conversations.length > 0 && <div className="chats-divider" />}
+                {/* Search bar */}
+                {conversations.length > 0 && (
+                    <motion.div className="chats-search-wrap">
+                        <div className="chats-search-box">
+                            <svg className="chats-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                                <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            </svg>
+                            <input
+                                className="chats-search-input"
+                                type="text"
+                                placeholder="Search conversations..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* Online avatars */}
+                {conversations.length > 0 && (
+                    <motion.div
+                        className="chats-online-strip no-scrollbar"
+                    >
+                        {conversations.filter(c => !c.isGroup).map((convo) => {
+                            const char = charMap[convo.characterId];
+                            if (!char) return null;
+                            const displayName = convo.customName || char.name;
+                            return (
+                                <motion.div
+                                    key={convo.characterId}
+                                    className="chats-online-item"
+                                    onClick={() => onSelectCharacter(char)}
+                                    whileTap={{ scale: 0.9 }}
+                                >
+                                    <div className="chats-online-avatar-ring">
+                                        <img src={char.image} alt={char.name} />
+                                    </div>
+                                    <span className="chats-online-name">{displayName.split(" ")[0]}</span>
+                                </motion.div>
+                            );
+                        })}
+                    </motion.div>
+                )}
+
+                {/* Divider */}
+                {conversations.length > 0 && <div className="chats-divider" />}
+            </div>
 
             <div className="chats-list">
                 <AnimatePresence>

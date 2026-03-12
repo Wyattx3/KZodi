@@ -9,15 +9,15 @@ interface ChatLandingPageProps {
 
 /* ── Character data for the slideshow ────────────────────────────────────── */
 const CHARACTERS = [
-    { name: "Gojo Satoru", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b88571-0010S6iU0wTq.jpg" },
-    { name: "Levi Ackerman", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b45627-1LPNhOAMk3QG.png" },
-    { name: "Anya Forger", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b137021-xLw2v11UINxP.jpg" },
-    { name: "Tanjiro", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b127518-eI4x7zD9o4k3.png" },
-    { name: "V / Taehyung", tag: "K-pop", image: "https://upload.wikimedia.org/wikipedia/commons/0/08/V_for_Dispatch_White_Day_Special%2C_27_February_2019_01.jpg" },
-    { name: "Cha Eunwoo", tag: "K-pop", image: "https://upload.wikimedia.org/wikipedia/commons/d/df/Cha_Eun-woo_in_October_2023.jpg" },
-    { name: "Lisa", tag: "K-pop", image: "https://upload.wikimedia.org/wikipedia/commons/1/13/2023_BLACKPINK_-_Lalisa_Manobal_%28%EB%A6%AC%EC%82%AC%29_16.jpg" },
-    { name: "Kinn Anakinn", tag: "BL", image: "https://upload.wikimedia.org/wikipedia/commons/2/29/Mile_Phakphum_Romsaithong.jpg" },
-    { name: "Porsche", tag: "BL", image: "https://upload.wikimedia.org/wikipedia/commons/5/53/Apo_Nattawin_Wattanagitiphat.jpg" },
+    { name: "Satoru Gojo", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b127691-9zqh1xpIubn7.png" },
+    { name: "Levi Ackerman", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b45627-CR68RyZmddGG.png" },
+    { name: "Monkey D. Luffy", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b40-MNypXsxSRb1R.png" },
+    { name: "Killua Zoldyck", tag: "Anime", image: "https://s4.anilist.co/file/anilistcdn/character/large/b27-Z5O02kQUydpT.jpg" },
+    { name: "V / Taehyung", tag: "K-pop", image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400" },
+    { name: "Cha Eunwoo", tag: "K-pop", image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400" },
+    { name: "Lisa", tag: "K-pop", image: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&q=80&w=400" },
+    { name: "Sang-Woo Oh", tag: "BL", image: "https://s4.anilist.co/file/anilistcdn/character/large/b121764-RsO2VCaPLVZL.png" },
+    { name: "Bum Yoon", tag: "BL", image: "https://s4.anilist.co/file/anilistcdn/character/large/b121763-BYy6rb70tilA.png" },
 ];
 
 function CharCard({ char }: { char: typeof CHARACTERS[number] }) {

@@ -349,7 +349,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                         <h2 className="explore-section-title">
                                             {search ? `Results for "${search}"` : activeCategory === "All" ? "All Characters" : activeCategory}
                                         </h2>
-                                        <span className="explore-section-count">{characters.length} found</span>
                                     </div>
                                     <div className="explore-grid">
                                         <AnimatePresence mode="popLayout">
@@ -504,7 +503,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                         <div className="explore-section">
                                             <div className="explore-section-header">
                                                 <h2 className="explore-section-title">Specialist Characters</h2>
-                                                <span className="explore-section-count">{specialCharacters.length} specialists</span>
                                             </div>
                                             <div className="explore-specialist-scroll no-scrollbar">
                                                 {specialCharacters.map((char, i) => (
@@ -615,7 +613,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                         <div className="explore-section">
                                             <div className="explore-section-header">
                                                 <h2 className="explore-section-title">For You</h2>
-                                                <span className="explore-section-count">{forYou.length} picks</span>
                                             </div>
                                             <div className="explore-for-you no-scrollbar">
                                                 {forYou.map((char, i) => (
@@ -660,7 +657,6 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                             <h2 className="explore-section-title">
                                                 {activeCategory === "All" ? "All Characters" : activeCategory}
                                             </h2>
-                                            <span className="explore-section-count">{characters.length} characters</span>
                                         </div>
                                         <div className="explore-grid">
                                             <AnimatePresence mode="popLayout">

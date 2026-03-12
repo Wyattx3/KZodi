@@ -863,29 +863,82 @@ body {
 
 /* â”€â”€ Premium Floating Tab Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-.chat-tab-bar {
+.chat-nav-wrapper {
   position: fixed;
-  bottom: 0;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
   max-width: var(--app-max-width);
   display: flex;
   align-items: center;
-  justify-content: space-evenly;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.chat-nav-wrapper > * {
+  pointer-events: auto;
+}
+
+.chat-tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: 8px 12px;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 28px;
-  z-index: 50;
+  border-radius: 36px;
   box-shadow:
     0 10px 40px -10px rgba(0, 0, 0, 0.1),
     0 4px 12px -4px rgba(0, 0, 0, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
+
+.chat-nav-fab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-radius: 50%;
+  cursor: pointer;
+  position: relative;
+  color: #9CA3AF;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+  box-shadow:
+    0 8px 24px -6px rgba(0, 0, 0, 0.12),
+    0 4px 8px -4px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.chat-nav-fab:active {
+  transform: scale(0.92);
+}
+
+.chat-nav-fab-active {
+  color: #4A3728;
+}
+
+.chat-nav-fab-active .chat-tab-icon-wrap {
+  transform: translateY(-1px);
+}
+
+.chat-nav-fab-active svg {
+  stroke-width: 2.5px;
+  filter: drop-shadow(0 4px 6px rgba(245, 158, 11, 0.3));
+}
+
 
 .chat-tab-item {
   display: flex;
@@ -1678,10 +1731,9 @@ body {
   z-index: 100;
   background: rgba(0, 0, 0, 0.4);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   backdrop-filter: blur(8px);
-  padding-bottom: 90px;
 }
 
 .explore-preview-modal {
@@ -1875,7 +1927,34 @@ body {
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .chats-container {
   padding: 0 16px;
+  position: relative;
 }
+
+/* Sticky fade overlay at the bottom of the chat list */
+.chats-container::after {
+  content: '';
+  display: block;
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  margin: 0 -16px;
+  margin-top: -100px;
+  background: linear-gradient(to bottom, rgba(255, 253, 245, 0) 0%, rgba(255, 253, 245, 0.6) 30%, rgba(255, 253, 245, 0.9) 60%, #FFFDF5 100%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.chats-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #FFFDF5;
+  margin: 0 -16px;
+  padding: 0 16px;
+}
+
 
 .chats-header {
   display: flex;
@@ -2021,6 +2100,7 @@ body {
   flex-direction: column;
   gap: 0;
   margin: 0 -16px;
+  padding-bottom: 120px; /* Space for bottom nav */
   /* negate container padding so items go edge-to-edge */
 }
 

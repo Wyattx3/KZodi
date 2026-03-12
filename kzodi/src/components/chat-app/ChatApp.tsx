@@ -379,18 +379,19 @@ export default function ChatApp() {
                         </div>
                     </div>
 
-                    {/* Premium bottom tab bar */}
+                    {/* Premium floating tab layout */}
                     <LayoutGroup>
-                        <div className="chat-tab-bar">
+                        <div className="chat-nav-wrapper">
+                            {/* Left FAB: Explore */}
                             <motion.button
-                                className={`chat-tab-item ${activeTab === "explore" ? "chat-tab-active" : ""}`}
+                                className={`chat-nav-fab ${activeTab === "explore" ? "chat-nav-fab-active" : ""}`}
                                 onClick={() => setActiveTab("explore")}
                                 whileTap={{ scale: 0.9 }}
                             >
                                 {activeTab === "explore" && (
                                     <motion.div
                                         className="chat-tab-indicator"
-                                        layoutId="activeTab"
+                                        layoutId="activeTabExplore"
                                         transition={{ type: "spring", stiffness: 400, damping: 30 }}
                                     />
                                 )}
@@ -406,15 +407,85 @@ export default function ChatApp() {
                                 </motion.div>
                             </motion.button>
 
+                            {/* Center Pill: Chats & Profile */}
+                            <div className="chat-tab-bar">
+                                <motion.button
+                                    className={`chat-tab-item ${activeTab === "chats" ? "chat-tab-active" : ""}`}
+                                    onClick={() => setActiveTab("chats")}
+                                    whileTap={{ scale: 0.9 }}
+                                    style={{ position: "relative" }}
+                                >
+                                    {activeTab === "chats" && (
+                                        <motion.div
+                                            className="chat-tab-indicator"
+                                            layoutId="activeTabCenter"
+                                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                        />
+                                    )}
+                                    <motion.div
+                                        className="chat-tab-icon-wrap"
+                                        animate={activeTab === "chats" ? { scale: 1.1 } : { scale: 1 }}
+                                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                                        style={{ position: "relative" }}
+                                    >
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                            <path
+                                                d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            />
+                                        </svg>
+                                        {totalUnread > 0 && (
+                                            <motion.span
+                                                className="chat-tab-badge"
+                                                initial={{ scale: 0 }}
+                                                animate={{ scale: 1 }}
+                                                exit={{ scale: 0 }}
+                                                transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                                            >
+                                                {totalUnread > 99 ? "99+" : totalUnread}
+                                            </motion.span>
+                                        )}
+                                    </motion.div>
+                                </motion.button>
+
+                                <motion.button
+                                    className={`chat-tab-item ${activeTab === "profile" ? "chat-tab-active" : ""}`}
+                                    onClick={() => setActiveTab("profile")}
+                                    whileTap={{ scale: 0.9 }}
+                                >
+                                    {activeTab === "profile" && (
+                                        <motion.div
+                                            className="chat-tab-indicator"
+                                            layoutId="activeTabCenter"
+                                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                        />
+                                    )}
+                                    <motion.div
+                                        className="chat-tab-icon-wrap"
+                                        animate={activeTab === "profile" ? { scale: 1.1 } : { scale: 1 }}
+                                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                                    >
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                            <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
+                                            <path d="M20 21C20 16.5817 16.4183 13 12 13C7.58172 13 4 16.5817 4 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                        </svg>
+                                    </motion.div>
+                                </motion.button>
+                            </div>
+
+                            {/* Right FAB: Create */}
                             <motion.button
-                                className={`chat-tab-item ${activeTab === "create" ? "chat-tab-active" : ""}`}
+                                className={`chat-nav-fab ${activeTab === "create" ? "chat-nav-fab-active" : ""}`}
                                 onClick={() => setActiveTab("create")}
                                 whileTap={{ scale: 0.9 }}
                             >
                                 {activeTab === "create" && (
                                     <motion.div
                                         className="chat-tab-indicator"
-                                        layoutId="activeTab"
+                                        layoutId="activeTabCreate"
                                         transition={{ type: "spring", stiffness: 400, damping: 30 }}
                                     />
                                 )}
@@ -425,72 +496,6 @@ export default function ChatApp() {
                                 >
                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                                         <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                </motion.div>
-                            </motion.button>
-
-                            <motion.button
-                                className={`chat-tab-item ${activeTab === "chats" ? "chat-tab-active" : ""}`}
-                                onClick={() => setActiveTab("chats")}
-                                whileTap={{ scale: 0.9 }}
-                                style={{ position: "relative" }}
-                            >
-                                {activeTab === "chats" && (
-                                    <motion.div
-                                        className="chat-tab-indicator"
-                                        layoutId="activeTab"
-                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                                    />
-                                )}
-                                <motion.div
-                                    className="chat-tab-icon-wrap"
-                                    animate={activeTab === "chats" ? { scale: 1.1 } : { scale: 1 }}
-                                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                                    style={{ position: "relative" }}
-                                >
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                        <path
-                                            d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        />
-                                    </svg>
-                                    {totalUnread > 0 && (
-                                        <motion.span
-                                            className="chat-tab-badge"
-                                            initial={{ scale: 0 }}
-                                            animate={{ scale: 1 }}
-                                            exit={{ scale: 0 }}
-                                            transition={{ type: "spring", stiffness: 500, damping: 25 }}
-                                        >
-                                            {totalUnread > 99 ? "99+" : totalUnread}
-                                        </motion.span>
-                                    )}
-                                </motion.div>
-                            </motion.button>
-
-                            <motion.button
-                                className={`chat-tab-item ${activeTab === "profile" ? "chat-tab-active" : ""}`}
-                                onClick={() => setActiveTab("profile")}
-                                whileTap={{ scale: 0.9 }}
-                            >
-                                {activeTab === "profile" && (
-                                    <motion.div
-                                        className="chat-tab-indicator"
-                                        layoutId="activeTab"
-                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                                    />
-                                )}
-                                <motion.div
-                                    className="chat-tab-icon-wrap"
-                                    animate={activeTab === "profile" ? { scale: 1.1 } : { scale: 1 }}
-                                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                                >
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                        <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
-                                        <path d="M20 21C20 16.5817 16.4183 13 12 13C7.58172 13 4 16.5817 4 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                                     </svg>
                                 </motion.div>
                             </motion.button>
