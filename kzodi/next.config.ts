@@ -9,6 +9,7 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  turbopack: {},
   async redirects() {
     return [
       {
