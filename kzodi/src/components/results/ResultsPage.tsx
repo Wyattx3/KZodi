@@ -1,14 +1,14 @@
 "use client";
 import React, { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { toPng } from "html-to-image";
+import { toPng, toJpeg } from "html-to-image";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { zodiacSvgIcons, ArrowLeft, ShareIcon, ChevronDown } from "@/components/svg/ZodiacIcons";
 import { getZodiacSign, getZodiacData, getCompatibilityScore, type ZodiacSign } from "@/lib/zodiac";
 import { mbtiDescriptions } from "@/data/mbtiQuestions";
 import type { PersonInfo, RelationshipStatus } from "@/lib/store";
-import { useTranslate, LANGUAGES } from "@/lib/useTranslate";
+import { LANGUAGES } from "@/lib/useTranslate";
 import CompatibilityWheel from "./CompatibilityWheel";
 import BirthChartWheel from "./BirthChartWheel";
 import FeedbackSurvey from "./FeedbackSurvey";
@@ -45,14 +45,12 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>("personality");
   const [activePerson, setActivePerson] = useState<"person1" | "person2">("person1");
-  const [showLangMenu, setShowLangMenu] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const shareRef = useRef<HTMLDivElement>(null);
   const infoCardRef = useRef<HTMLDivElement>(null);
   const partnerInfoCardRef = useRef<HTMLDivElement>(null);
   const rsCardRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<HTMLDivElement>(null);
-  const { lang, translating, changeLang, getText } = useTranslate();
 
   const sign1Key = person1.birthMonth && person1.birthDay ? getZodiacSign(person1.birthMonth, person1.birthDay) : "aries";
   const sign1 = getZodiacData(sign1Key)!;
@@ -76,33 +74,19 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
   const aiPartnerLikesRaw = (aiInsights?.partnerLikes as string) || null;
   const aiPartnerChartReadingRaw = (aiInsights?.partnerChartReading as string) || null;
 
-  const aiPersonality = getText("personality", aiPersonalityRaw);
-  const aiLove = getText("love", aiLoveRaw);
-  const aiCompatibility = getText("compatibility", aiCompatibilityRaw);
-  const aiLikes = getText("likes", aiLikesRaw);
-  const aiChartReading = getText("chartReading", aiChartReadingRaw);
+  const aiPersonality = aiPersonalityRaw;
+  const aiLove = aiLoveRaw;
+  const aiCompatibility = aiCompatibilityRaw;
+  const aiLikes = aiLikesRaw;
+  const aiChartReading = aiChartReadingRaw;
 
-  const aiPartnerPersonality = getText("partnerPersonality", aiPartnerPersonalityRaw);
-  const aiPartnerLove = getText("partnerLove", aiPartnerLoveRaw);
-  const aiPartnerCompatibility = getText("partnerCompatibility", aiPartnerCompatibilityRaw);
-  const aiPartnerLikes = getText("partnerLikes", aiPartnerLikesRaw);
-  const aiPartnerChartReading = getText("partnerChartReading", aiPartnerChartReadingRaw);
+  const aiPartnerPersonality = aiPartnerPersonalityRaw;
+  const aiPartnerLove = aiPartnerLoveRaw;
+  const aiPartnerCompatibility = aiPartnerCompatibilityRaw;
+  const aiPartnerLikes = aiPartnerLikesRaw;
+  const aiPartnerChartReading = aiPartnerChartReadingRaw;
 
-  const handleLangChange = (code: string) => {
-    setShowLangMenu(false);
-    changeLang(code, {
-      personality: aiPersonalityRaw,
-      love: aiLoveRaw,
-      compatibility: aiCompatibilityRaw,
-      likes: aiLikesRaw,
-      chartReading: aiChartReadingRaw,
-      partnerPersonality: aiPartnerPersonalityRaw,
-      partnerLove: aiPartnerLoveRaw,
-      partnerCompatibility: aiPartnerCompatibilityRaw,
-      partnerLikes: aiPartnerLikesRaw,
-      partnerChartReading: aiPartnerChartReadingRaw,
-    });
-  };
+  const [selectedLang, setSelectedLang] = useState("my");
 
   const handleSaveInfoCard = async () => {
     setShowShareMenu(false);
@@ -139,15 +123,17 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
     setShowShareMenu(false);
     if (!pdfRef.current) return;
     try {
-      const canvas = await html2canvas(pdfRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      // Use toJpeg from html-to-image, which handles SVG foreign objects better
+      const imgData = await toJpeg(pdfRef.current, { quality: 0.95, pixelRatio: 2 });
+      
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "mm",
         format: "a4"
       });
+      const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
       let heightLeft = pdfHeight;
       let position = 0;
@@ -164,7 +150,10 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
       }
 
       pdf.save(`${person1.name || "kakoei"}-reading.pdf`);
-    } catch (e) { console.error("Error saving PDF:", e); }
+    } catch (e) { 
+      console.error("Error saving PDF:", e);
+      alert("There was an issue generating the PDF. Please try again.");
+    }
   };
 
   const renderFeedback = (section: string, sectionLabel: string) => {
@@ -182,7 +171,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
   };
 
   return (
-    <div className="safe-top safe-bottom bg-[#EEEDEA]">
+    <div className="safe-top safe-bottom bg-[#2b2b2b] gritty-texture min-h-screen">
       {/* Top bar */}
       <div className="px-5 pt-4 pb-2.5 flex items-center justify-between">
         <button onClick={onBack} className="w-9 h-9 rounded-[11px] bg-white border border-border-soft flex items-center justify-center active:bg-light-gray active:scale-95 transition-all">
@@ -192,41 +181,9 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
           <div className="w-6 h-6 flex items-center justify-center">
             <img src="/logo.png" alt="Kakoei Logo" className="w-full h-full object-contain" />
           </div>
-          <h2 className="font-[var(--font-display)] font-700 text-[15px] tracking-[-0.02em] text-3d">Your Reading</h2>
+          <h2 className="font-[var(--font-display)] font-700 text-[15px] tracking-[-0.02em] text-warm-black">Your Reading</h2>
         </div>
         <div className="flex items-center gap-1.5">
-          {/* Language selector */}
-          <div className="relative">
-            <button
-              onClick={() => setShowLangMenu(!showLangMenu)}
-              className="h-9 px-2.5 rounded-[11px] bg-white border border-border-soft flex items-center gap-1 active:bg-light-gray active:scale-95 transition-all"
-            >
-              <span className="text-[11px] font-700 text-warm-black uppercase">{lang}</span>
-              <ChevronDown size={12} />
-            </button>
-            <AnimatePresence>
-              {showLangMenu && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-11 w-[140px] bg-white rounded-[14px] border border-border-soft shadow-lg z-50 py-1.5 max-h-[280px] overflow-y-auto no-scrollbar"
-                >
-                  {LANGUAGES.map((l) => (
-                    <button
-                      key={l.code}
-                      onClick={() => handleLangChange(l.code)}
-                      className={`w-full text-left px-3.5 py-2 text-[12px] font-600 transition-colors ${lang === l.code ? "bg-pastel-yellow-soft text-warm-black" : "text-warm-gray hover:bg-light-gray"
-                        }`}
-                    >
-                      {l.label}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
           <div className="relative">
             <button onClick={() => setShowShareMenu(!showShareMenu)} className="w-9 h-9 rounded-[11px] bg-warm-black text-white flex items-center justify-center active:opacity-80 active:scale-95 transition-all">
               <ShareIcon size={14} />
@@ -300,29 +257,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
         />
       </div>
 
-      {/* Translating indicator */}
-      <AnimatePresence>
-        {translating && (
-          <motion.div
-            initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-            animate={{ opacity: 1, height: "auto", marginBottom: 8 }}
-            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-            transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-            className="mx-5 overflow-hidden"
-          >
-            <div className="flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-[12px] bg-pastel-yellow-soft border border-pastel-yellow-light">
-              <div className="flex gap-1">
-                {[0, 1, 2].map(i => (
-                  <motion.div key={i} animate={{ scale: [0.8, 1.2, 0.8], opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }} className="w-1.5 h-1.5 rounded-full bg-warm-black" />
-                ))}
-              </div>
-              <span className="text-[11px] font-700 text-warm-black">
-                Translating to {LANGUAGES.find(l => l.code === lang)?.label}...
-              </span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Translating indicator removed (handled per-paragraph now) */}
 
       {/* Hero card (shareable) */}
       <div ref={shareRef} className="mx-5 mb-3">
@@ -439,7 +374,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
                 mbti={activePerson === "person1" ? mbti1 : person2!.mbti}
                 mbtiDesc={activePerson === "person1" ? mbti1Desc : mbtiDescriptions[person2!.mbti]}
                 aiInsight={activePerson === "person1" ? aiPersonality : aiPartnerPersonality}
-                lang={lang}
+                lang={selectedLang}
+                onLangChange={setSelectedLang}
               />
               {renderFeedback("personality", "Personality")}
             </TabContent>
@@ -449,7 +385,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
               <LoveSection
                 sign={activePerson === "person1" ? sign1 : sign2!}
                 aiInsight={activePerson === "person1" ? aiLove : aiPartnerLove}
-                lang={lang}
+                lang={selectedLang}
+                onLangChange={setSelectedLang}
               />
               {renderFeedback("love", "Love")}
             </TabContent>
@@ -463,7 +400,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
                 sign2Key={activePerson === "person1" ? sign2Key : sign1Key}
                 compatScore={compatScore}
                 aiInsight={activePerson === "person1" ? aiCompatibility : aiPartnerCompatibility}
-                lang={lang}
+                lang={selectedLang}
+                onLangChange={setSelectedLang}
               />
               {renderFeedback("compatibility", "Compatibility")}
             </TabContent>
@@ -473,7 +411,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
               <LikesSection
                 sign={activePerson === "person1" ? sign1 : sign2!}
                 aiInsight={activePerson === "person1" ? aiLikes : aiPartnerLikes}
-                lang={lang}
+                lang={selectedLang}
+                onLangChange={setSelectedLang}
               />
               {renderFeedback("likes", "Likes")}
             </TabContent>
@@ -483,7 +422,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({
               <ChartSection
                 birthChartData={activePerson === "person1" ? birthChartData || null : partnerBirthChartData || null}
                 aiChartReading={activePerson === "person1" ? aiChartReading : aiPartnerChartReading}
-                lang={lang}
+                lang={selectedLang}
+                onLangChange={setSelectedLang}
               />
             </TabContent>
           )}
@@ -508,49 +448,175 @@ const TabContent: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </motion.div>
 );
 
-function getLangClass(lang: string): string {
-  if (lang === "my") return "translated-text";
-  if (["zh", "ja", "ko"].includes(lang)) return "translated-cjk";
-  if (lang === "ar") return "translated-rtl";
-  if (lang !== "en") return "translated-text";
-  return "";
-}
+const ParagraphBlock: React.FC<{ text: string; index: number; targetLang: string; onLangChange?: (l: string) => void }> = ({ text, index, targetLang, onLangChange }) => {
+  const [displayedText, setDisplayedText] = useState("");
+  const [isGenerating, setIsGenerating] = useState(true);
+  
+  const [translatedText, setTranslatedText] = useState<string | null>(null);
+  const [translatedLang, setTranslatedLang] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [showLangMenu, setShowLangMenu] = useState(false);
 
-const AiText: React.FC<{ text: string | null; fallbackMsg?: string; lang?: string }> = ({ text, fallbackMsg, lang = "en" }) => {
+  // Typewriter effect for initial English text
+  React.useEffect(() => {
+    let currentIdx = 0;
+    const speed = 15; // ms per char
+    
+    // Slight delay based on index so paragraphs appear sequentially
+    const delayTimeout = setTimeout(() => {
+      const interval = setInterval(() => {
+        if (currentIdx <= text.length) {
+          setDisplayedText(text.slice(0, currentIdx));
+          currentIdx++;
+        } else {
+          setIsGenerating(false);
+          clearInterval(interval);
+        }
+      }, speed);
+      return () => clearInterval(interval);
+    }, index * 800);
+    
+    return () => clearTimeout(delayTimeout);
+  }, [text, index]);
+
+  const handleTranslateTo = async (langCode: string) => {
+    setShowLangMenu(false);
+    if (onLangChange) onLangChange(langCode);
+    
+    // If already translated properly to requested language, toggle
+    if (translatedText && translatedLang === langCode) {
+      setShowOriginal(!showOriginal);
+      return;
+    }
+    
+    setIsTranslating(true);
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, targetLang: langCode }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.translated) {
+          setTranslatedText(data.translated);
+          setTranslatedLang(langCode);
+          setShowOriginal(false);
+        }
+      }
+    } catch (e) {
+      console.error("Translation error", e);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const activeText = (translatedText && !showOriginal && translatedLang === targetLang) ? translatedText : displayedText;
+  const isCurrentlyAnimating = (isGenerating && !translatedText && !showOriginal) || isTranslating;
+  const isMyanmar = (translatedText && !showOriginal && translatedLang === "my" && targetLang === "my");
+  const targetLangLabel = LANGUAGES.find(l => l.code === targetLang)?.label || targetLang;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="relative flex flex-col gap-2 mb-4"
+    >
+      <div className={`text-[15px] leading-[1.8] chalk-effect ${isMyanmar ? 'translated-text' : ''}`}>
+        {activeText}
+        {isCurrentlyAnimating && (
+          <span className="quill-anim text-warm-black">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+              <path d="M2 2l7.586 7.586"></path>
+              <circle cx="11" cy="11" r="2"></circle>
+            </svg>
+          </span>
+        )}
+      </div>
+      
+      {!isGenerating && (
+        <div className="flex justify-end mt-1 relative z-10">
+          <div className="flex items-center bg-warm-black rounded-lg shadow-sm border border-warm-black/10">
+            <button 
+              onClick={() => {
+                if (translatedText && translatedLang === targetLang) {
+                  setShowOriginal(!showOriginal);
+                } else {
+                  handleTranslateTo(targetLang);
+                }
+              }}
+              disabled={isTranslating}
+              className="text-[11px] font-600 px-3 py-1.5 text-white hover:bg-black active:scale-95 transition-all flex items-center gap-1.5 rounded-l-lg"
+            >
+              {isTranslating ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  Translating...
+                </>
+              ) : (translatedText && translatedLang === targetLang) ? (
+                showOriginal ? `Translate to ${targetLangLabel}` : "Show Original"
+              ) : (
+                `Translate to ${targetLangLabel}`
+              )}
+            </button>
+            <div className={`w-[1px] h-4 bg-white/20 ${isTranslating ? 'opacity-50' : ''}`}></div>
+            <button
+              onClick={() => setShowLangMenu(!showLangMenu)}
+              disabled={isTranslating}
+              className="px-2 py-1.5 text-white hover:bg-black active:scale-105 transition-all rounded-r-lg"
+            >
+              <ChevronDown size={12} />
+            </button>
+
+            <AnimatePresence>
+              {showLangMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 bottom-[110%] mb-1.5 w-[140px] bg-white rounded-[14px] border border-border-soft shadow-xl z-50 py-1.5 max-h-[220px] overflow-y-auto no-scrollbar"
+                >
+                  {LANGUAGES.map((l) => (
+                    <button
+                      key={l.code}
+                      onClick={() => handleTranslateTo(l.code)}
+                      className={`w-full text-left px-3.5 py-2 text-[12px] font-600 transition-colors ${targetLang === l.code ? "bg-pastel-yellow-soft text-warm-black" : "text-warm-gray hover:bg-light-gray"}`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
+const AiText: React.FC<{ text: string | null; fallbackMsg?: string; lang?: string; onLangChange?: (l: string) => void }> = ({ text, fallbackMsg, lang = "my", onLangChange }) => {
   if (text) {
     const paragraphs = text.split("\n\n").filter(Boolean);
-    const extraClass = getLangClass(lang);
     return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={text.slice(0, 60)}
-          initial={{ opacity: 0, filter: "blur(4px)" }}
-          animate={{ opacity: 1, filter: "blur(0px)" }}
-          exit={{ opacity: 0, filter: "blur(4px)" }}
-          transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
-          className={`flex flex-col gap-3 ${extraClass}`}
-        >
-          {paragraphs.map((p, i) => (
-            <motion.p
-              key={i}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: i * 0.04, ease: [0.25, 0.1, 0.25, 1] }}
-              className={`text-warm-gray ${lang === "my" ? "text-[15px]" : "text-[14px] leading-[1.8]"}`}
-            >
-              {p.trim()}
-            </motion.p>
-          ))}
-        </motion.div>
-      </AnimatePresence>
+      <div className="flex flex-col">
+        {paragraphs.map((p, i) => (
+          <ParagraphBlock key={`${p.slice(0, 10)}-${i}`} text={p.trim()} index={i} targetLang={lang} onLangChange={onLangChange} />
+        ))}
+      </div>
     );
   }
-  return <p className="text-[13px] text-medium-gray italic">{fallbackMsg || "AI reading is loading..."}</p>;
+  return <p className="text-[13px] text-warm-gray italic chalk-effect">{fallbackMsg || "AI reading is loading..."}</p>;
 };
 
 /* -- Sections -- */
 
-const PersonalitySection: React.FC<{ sign: ZodiacSign; mbti: string; mbtiDesc: { title: string; description: string } | undefined; aiInsight: string | null; lang: string }> = ({ sign, mbti, mbtiDesc, aiInsight, lang }) => (
+const PersonalitySection: React.FC<{ sign: ZodiacSign; mbti: string; mbtiDesc: { title: string; description: string } | undefined; aiInsight: string | null; lang: string; onLangChange?: (l: string) => void }> = ({ sign, mbti, mbtiDesc, aiInsight, lang, onLangChange }) => (
   <div className="flex flex-col gap-3">
     {/* Tags */}
     <div className="flex flex-wrap gap-1.5">
@@ -562,7 +628,7 @@ const PersonalitySection: React.FC<{ sign: ZodiacSign; mbti: string; mbtiDesc: {
     {/* AI Reading */}
     <div className="card-bordered p-5">
       <h4 className="section-title mb-3 text-3d">Your Personality Reading</h4>
-      <AiText text={aiPersonality(aiInsight)} lang={lang} />
+      <AiText text={aiInsight} lang={lang} onLangChange={onLangChange} />
     </div>
 
     {/* MBTI Card */}
@@ -620,12 +686,7 @@ const PersonalitySection: React.FC<{ sign: ZodiacSign; mbti: string; mbtiDesc: {
   </div>
 );
 
-// Helper to pass aiInsight correctly
-function aiPersonality(insight: string | null): string | null {
-  return insight;
-}
-
-const LoveSection: React.FC<{ sign: ZodiacSign; aiInsight: string | null; lang: string }> = ({ sign, aiInsight, lang }) => (
+const LoveSection: React.FC<{ sign: ZodiacSign; aiInsight: string | null; lang: string; onLangChange?: (l: string) => void }> = ({ sign, aiInsight, lang, onLangChange }) => (
   <div className="flex flex-col gap-3">
     <div className="card-accent p-5">
       <div className="flex items-center gap-2.5 mb-3">
@@ -634,7 +695,7 @@ const LoveSection: React.FC<{ sign: ZodiacSign; aiInsight: string | null; lang: 
           <span className="text-[11px] font-700 text-warm-black">{sign.loveStyle}</span>
         </div>
       </div>
-      <AiText text={aiInsight} fallbackMsg="Your love reading is being prepared..." lang={lang} />
+      <AiText text={aiInsight} fallbackMsg="Your love reading is being prepared..." lang={lang} onLangChange={onLangChange} />
     </div>
     <div className="card-bordered p-5">
       <h4 className="section-title mb-4">Most Compatible With</h4>
@@ -655,15 +716,15 @@ const LoveSection: React.FC<{ sign: ZodiacSign; aiInsight: string | null; lang: 
 );
 
 const CompatibilitySection: React.FC<{
-  sign1: ZodiacSign; sign1Key: string; sign2: ZodiacSign | null; sign2Key: string | null; compatScore: number | null; aiInsight: string | null; lang: string;
-}> = ({ sign1, sign2, compatScore, aiInsight, lang }) => (
+  sign1: ZodiacSign; sign1Key: string; sign2: ZodiacSign | null; sign2Key: string | null; compatScore: number | null; aiInsight: string | null; lang: string; onLangChange?: (l: string) => void;
+}> = ({ sign1, sign2, compatScore, aiInsight, lang, onLangChange }) => (
   <div className="flex flex-col gap-3">
     {sign2 && compatScore !== null ? (
       <>
         <CompatibilityWheel score={compatScore} sign1={sign1.name} sign2={sign2.name} />
         <div className="card-bordered p-5">
           <h4 className="section-title mb-3 text-3d">{sign1.name} and {sign2.name}</h4>
-          <AiText text={aiInsight} fallbackMsg="Compatibility analysis loading..." lang={lang} />
+          <AiText text={aiInsight} fallbackMsg="Compatibility analysis loading..." lang={lang} onLangChange={onLangChange} />
         </div>
       </>
     ) : (
@@ -671,7 +732,7 @@ const CompatibilitySection: React.FC<{
         <CompatibilityWheel score={85} sign1={sign1.name} sign2={sign1.compatibleSigns[0]} />
         <div className="card-bordered p-5">
           <h4 className="section-title mb-3">Your Compatibility Profile</h4>
-          <AiText text={aiInsight} fallbackMsg="Compatibility analysis loading..." lang={lang} />
+          <AiText text={aiInsight} fallbackMsg="Compatibility analysis loading..." lang={lang} onLangChange={onLangChange} />
           <div className="flex flex-wrap gap-2 mt-3">
             {sign1.compatibleSigns.map((cs) => (
               <span key={cs} className="puffy-pill-yellow px-3 py-1.5 text-[11px] font-600 text-warm-black">{cs}</span>
@@ -683,11 +744,11 @@ const CompatibilitySection: React.FC<{
   </div>
 );
 
-const LikesSection: React.FC<{ sign: ZodiacSign; aiInsight: string | null; lang: string }> = ({ sign, aiInsight, lang }) => (
+const LikesSection: React.FC<{ sign: ZodiacSign; aiInsight: string | null; lang: string; onLangChange?: (l: string) => void }> = ({ sign, aiInsight, lang, onLangChange }) => (
   <div className="flex flex-col gap-3">
     <div className="card-bordered p-5">
       <h4 className="section-title mb-4 text-3d">Interests & Career</h4>
-      <AiText text={aiInsight} fallbackMsg="Preferences analysis loading..." lang={lang} />
+      <AiText text={aiInsight} fallbackMsg="Preferences analysis loading..." lang={lang} onLangChange={onLangChange} />
     </div>
     <div className="card-dark p-5">
       <h4 className="text-[15px] font-700 text-white mb-3 text-3d-dark">Chart Details</h4>
@@ -708,7 +769,7 @@ const LikesSection: React.FC<{ sign: ZodiacSign; aiInsight: string | null; lang:
   </div>
 );
 
-const ChartSection: React.FC<{ birthChartData: Record<string, unknown> | null; aiChartReading: string | null; lang: string }> = ({ birthChartData, aiChartReading, lang }) => {
+const ChartSection: React.FC<{ birthChartData: Record<string, unknown> | null; aiChartReading: string | null; lang: string; onLangChange?: (l: string) => void }> = ({ birthChartData, aiChartReading, lang, onLangChange }) => {
   return (
     <div className="flex flex-col gap-3">
 
@@ -718,7 +779,7 @@ const ChartSection: React.FC<{ birthChartData: Record<string, unknown> | null; a
       {/* AI full chart reading */}
       <div className="card-bordered p-5">
         <h4 className="section-title mb-3 text-3d">Full Chart Reading</h4>
-        <AiText text={aiChartReading} fallbackMsg="Your detailed chart reading is being prepared by the AI astrologer..." lang={lang} />
+        <AiText text={aiChartReading} fallbackMsg="Your detailed chart reading is being prepared by the AI astrologer..." lang={lang} onLangChange={onLangChange} />
       </div>
     </div>
   );

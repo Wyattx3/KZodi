@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { auth } from "@/auth";
+import valkey from "@/lib/redis";
+
+// Cache TTL for character listings (seconds)
+const CHAR_CACHE_TTL = 60;
 
 export async function GET(req: NextRequest) {
     try {
@@ -70,6 +74,22 @@ export async function GET(req: NextRequest) {
         queryStr += ` ORDER BY (likes_count * 2 + msg_count) DESC NULLS LAST LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
         params.push(limit, offset);
 
+        // ─── Redis Cache Layer ─────────────────────────────────────────
+        // Cache public, non-search, non-mine queries (same for all users)
+        const isCacheable = !mine && !search;
+        const cacheKey = isCacheable ? `chars:${tag}:${limit}:${offset}` : null;
+
+        if (cacheKey) {
+            try {
+                const cached = await valkey.get(cacheKey);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    // Inject user-specific liked status on top of cached data
+                    return NextResponse.json(parsed);
+                }
+            } catch (e) { /* cache miss, continue to DB */ }
+        }
+
         const [result, countResult] = await Promise.all([
             pool.query(queryStr, params),
             pool.query(countStr, countParams)
@@ -110,7 +130,13 @@ export async function GET(req: NextRequest) {
             return char;
         });
 
-        return NextResponse.json({ characters, total, hasMore, offset });
+        // Save to Redis cache (non-blocking)
+        const responsePayload = { characters, total, hasMore, offset };
+        if (cacheKey) {
+            valkey.set(cacheKey, JSON.stringify(responsePayload), 'EX', CHAR_CACHE_TTL).catch(() => {});
+        }
+
+        return NextResponse.json(responsePayload);
     } catch (error) {
         console.error("Failed to fetch characters:", error);
         return NextResponse.json({ error: "Failed to fetch characters" }, { status: 500 });

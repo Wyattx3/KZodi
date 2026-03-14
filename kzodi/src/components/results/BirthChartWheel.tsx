@@ -31,18 +31,18 @@ interface HouseData {
 }
 
 /* -- Chart geometry -- */
-const W = 380;
+const W = 460;
 const CX = W / 2;
 const CY = W / 2;
-const R_OUTER = 178;
-const R_SIGN_OUT = 172;
-const R_SIGN_IN = 142;
-const R_PLANET = 112;
-const R_HOUSE_NUM = 82;
-const R_INNER = 56;
-const R_CENTER = 22;
-const PLANET_CIRCLE_R = 12;
-const MIN_SEP = 14;
+const R_OUTER = 216;
+const R_SIGN_OUT = 208;
+const R_SIGN_IN = 172;
+const R_PLANET = 138;
+const R_HOUSE_NUM = 100;
+const R_INNER = 68;
+const R_CENTER = 28;
+const PLANET_CIRCLE_R = 14;
+const MIN_SEP = 18;
 
 /* -- Zodiac glyph SVG paths (16x16 viewBox) -- */
 const SIGN_GLYPHS = [
@@ -127,8 +127,8 @@ function spreadPlanets(
           const push = (MIN_SEP - actual) / 2 + 0.5;
           out[i].displayAngle -= push;
           out[j].displayAngle += push;
-          if (actual < MIN_SEP * 0.6) {
-            out[j].r = R_PLANET - 16;
+          if (actual < MIN_SEP * 0.7) {
+            out[j].r = R_PLANET - 22;
           }
           moved = true;
         }
@@ -193,7 +193,7 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
         stroke="rgba(255,255,255,0.15)" strokeWidth="0.8" />
     );
     // zodiac glyph
-    const gs = 14;
+    const gs = 18;
     signs.push(
       <g key={`sg${i}`} transform={`translate(${mp.x - gs / 2},${mp.y - gs / 2}) scale(${gs / 16})`}>
         <path d={SIGN_GLYPHS[i]} fill="none"
@@ -228,7 +228,7 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
       houseEls.push(
         <text key={`hn${h.number}`} x={np.x} y={np.y}
           textAnchor="middle" dominantBaseline="central"
-          fontSize="9" fill="rgba(255,255,255,0.4)" fontWeight="600"
+          fontSize="11" fill="rgba(255,255,255,0.5)" fontWeight="600"
           fontFamily="var(--font-display)">{h.number}</text>
       );
     }
@@ -256,7 +256,7 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
         <rect x={lp.x - 14} y={lp.y - 7} width="28" height="14"
           rx="4" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" strokeWidth="0.5" />
         <text x={lp.x} y={lp.y} textAnchor="middle" dominantBaseline="central"
-          fontSize="7.5" fill="#FFE566" fontWeight="800"
+          fontSize="8.5" fill="#FFE566" fontWeight="800"
           fontFamily="var(--font-display)">{l}</text>
       </g>
     );
@@ -297,15 +297,15 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
           fill="rgba(20,20,25,0.8)" stroke="#FFE566" strokeWidth="1.2" filter="url(#glow)" />
         <text x={pos.x} y={pos.y + 0.5}
           textAnchor="middle" dominantBaseline="central"
-          fontSize="8.5" fill="#FFE566" fontWeight="700"
+          fontSize="10" fill="#FFE566" fontWeight="700"
           fontFamily="var(--font-display)">{label}</text>
         {p.retro && (
           <>
             <circle cx={pos.x + PLANET_CIRCLE_R - 1} cy={pos.y - PLANET_CIRCLE_R + 1}
-              r="5" fill="#D04040" />
+              r="6.5" fill="#D04040" />
             <text x={pos.x + PLANET_CIRCLE_R - 1} y={pos.y - PLANET_CIRCLE_R + 1.5}
               textAnchor="middle" dominantBaseline="central"
-              fontSize="6" fill="white" fontWeight="800">R</text>
+              fontSize="7.5" fill="white" fontWeight="800">R</text>
           </>
         )}
       </g>
@@ -355,7 +355,7 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
              borderRadius: "50%"
         }}
       >
-        <svg width="100%" viewBox={`0 0 ${W} ${W}`} className="block">
+        <svg width="100%" viewBox={`0 0 ${W} ${W}`} className="block mx-auto max-w-[460px]">
           <defs>
              <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="2" result="blur" />

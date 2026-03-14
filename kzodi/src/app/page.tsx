@@ -12,23 +12,30 @@ function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
+  const [isAppMode, setIsAppMode] = useState(false);
   const view = searchParams.get("view") === "chat-landing" ? "chat-landing" : "landing";
 
-  // Auto-redirect to /chat if already logged in (PWA persistence)
+  // Auto-redirect to /chat if already logged in, in PWA standalone mode, or in Capacitor native app
   useEffect(() => {
-    // If the app is installed and opened as a PWA (standalone mode),
-    // force redirect to /chat to prevent them from getting stuck on the landing page
     const isStandalone = typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches;
+    const isCapacitor = typeof window !== "undefined" && !!(window as any).Capacitor;
+    const isApp = isStandalone || isCapacitor;
+    setIsAppMode(isApp);
 
-    if (isStandalone) {
+    // In native app or installed PWA — go to chat only if authenticated
+    if (isApp && status === "authenticated" && session) {
       router.replace("/chat");
       return;
     }
 
-    if (status === "authenticated" && session) {
+    // On web browser — also redirect if authenticated
+    if (!isApp && status === "authenticated" && session) {
       router.replace("/chat");
     }
   }, [status, session, router]);
+
+  // In app mode (Capacitor/PWA), always show ChatLandingPage (Get Started), never the marketing landing
+  const effectiveView = isAppMode ? "chat-landing" : view;
 
   const handleChatGetStarted = () => {
     const isAstrologerRedirect = typeof window !== 'undefined' ? localStorage.getItem("pendingAstrologerRedirect") : null;
@@ -47,11 +54,11 @@ function HomeContent() {
   return (
     <div className="chat-app" style={{ height: '100dvh', overflow: 'hidden' }}>
       <AnimatePresence mode="wait">
-        {view === "landing" && (
+        {effectiveView === "landing" && (
           <LandingPage key="landing" />
         )}
 
-        {view === "chat-landing" && (
+        {effectiveView === "chat-landing" && (
           <ChatLandingPage
             key="chat-landing"
             onGetStarted={handleChatGetStarted}

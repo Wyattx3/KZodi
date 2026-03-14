@@ -20,6 +20,8 @@ interface RateLimitRule {
 
 const RATE_LIMITS: Record<string, RateLimitRule> = {
   "/api/chat":      { windowMs: 60_000, maxRequests: 20 },
+  "/api/roleplay":  { windowMs: 60_000, maxRequests: 15 },
+  "/api/voice":     { windowMs: 60_000, maxRequests: 10 },
   "/api/analyze":   { windowMs: 60_000, maxRequests: 5 },
   "/api/translate":  { windowMs: 60_000, maxRequests: 30 },
   "/api/feedback":  { windowMs: 60_000, maxRequests: 10 },

@@ -13,6 +13,7 @@ export const pool =
     ssl: {
       rejectUnauthorized: false,
     },
+    max: 25, // Scaled up from default 10 for 100K DAU
   });
 
 if (process.env.NODE_ENV !== "production") {
@@ -185,6 +186,7 @@ export async function ensureSchema() {
     await query(`CREATE INDEX IF NOT EXISTS char_visibility_idx ON characters (visibility);`);
     await query(`CREATE INDEX IF NOT EXISTS char_likes_idx ON characters (likes_count DESC);`);
     await query(`CREATE INDEX IF NOT EXISTS char_msg_count_idx ON characters (msg_count DESC);`);
+    await query(`CREATE INDEX IF NOT EXISTS char_trending_idx ON characters ((likes_count * 2 + msg_count) DESC);`);
 
     // --- Character Likes Table ---
     await query(`

@@ -112,11 +112,11 @@ export const MODELS = {
   GEMINI: GEMINI_MODEL,
 } as const;
 
-/** Pay-as-you-go TPM limits */
+/** Paid tier TPM limits (updated for 100K scale) */
 const MODEL_TPM_LIMITS: Record<string, number> = {
-  "gemini-3-flash-preview": 1000000,
-  "moonshotai/kimi-k2-instruct-0905": 131_072,
-  "llama-3.3-70b-versatile": 150_000,
+  "gemini-3-flash-preview": 1_000_000,
+  "moonshotai/kimi-k2-instruct-0905": 300_000,
+  "llama-3.3-70b-versatile": 300_000,
 };
 
 // ─── LRU Cache ───────────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ class LRUCache {
   private maxSize: number;
   private ttlMs: number;
 
-  constructor(maxSize = 500, ttlMinutes = 30) {
+  constructor(maxSize = 2000, ttlMinutes = 60) {
     this.maxSize = maxSize;
     this.ttlMs = ttlMinutes * 60 * 1000;
   }
@@ -183,7 +183,7 @@ class RequestQueue {
   private active = 0;
   private maxConcurrent: number;
 
-  constructor(maxConcurrent = 2) {
+  constructor(maxConcurrent = 5) {
     this.maxConcurrent = maxConcurrent;
   }
 
@@ -332,7 +332,7 @@ class MultiProviderClient {
   private tpm: TPMTracker;
 
   constructor() {
-    this.cache = new LRUCache(500, 30);
+    this.cache = new LRUCache(2000, 60);
     this.tpm = new TPMTracker();
   }
 

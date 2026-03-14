@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { query, ensureSchema } from "@/lib/db";
 import { auth } from "@/auth";
+import valkey from "@/lib/redis";
+
+const CONV_CACHE_TTL = 30; // seconds
 
 /**
  * GET /api/conversations
@@ -16,6 +19,15 @@ export async function GET() {
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+
+        // ─── Redis Cache Layer ─────────────────────────────────────────
+        const cacheKey = `convos:${userId}`;
+        try {
+            const cached = await valkey.get(cacheKey);
+            if (cached) {
+                return NextResponse.json(JSON.parse(cached));
+            }
+        } catch (e) { /* cache miss, continue to DB */ }
 
         await ensureSchema();
 
@@ -55,7 +67,12 @@ export async function GET() {
             } : null
         }));
 
-        return NextResponse.json({ conversations });
+        const responsePayload = { conversations };
+
+        // Cache (non-blocking)
+        valkey.set(cacheKey, JSON.stringify(responsePayload), 'EX', CONV_CACHE_TTL).catch(() => {});
+
+        return NextResponse.json(responsePayload);
     } catch (error) {
         console.error("Error fetching conversations:", error);
         return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getZodiacSign } from "@/lib/zodiac";
 import SpecialistSetup from "./SpecialistSetups";
+import VoiceRecorder from "./VoiceRecorder";
 
 interface ChatRoomProps {
     character: Character;
@@ -738,6 +739,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const groupIntroTriggered = useRef(false);
     const isAiRespondingRef = useRef(false);
     const pendingMessagesRef = useRef<{ text: string; repliedContent?: string; repliedId?: string }[]>([]);
+    const [isVoiceRecording, setIsVoiceRecording] = useState(false);
 
     const { sendMessage, addReply, markAsSeen, addGroupReply } = useChatStore.getState();
 
@@ -1303,6 +1305,14 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         // Fire-and-forget: don't block the UI — user can keep typing
         triggerAiResponse(text, repliedContent, repliedId)
             .catch(err => console.error("AI response failed:", err));
+    };
+
+    // Voice transcription handler — auto-sends the transcribed text
+    const handleVoiceTranscription = (text: string) => {
+        if (!text.trim()) return;
+        sendMessage(character.id, text.trim());
+        triggerAiResponse(text.trim())
+            .catch(err => console.error("AI response failed (voice):", err));
     };
 
     // Process AI response and handle splitting
@@ -2064,6 +2074,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                                 <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                             </svg>
                                         </button>
+                                        <VoiceRecorder onTranscription={handleVoiceTranscription} disabled={isBlocked} />
                                     </div>
                                 )}
                                 <textarea
