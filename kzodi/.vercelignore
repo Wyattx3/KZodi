@@ -1,0 +1,9 @@
+android/
+.next/
+node_modules/
+*.md
+load-test.js
+production-analysis-test.js
+trigger-init-pg.js
+trigger-init.mjs
+competitor_analysis_report.md
