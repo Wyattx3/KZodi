@@ -3,14 +3,13 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface VoiceRecorderProps {
-    onTranscription: (text: string) => void;
+    onRecordComplete: (blob: Blob, duration: number) => void;
     disabled?: boolean;
 }
 
-export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecorderProps) {
+export default function VoiceRecorder({ onRecordComplete, disabled }: VoiceRecorderProps) {
     const [isRecording, setIsRecording] = useState(false);
     const [duration, setDuration] = useState(0);
-    const [isTranscribing, setIsTranscribing] = useState(false);
     const [cancelled, setCancelled] = useState(false);
     const [slideX, setSlideX] = useState(0);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -20,9 +19,12 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const startXRef = useRef(0);
     const cancelledRef = useRef(false);
+    const isPointerDownRef = useRef(false);
+    const startTimeRef = useRef(0);
     const errorTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    const CANCEL_THRESHOLD = -80;
+    // Increase cancel threshold slightly for easier cancellations
+    const CANCEL_THRESHOLD = -100;
 
     const formatDuration = (s: number) => {
         const mins = Math.floor(s / 60);
@@ -57,7 +59,17 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
                     ? "audio/webm"
                     : "audio/ogg";
 
-            const recorder = new MediaRecorder(stream, { mimeType });
+            if (!isPointerDownRef.current) {
+                // User let go before initialization finished
+                stream.getTracks().forEach((t) => t.stop());
+                return;
+            }
+
+            // Optimize for speech (16kbps is plenty for Whisper and uploads instantly)
+            const recorder = new MediaRecorder(stream, { 
+                mimeType,
+                audioBitsPerSecond: 16000
+            });
             chunksRef.current = [];
             cancelledRef.current = false;
             setCancelled(false);
@@ -67,55 +79,36 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
                 if (e.data.size > 0) chunksRef.current.push(e.data);
             };
 
-            recorder.onstop = async () => {
+            recorder.onstop = () => {
                 // Stop all tracks
-                stream.getTracks().forEach(t => t.stop());
+                stream.getTracks().forEach((t) => t.stop());
 
-                if (cancelledRef.current) {
-                    chunksRef.current = [];
+                const wasCancelled = cancelledRef.current;
+                const chunks = chunksRef.current;
+                const blob = chunks.length > 0 ? new Blob(chunks, { type: mimeType }) : null;
+                
+                // Clear immediately for next run
+                chunksRef.current = [];
+
+                if (wasCancelled || !blob) {
                     return;
                 }
 
-                if (chunksRef.current.length === 0) return;
-
-                const blob = new Blob(chunksRef.current, { type: mimeType });
-                chunksRef.current = [];
-
-                // Only send if > 0.3s of audio (avoid accidental taps)
+                // Only send if > 0.5s of audio (avoid accidental taps more cleanly)
                 if (blob.size < 1000) return;
 
-                setIsTranscribing(true);
-                try {
-                    const formData = new FormData();
-                    const ext = mimeType.includes("webm") ? "webm" : "ogg";
-                    formData.append("audio", blob, `voice.${ext}`);
-
-                    const res = await fetch("/api/voice", {
-                        method: "POST",
-                        body: formData,
-                    });
-
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.text && data.text.trim()) {
-                            onTranscription(data.text.trim());
-                        }
-                    } else {
-                        console.error("[Voice] Transcription failed:", res.status);
-                        showError("Transcription failed");
-                    }
-                } catch (err) {
-                    console.error("[Voice] Error sending audio:", err);
-                    showError("Network error");
-                } finally {
-                    setIsTranscribing(false);
-                }
+                // Fire completion using a slightly delayed effect to ensure states flush
+                Promise.resolve().then(() => {
+                    const actualSeconds = Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000));
+                    onRecordComplete(blob, actualSeconds);
+                });
             };
 
             recorder.start(250); // Collect data every 250ms
             mediaRecorderRef.current = recorder;
             setIsRecording(true);
             setDuration(0);
+            startTimeRef.current = Date.now();
 
             timerRef.current = setInterval(() => {
                 setDuration(d => d + 1);
@@ -132,7 +125,7 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
             }
             console.warn("[Voice] Mic error:", errName, err?.message);
         }
-    }, [disabled, onTranscription]);
+    }, [disabled, onRecordComplete, duration]);
 
     const stopRecording = useCallback(() => {
         if (timerRef.current) {
@@ -156,17 +149,35 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
         stopRecording();
     }, [stopRecording]);
 
-    // Handle slide-to-cancel on pointer move
-    const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    // Handle global pointer events to ensure slide-to-cancel works even if finger leaves the button
+    useEffect(() => {
         if (!isRecording) return;
-        const dx = e.clientX - startXRef.current;
-        if (dx < 0) {
-            setSlideX(dx);
-            if (dx < CANCEL_THRESHOLD) {
-                cancelRecording();
+        
+        const handleMove = (e: PointerEvent) => {
+            const dx = e.clientX - startXRef.current;
+            if (dx < 0) {
+                setSlideX(dx);
+                if (dx < CANCEL_THRESHOLD) {
+                    cancelRecording();
+                }
             }
-        }
-    }, [isRecording, cancelRecording]);
+        };
+
+        const handleUp = () => {
+            isPointerDownRef.current = false;
+            stopRecording();
+        };
+
+        window.addEventListener('pointermove', handleMove);
+        window.addEventListener('pointerup', handleUp);
+        window.addEventListener('pointercancel', cancelRecording);
+
+        return () => {
+            window.removeEventListener('pointermove', handleMove);
+            window.removeEventListener('pointerup', handleUp);
+            window.removeEventListener('pointercancel', cancelRecording);
+        };
+    }, [isRecording, cancelRecording, stopRecording, CANCEL_THRESHOLD]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -179,38 +190,25 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
         };
     }, []);
 
-    // Transcribing state — show spinner
-    if (isTranscribing) {
-        return (
-            <div style={{
-                display: "flex", alignItems: "center", gap: "8px",
-                padding: "6px 12px", borderRadius: "20px",
-                background: "rgba(99, 102, 241, 0.1)",
-            }}>
-                <motion.div
-                    style={{ width: 16, height: 16, border: "2px solid #6366f1", borderTop: "2px solid transparent", borderRadius: "50%" }}
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-                />
-                <span style={{ fontSize: "12px", color: "#6366f1", fontWeight: 500 }}>Transcribing...</span>
-            </div>
-        );
-    }
-
-    // Recording state — show timer + slide-to-cancel
+    // Recording state — show timer + slide-to-cancel overlaid securely
     if (isRecording) {
         return (
             <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
+                initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
+                onContextMenu={(e) => e.preventDefault()}
                 style={{
                     display: "flex", alignItems: "center", gap: "12px",
-                    width: "100%", padding: "0 8px",
+                    position: "absolute", inset: 0,
+                    background: "#fff", zIndex: 50,
+                    padding: "0 16px",
                     transform: `translateX(${slideX}px)`,
-                }}
-                onPointerMove={handlePointerMove}
-                onPointerUp={stopRecording}
-                onPointerCancel={cancelRecording}
+                    borderRadius: "24px", // match outer input bar shape if any
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    WebkitTouchCallout: "none",
+                    touchAction: "none",
+                } as React.CSSProperties}
             >
                 {/* Recording indicator */}
                 <motion.div
@@ -228,21 +226,21 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
                 </span>
 
                 {/* Waveform animation */}
-                <div style={{ display: "flex", alignItems: "center", gap: "2px", flex: 1 }}>
-                    {Array.from({ length: 20 }).map((_, i) => (
+                <div style={{ display: "flex", alignItems: "center", gap: "2px", flex: 1, overflow: "hidden", padding: "0 8px" }}>
+                    {Array.from({ length: 30 }).map((_, i) => (
                         <motion.div
                             key={i}
                             animate={{
-                                height: [4, 8 + Math.random() * 16, 4],
+                                height: [4, 6 + Math.random() * 12, 4],
                             }}
                             transition={{
-                                duration: 0.4 + Math.random() * 0.4,
+                                duration: 0.3 + Math.random() * 0.3,
                                 repeat: Infinity,
                                 delay: i * 0.05,
                             }}
                             style={{
-                                width: 3, borderRadius: 2,
-                                background: `rgba(239, 68, 68, ${0.4 + Math.random() * 0.4})`,
+                                flex: 1, maxWidth: "4px", borderRadius: 2,
+                                background: `rgba(239, 68, 68, ${0.4 + Math.random() * 0.6})`,
                             }}
                         />
                     ))}
@@ -250,9 +248,9 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
 
                 {/* Slide to cancel hint */}
                 <motion.span
-                    animate={{ opacity: [0.4, 0.7, 0.4], x: [-3, 3, -3] }}
+                    animate={{ opacity: [0.4, 0.8, 0.4], x: [-4, 4, -4] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
-                    style={{ fontSize: "12px", color: "#9ca3af", whiteSpace: "nowrap", flexShrink: 0 }}
+                    style={{ fontSize: "13px", color: "#6B7280", whiteSpace: "nowrap", flexShrink: 0, fontWeight: 500 }}
                 >
                     ◀ Slide to cancel
                 </motion.span>
@@ -296,17 +294,42 @@ export default function VoiceRecorder({ onTranscription, disabled }: VoiceRecord
 
             <button
                 type="button"
-                className="chatroom-input-attach"
                 aria-label="Voice Message"
                 onPointerDown={(e) => {
                     e.preventDefault();
+                    isPointerDownRef.current = true;
                     startXRef.current = e.clientX;
                     startRecording();
                 }}
-                onPointerUp={stopRecording}
-                onPointerCancel={cancelRecording}
+                onPointerUp={() => {
+                    isPointerDownRef.current = false;
+                    if (!isRecording) {
+                        cancelledRef.current = true;
+                    } else {
+                        stopRecording();
+                    }
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerCancel={() => {
+                    isPointerDownRef.current = false;
+                    cancelRecording();
+                }}
                 disabled={disabled}
-                style={{ flexShrink: 0, opacity: disabled ? 0.4 : 1, touchAction: "none" }}
+                style={{
+                    background: "none",
+                    border: "none",
+                    color: disabled ? "rgba(0,0,0,0.2)" : "#38a3fd",
+                    padding: "8px",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    touchAction: "none",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    WebkitTouchCallout: "none"
+                }}
             >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />

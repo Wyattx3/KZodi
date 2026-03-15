@@ -1,0 +1,5 @@
+// A quick note for next steps:
+// For audio playback in the chat, we'll want to use `URL.createObjectURL(blob)` for the sent message, 
+// and when we upload, we can keep the local URL for instant playback, while the server transcribes it.
+// If the user reloads the page, local object URLs die. 
+// So, we need to convert the audio Blob to a base64 Data URL to safely persist it in local storage (Zustand).

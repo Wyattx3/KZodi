@@ -1,0 +1,5 @@
+{
+  "buildCommand": "cd kzodi && npm install && npm run build",
+  "outputDirectory": "kzodi/.next",
+  "installCommand": "echo 'Skipping root install, handled in buildCommand'"
+}

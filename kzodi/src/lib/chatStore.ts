@@ -10,8 +10,9 @@ export interface ChatMessage {
     replyToId?: string;
     reactions?: Record<string, string[]>;
     attachment?: {
-        type: "image";
+        type: "image" | "audio";
         url: string;
+        duration?: number;
     };
     // Group chat specific
     senderId?: string;     // character ID of the sender (for group chats)
@@ -31,6 +32,7 @@ export interface Conversation {
     groupName?: string;
     groupImage?: string;
     groupMemberIds?: string[];  // array of character IDs in the group
+    clearedAt?: number;         // timestamp when the conversation was cleared/deleted locally
 }
 
 interface ChatStore {
@@ -91,7 +93,8 @@ export const useChatStore = create<ChatStore>()(
                         newConvos[characterId] = {
                             ...newConvos[characterId],
                             messages: [],
-                            lastMessage: ""
+                            lastMessage: "",
+                            clearedAt: Date.now()
                         };
                     }
                     return { conversations: newConvos };
@@ -105,6 +108,13 @@ export const useChatStore = create<ChatStore>()(
                 }).catch(err => console.error("Failed to clear conversation in DB", err));
             },
             deleteConversation: (characterId) => {
+                // Track deletion in localStorage so syncFromDB won't revive the conversation
+                try {
+                    const deletedMap = JSON.parse(localStorage.getItem("kakoei-deleted-convos") || "{}");
+                    deletedMap[characterId] = Date.now();
+                    localStorage.setItem("kakoei-deleted-convos", JSON.stringify(deletedMap));
+                } catch {}
+
                 set((state) => {
                     const newConvos = { ...state.conversations };
                     delete newConvos[characterId];

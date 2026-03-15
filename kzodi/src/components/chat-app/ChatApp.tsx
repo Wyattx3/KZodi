@@ -9,6 +9,7 @@ import ChatRoom from "./ChatRoom";
 import { CHARACTERS, type Character } from "@/data/characters";
 import { useChatStore } from "@/lib/chatStore";
 import { useSearchParams, useRouter } from "next/navigation";
+import { App } from '@capacitor/app';
 
 type Tab = "explore" | "chats" | "create" | "profile";
 
@@ -22,6 +23,7 @@ export default function ChatApp() {
     const [myCharacters, setMyCharacters] = useState<Character[]>([]);
     const [allCharacters, setAllCharacters] = useState<Character[]>([]);
     const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+    const [isLoadingChats, setIsLoadingChats] = useState(true);
 
     // Compute total unread count across all conversations
     const conversations = useChatStore((s) => s.conversations);
@@ -209,9 +211,13 @@ export default function ChatApp() {
     useEffect(() => {
         setMounted(true);
         loadUserPreferences();
-        loadConversations();
-        loadMyCharacters();
-        loadAllCharacters();
+        Promise.all([
+            loadConversations(),
+            loadMyCharacters(),
+            loadAllCharacters()
+        ]).finally(() => {
+            setIsLoadingChats(false);
+        });
     }, []);
 
     // Handle Astrologer Redirect
@@ -295,6 +301,29 @@ export default function ChatApp() {
         loadSharedCharacter();
     }, [mounted, searchParams, router, allCharacters, myCharacters]);
 
+    // Handle Capacitor Hardware Back Button (Android)
+    useEffect(() => {
+        if (!mounted) return;
+
+        const setupBackButton = async () => {
+            await App.addListener('backButton', () => {
+                // If a chat is open, close it and go back to the tab view
+                if (activeCharacter || activeGroupId) {
+                    handleBack();
+                } else {
+                    // We are at the root tabs level. Let Capacitor minimize the app.
+                    App.minimizeApp();
+                }
+            });
+        };
+
+        setupBackButton();
+
+        return () => {
+            App.removeAllListeners();
+        };
+    }, [mounted, activeCharacter, activeGroupId]);
+
     const handleSelectCharacter = (char: Character, openProfile = false) => {
         setShowProfileOnLoad(openProfile);
         setActiveCharacter(char);
@@ -364,7 +393,7 @@ export default function ChatApp() {
                             <ExploreTab onSelectCharacter={handleSelectCharacter} />
                         </div>
                         <div style={{ width: "100%", display: activeTab === "chats" ? "block" : "none" }}>
-                            <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} myCharacters={myCharacters} allCharacters={allCharacters} />
+                            <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} myCharacters={myCharacters} allCharacters={allCharacters} isLoading={isLoadingChats} />
                         </div>
                         <div style={{ width: "100%", display: activeTab === "create" ? "block" : "none" }}>
                             <CreateTab

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, createElement, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChatStore, type ChatMessage } from "@/lib/chatStore";
 import { CHARACTERS, type Character } from "@/data/characters";
@@ -13,6 +13,121 @@ import remarkGfm from 'remark-gfm';
 import { getZodiacSign } from "@/lib/zodiac";
 import SpecialistSetup from "./SpecialistSetups";
 import VoiceRecorder from "./VoiceRecorder";
+
+// Inline Audio Player Component for Chat Bubbles
+const AudioPlayer = ({ src, duration: passedDuration, isUser = false }: { src: string, duration?: number, isUser?: boolean }) => {
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [actualDuration, setActualDuration] = useState(passedDuration || 0);
+
+    const togglePlay = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!audioRef.current) return;
+        if (isPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+    };
+
+    const handleLoadedMetadata = () => {
+        if (audioRef.current && audioRef.current.duration !== Infinity) {
+            setActualDuration(audioRef.current.duration);
+        }
+    };
+
+    const handleTimeUpdate = () => {
+        if (!audioRef.current) return;
+        const current = audioRef.current.currentTime;
+        const total = (audioRef.current.duration && audioRef.current.duration !== Infinity) ? audioRef.current.duration : actualDuration || 1;
+        setCurrentTime(current);
+        setProgress((current / total) * 100);
+    };
+
+    const handleEnded = () => {
+        setIsPlaying(false);
+        setProgress(0);
+        setCurrentTime(0);
+        if (audioRef.current) audioRef.current.currentTime = 0;
+    };
+
+    const formatTime = (s: number) => {
+        const mins = Math.floor(s / 60);
+        const secs = Math.floor(s % 60);
+        return `${mins}:${secs.toString().padStart(2, "0")}`;
+    };
+
+    // Generate fixed random waveform bars based on a hash of the src so it doesn't jump
+    const bars = useMemo(() => {
+        let hash = 0;
+        for (let i = 0; i < src.length; i++) hash = src.charCodeAt(i) + ((hash << 5) - hash);
+        const rand = () => {
+            const x = Math.sin(hash++) * 10000;
+            return x - Math.floor(x);
+        };
+        return Array.from({ length: 30 }).map(() => 4 + rand() * 16);
+    }, [src]);
+
+    const fgColor = isUser ? "#fff" : "#38a3fd";
+    const bgTrackColor = isUser ? "rgba(255,255,255,0.4)" : "rgba(56,163,253,0.3)";
+
+    return (
+        <div 
+            style={{ 
+                display: "flex", alignItems: "center", gap: "10px", 
+                background: isUser ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.04)", 
+                padding: "8px 12px", borderRadius: "16px", minWidth: "220px", marginBottom: "8px" 
+            }} 
+            onClick={(e) => e.stopPropagation()}
+        >
+            <button
+                onClick={togglePlay}
+                style={{
+                    width: "36px", height: "36px", borderRadius: "50%",
+                    background: fgColor, color: isUser ? "#38a3fd" : "#fff", border: "none",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: "pointer", flexShrink: 0,
+                    boxShadow: "0 2px 5px rgba(0,0,0,0.1)"
+                }}
+            >
+                {isPlaying ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: "2px" }}><path d="M8 5v14l11-7z"/></svg>
+                )}
+            </button>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
+                
+                {/* Waveform Player */}
+                <div style={{ display: "flex", alignItems: "center", gap: "2px", height: "20px", position: "relative" }}>
+                    {bars.map((h, i) => {
+                        const barProgress = (i / bars.length) * 100;
+                        const isPlayed = barProgress <= progress;
+                        return (
+                            <div 
+                                key={i} 
+                                style={{ 
+                                    flex: 1, height: `${h}px`, borderRadius: "2px",
+                                    background: isPlayed ? fgColor : bgTrackColor,
+                                    transition: "background 0.1s linear"
+                                }} 
+                            />
+                        );
+                    })}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: isUser ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.5)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(actualDuration)}</span>
+                </div>
+            </div>
+            <audio ref={audioRef} src={src} onTimeUpdate={handleTimeUpdate} onEnded={handleEnded} onLoadedMetadata={handleLoadedMetadata} preload="metadata" />
+        </div>
+    );
+};
 
 interface ChatRoomProps {
     character: Character;
@@ -808,7 +923,12 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
         // ─── GROUP CHAT: Each member responds individually ───
         if (isGroupChat && groupMemberChars.length > 0) {
-            const groupMemberNames = groupMemberChars.map(c => c.name);
+            const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
+            const lastGroupMsg = [...currentMessages].reverse().find(m => m.senderId && m.role === "assistant");
+            const lastGroupMsgSenderId = lastGroupMsg ? lastGroupMsg.senderId : null;
+
+            const groupMemberNames = groupMemberChars.map((c: Character) => c.name);
+            const randomChar = groupMemberChars.filter((c: Character) => c.id !== lastGroupMsgSenderId);
 
             // Mark user's messages as "seen" BEFORE any AI starts typing
             markAsSeen(character.id, "user");
@@ -1069,33 +1189,49 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 const localMsgs = useChatStore.getState().conversations[character.id]?.messages || [];
                 const dbIds = new Set(dbMessages.map((m: ChatMessage) => m.id));
 
-                // Find messages that exist locally but not in DB — these are pending writes
-                const pendingLocal = localMsgs.filter(m => !dbIds.has(m.id));
+                const convo = useChatStore.getState().conversations[character.id];
+                const clearedAt = convo?.clearedAt || 0;
 
-                // Merge: preserve local reactions that haven't synced to DB yet
+                // Find messages that exist locally but not in DB — these are pending writes
+                const pendingLocal = localMsgs.filter(m => !dbIds.has(m.id) && m.timestamp >= clearedAt);
+
+                // Merge: preserve local reactions, seen status, and transcript content
                 const localReactionsMap = new Map<string, Record<string, string[]>>();
                 const localSeenIds = new Set<string>();
+                const localContentMap = new Map<string, ChatMessage>();
                 for (const m of localMsgs) {
                     if (m.reactions && Object.keys(m.reactions).length > 0) {
                         localReactionsMap.set(m.id, m.reactions);
                     }
-                    // Preserve local "seen" status so syncFromDB doesn't flash it back to "sent"
                     if (m.status === "seen") {
                         localSeenIds.add(m.id);
                     }
+                    // Track local messages that have real content (not placeholders)
+                    // so we can prevent DB sync from reverting transcripts
+                    if (m.attachment?.type === "audio" && m.content && m.content !== "__transcribing__" && m.content !== "__transcribing_failed__") {
+                        localContentMap.set(m.id, m);
+                    }
                 }
-                const mergedDbMessages = dbMessages.map((dbMsg: ChatMessage) => {
-                    let merged = dbMsg;
-                    const localReactions = localReactionsMap.get(dbMsg.id);
-                    if (localReactions && (!dbMsg.reactions || JSON.stringify(dbMsg.reactions) !== JSON.stringify(localReactions))) {
-                        merged = { ...merged, reactions: localReactions };
-                    }
-                    // If locally marked as seen but DB still says sent, keep seen
-                    if (localSeenIds.has(dbMsg.id) && dbMsg.status !== "seen") {
-                        merged = { ...merged, status: "seen" as const };
-                    }
-                    return merged;
-                });
+                const mergedDbMessages = dbMessages
+                    .filter((m: ChatMessage) => m.timestamp >= clearedAt)
+                    .map((dbMsg: ChatMessage) => {
+                        let merged = dbMsg;
+                        const localReactions = localReactionsMap.get(dbMsg.id);
+                        if (localReactions && (!dbMsg.reactions || JSON.stringify(dbMsg.reactions) !== JSON.stringify(localReactions))) {
+                            merged = { ...merged, reactions: localReactions };
+                        }
+                        // If locally marked as seen but DB still says sent, keep seen
+                        if (localSeenIds.has(dbMsg.id) && dbMsg.status !== "seen") {
+                            merged = { ...merged, status: "seen" as const };
+                        }
+                        // CRITICAL: If local has real transcript but DB still says __transcribing__,
+                        // keep the local transcript content (POST may not have completed yet)
+                        const localVersion = localContentMap.get(dbMsg.id);
+                        if (localVersion && (dbMsg.content === "__transcribing__" || dbMsg.content === "__transcribing_failed__")) {
+                            merged = { ...merged, content: localVersion.content };
+                        }
+                        return merged;
+                    });
 
                 // Combine: DB messages (truth with merged reactions) + pending local messages
                 const finalMessages = [...mergedDbMessages, ...pendingLocal].sort((a, b) => a.timestamp - b.timestamp);
@@ -1171,7 +1307,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 groupIntroTriggered.current = true;
 
                 // No welcome message — characters start interacting immediately like an anime group chat
-                const groupMemberNames = groupMemberChars.map(c => c.name);
+                const groupMemberNames = groupMemberChars.map((c: Character) => c.name);
                 const shuffled = [...groupMemberChars].sort(() => Math.random() - 0.5);
 
                 // Each character introduces themselves / reacts to being in the group
@@ -1307,12 +1443,101 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             .catch(err => console.error("AI response failed:", err));
     };
 
-    // Voice transcription handler — auto-sends the transcribed text
-    const handleVoiceTranscription = (text: string) => {
-        if (!text.trim()) return;
-        sendMessage(character.id, text.trim());
-        triggerAiResponse(text.trim())
-            .catch(err => console.error("AI response failed (voice):", err));
+    // Voice recording completion handler
+    const handleVoiceRecordComplete = async (blob: Blob, duration: number) => {
+        // 1. Convert Blob to base64 for persistent storage via Zustand
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+            const base64Audio = reader.result as string;
+            
+            // 2. Add an optimistic audio message with no text (to be filled later)
+            // But we need the message ID to update it later. 
+            // In ChatStore `sendMessage` creates the ID inside.
+            // For now, we'll send a system placeholder or use a workaround:
+            // Let's create an explicit text message with an audio attachment.
+            
+            // A small hack: generate a unique temporary id, but ChatStore doesn't expose standard creation.
+            // We'll just rely on the audio attachment being stored. If we need to update *that specific* message,
+            // we will need an updateMessage method.
+            // Actually, `useChatStore.getState().sendMessage` does not return ID right now.
+            // Let's send the audio alone first.
+            sendMessage(character.id, "__transcribing__", { type: "audio", url: base64Audio, duration });
+            
+            // 3. Upload raw Blob to /api/voice for transcription
+            try {
+                const formData = new FormData();
+                const mimeType = blob.type || "audio/webm";
+                const ext = mimeType.includes("webm") ? "webm" : "ogg";
+                formData.append("audio", blob, `voice.${ext}`);
+
+                const res = await fetch("/api/voice", {
+                    method: "POST",
+                    body: formData,
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.text && data.text.trim()) {
+                        // 4. Update the LAST user message (the audio one we just sent) with the new text.
+                        // We reach into the store to find it and overwrite the text.
+                        let updatedMessage: ChatMessage | null = null;
+                        
+                        useChatStore.setState((state) => {
+                            const convo = state.conversations[character.id];
+                            if (!convo) return state;
+                            const messages = [...convo.messages];
+                            const lastUserAudioMsgIndex = messages.findLastIndex(m => m.role === "user" && m.attachment?.type === "audio" && m.content === "__transcribing__");
+                            if (lastUserAudioMsgIndex !== -1) {
+                                messages[lastUserAudioMsgIndex] = { ...messages[lastUserAudioMsgIndex], content: data.text.trim() };
+                                updatedMessage = messages[lastUserAudioMsgIndex];
+                            }
+                            return {
+                                conversations: {
+                                    ...state.conversations,
+                                    [character.id]: {
+                                        ...convo,
+                                        messages
+                                    }
+                                }
+                            };
+                        });
+                        
+                        // Sync the updated transcript message to the backend immediately
+                        // so poll timer doesn't overwrite it with the old __transcribing__ string
+                        if (updatedMessage) {
+                            await fetch("/api/messages", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    conversationId: character.id,
+                                    messages: [updatedMessage]
+                                })
+                            }).catch(err => console.error("Failed to sync transcript:", err));
+                        }
+                        
+                        // 5. Finally, trigger AI response to the transcript
+                        triggerAiResponse(data.text.trim())
+                            .catch(err => console.error("AI response failed (voice):", err));
+                    }
+                } else {
+                    console.error("[Voice] Transcription failed:", res.status);
+                    // Update fallback text
+                    useChatStore.setState((state) => {
+                        const convo = state.conversations[character.id];
+                        if (!convo) return state;
+                        const messages = [...convo.messages];
+                        const lastUserAudioMsgIndex = messages.findLastIndex(m => m.role === "user" && m.attachment?.type === "audio" && m.content === "__transcribing__");
+                        if (lastUserAudioMsgIndex !== -1) {
+                            messages[lastUserAudioMsgIndex] = { ...messages[lastUserAudioMsgIndex], content: "__transcribing_failed__" };
+                        }
+                        return { conversations: { ...state.conversations, [character.id]: { ...convo, messages } } };
+                    });
+                }
+            } catch (err) {
+                console.error("[Voice] Network error:", err);
+            }
+        };
+        reader.readAsDataURL(blob);
     };
 
     // Process AI response and handle splitting
@@ -1974,7 +2199,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     <div className="chatroom-typing-avatar">
                                         <img src={
                                             typingMemberName
-                                                ? (groupMemberChars.find(c => c.name === typingMemberName)?.image || character.image)
+                                                ? (groupMemberChars.find((c: Character) => c.name === typingMemberName)?.image || character.image)
                                                 : character.image
                                         } alt="" />
                                     </div>
@@ -2074,7 +2299,6 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                                 <path d="M15 9H15.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                             </svg>
                                         </button>
-                                        <VoiceRecorder onTranscription={handleVoiceTranscription} disabled={isBlocked} />
                                     </div>
                                 )}
                                 <textarea
@@ -2101,6 +2325,11 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                                         </svg>
                                     </button>
+                                )}
+                                {input.trim() === "" && (
+                                    <div style={{ marginLeft: 4, flexShrink: 0 }}>
+                                        <VoiceRecorder onRecordComplete={handleVoiceRecordComplete} disabled={isBlocked} />
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -2364,7 +2593,7 @@ function MessageBubble({
                     className={`chatroom-bubble ${isUser ? "chatroom-bubble-user" : "chatroom-bubble-ai"}`}
                     style={isTransparentBubble ? { background: "transparent", boxShadow: "none", padding: 0, border: "none" } : undefined}
                 >
-                    {!isUser && isFirst && !isTransparentBubble && (
+                    {!isUser && isFirst && !isTransparentBubble && character.id.startsWith("group-") && (
                         <span className="chatroom-bubble-sender">{message.senderName || character.name}</span>
                     )}
                     {replyMessage && (
@@ -2381,7 +2610,11 @@ function MessageBubble({
                                 {replyMessage.role === "user" ? "You" : character.name}
                             </span>
                             <div style={{ WebkitLineClamp: 1, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", opacity: 0.85, fontSize: "13px", color: "#111" }}>
-                                {replyMessage.content || "Attachment"}
+                                {replyMessage.attachment?.type === "audio" 
+                                    ? "🎤 Voice Message" 
+                                    : replyMessage.attachment?.type === "image" 
+                                        ? "📷 Image" 
+                                        : replyMessage.content}
                             </div>
                         </div>
                     )}
@@ -2398,7 +2631,32 @@ function MessageBubble({
                                 }}
                             />
                         )}
-                        {renderMessageContent(message.content, isUser ? USER_CHARACTER : character)}
+                        {message.attachment?.type === "audio" && (
+                            <AudioPlayer src={message.attachment.url} duration={message.attachment.duration} isUser={isUser} />
+                        )}
+                        
+                        {message.content === "__transcribing__" ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "rgba(0,0,0,0.04)", borderRadius: "8px", width: "fit-content", marginTop: "4px" }}>
+                                <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0 }} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "#38a3fd" }} />
+                                <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "#38a3fd" }} />
+                                <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }} style={{ width: "4px", height: "4px", borderRadius: "50%", background: "#38a3fd" }} />
+                                <span style={{ fontSize: "11px", color: "rgba(0,0,0,0.5)", fontWeight: 500, marginLeft: "2px" }}>Transcribing</span>
+                            </div>
+                        ) : message.content === "__transcribing_failed__" ? (
+                            <div style={{ fontSize: "12px", color: "rgba(0,0,0,0.4)", fontStyle: "italic", marginTop: "4px", padding: "0 4px" }}>
+                                No transcript available
+                            </div>
+                        ) : message.attachment?.type === "audio" && message.content ? (
+                            <div style={{
+                                marginTop: "4px", padding: "8px 10px", background: isUser ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.03)",
+                                borderRadius: "8px", borderLeft: `2px solid ${isUser ? "rgba(255,255,255,0.4)" : "#38a3fd"}`,
+                                fontSize: "14px", lineHeight: "1.4"
+                            }}>
+                                {renderMessageContent(message.content, isUser ? USER_CHARACTER : character)}
+                            </div>
+                        ) : message.content ? (
+                            renderMessageContent(message.content, isUser ? USER_CHARACTER : character)
+                        ) : null}
                     </div>
                     <div className="chatroom-bubble-meta">
                         <span className="chatroom-bubble-time">

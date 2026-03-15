@@ -9,6 +9,7 @@ interface ChatsTabProps {
     onSelectGroup?: (groupId: string) => void;
     myCharacters?: Character[];
     allCharacters?: Character[];
+    isLoading?: boolean;
 }
 
 function formatTime(ts: number): string {
@@ -422,7 +423,7 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
 
 // ─── Main ChatsTab ───────────────────────────────────────────────────────────
 
-export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacters = [], allCharacters = [] }: ChatsTabProps) {
+export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacters = [], allCharacters = [], isLoading = false }: ChatsTabProps) {
     const [conversations, setConversations] = React.useState<Conversation[]>([]);
     const [searchQuery, setSearchQuery] = React.useState("");
     const [actionConvo, setActionConvo] = React.useState<string | null>(null);
@@ -481,9 +482,9 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                 return [];
             }
             const char = charMap[convo.characterId];
-            if (!char) return [];
+            const charName = char?.name || convo.customName || convo.characterId;
             const customNameMatch = convo.customName?.toLowerCase().includes(q);
-            const nameMatch = char.name.toLowerCase().includes(q) || customNameMatch;
+            const nameMatch = charName.toLowerCase().includes(q) || customNameMatch;
             const matchedMsg = [...convo.messages].reverse().find(m => m.content.toLowerCase().includes(q));
             if (nameMatch || matchedMsg) {
                 return [{ convo, matchedMsg: nameMatch ? null : matchedMsg }];
@@ -620,7 +621,31 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
 
             <div className="chats-list">
                 <AnimatePresence>
-                    {filteredConvos.map(({ convo, matchedMsg }, i) => {
+                    {isLoading ? (
+                        Array.from({ length: 6 }).map((_, i) => (
+                            <motion.div
+                                key={`skeleton-${i}`}
+                                className="chats-item"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.3, delay: i * 0.05 }}
+                                style={{ background: "#FFFDF5", pointerEvents: "none" }}
+                            >
+                                <div className="chats-item-avatar" style={{ background: "rgba(0,0,0,0.06)" }} />
+                                <div className="chats-item-info">
+                                    <div className="chats-item-top">
+                                        <div style={{ width: "40%", height: "16px", background: "rgba(0,0,0,0.06)", borderRadius: "4px" }} />
+                                        <div style={{ width: "15%", height: "12px", background: "rgba(0,0,0,0.04)", borderRadius: "4px" }} />
+                                    </div>
+                                    <div className="chats-item-bottom" style={{ marginTop: "6px" }}>
+                                        <div style={{ width: "70%", height: "14px", background: "rgba(0,0,0,0.04)", borderRadius: "4px" }} />
+                                    </div>
+                                </div>
+                            </motion.div>
+                        ))
+                    ) : (
+                        filteredConvos.map(({ convo, matchedMsg }, i) => {
                         // ── Group Chat Row ────────────────────────
                         if (convo.isGroup) {
                             const memberChars = (convo.groupMemberIds || []).map(id => charMap[id]).filter(Boolean);
@@ -743,8 +768,17 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         }
 
                         // ── Regular Chat Row ──────────────────────
-                        const char = charMap[convo.characterId];
-                        if (!char) return null;
+                        const char = charMap[convo.characterId] || {
+                            id: convo.characterId,
+                            name: convo.customName || convo.characterId.split("-")[0] || "Character",
+                            tag: "Original",
+                            description: "",
+                            longDescription: "",
+                            tags: [],
+                            personality: "",
+                            greeting: "",
+                            image: `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${convo.characterId}`
+                        } as Character;
                         
                         const displayName = convo.customName || char.name;
                         
@@ -864,7 +898,8 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                 </motion.div>
                             </div>
                         );
-                    })}
+                    })
+                    )}
                 </AnimatePresence>
             </div>
 
