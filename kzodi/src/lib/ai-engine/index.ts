@@ -72,12 +72,14 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
 
     let brainModel: string;
     let generationModel: string;
+    let fallbackModel: string | undefined;
 
     if (isBurmese) {
         // Myanmar language — use Gemini Flash for strong Burmese text generation
         // DeepSeek V3p1 was producing garbled/gibberish Myanmar Unicode
         brainModel = MODELS.CHAT; // Use Kimi K2 for brain reasoning (structured JSON)
         generationModel = MODELS.GEMINI; // Gemini Flash for actual Burmese text generation
+        fallbackModel = "grok-4-1-fast-reasoning"; // User requested grok fallback for Myanmar
     } else {
         // Other Languages (English, Japanese, etc.)
         // Use Kimi K2 via MODELS.CHAT for all contexts
@@ -199,6 +201,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         {
             messages,
             model: generationModel,
+            fallbackModel,
             temperature,
             max_tokens: maxTokens,
         },

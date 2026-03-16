@@ -283,6 +283,7 @@ export interface GroqMessage {
 export interface GroqChatParams {
   messages: GroqMessage[];
   model?: string;
+  fallbackModel?: string;
   temperature?: number;
   max_tokens?: number;
   response_format?: { type: string };
@@ -367,10 +368,11 @@ class MultiProviderClient {
     const result = await queue.enqueue(() => this.callWithRetry(params, maxRetries, useCache ? cachePrefix : null));
 
     // Auto-fallback: if primary model returns empty/too-short, try fallback model
-    if ((!result.content || result.content.length < 10) && model === MODEL && FALLBACK_MODEL) {
-      console.warn(`[AI] Primary model empty (${result.content.length} chars). Auto-fallback to ${FALLBACK_MODEL}...`);
-      const fallbackParams = { ...params, model: FALLBACK_MODEL };
-      const fbQueue = this.getQueue(FALLBACK_MODEL);
+    const fallbackToUse = params.fallbackModel || FALLBACK_MODEL;
+    if ((!result.content || result.content.length < 10) && model === MODEL && fallbackToUse) {
+      console.warn(`[AI] Primary model empty (${result.content.length} chars). Auto-fallback to ${fallbackToUse}...`);
+      const fallbackParams = { ...params, model: fallbackToUse };
+      const fbQueue = this.getQueue(fallbackToUse);
       const fbResult = await fbQueue.enqueue(() => this.callWithRetry(fallbackParams, maxRetries, useCache ? cachePrefix : null));
       if (fbResult.content && fbResult.content.length >= 10) {
         return fbResult;
@@ -388,6 +390,7 @@ class MultiProviderClient {
     const backoffs = [1000, 2000, 4000, 8000];
     const model = params.model || MODELS.CHAT;
     const provider = determineProvider(model);
+    const fallbackToUse = params.fallbackModel || FALLBACK_MODEL;
 
     // Estimate tokens
     const inputText = params.messages.map((m) => m.content).join("");
@@ -415,7 +418,7 @@ class MultiProviderClient {
           apiKey = process.env.XAI_API_KEY || "";
           if (!apiKey) {
             console.warn("[AI] XAI_API_KEY missing, falling back to Groq Kimi");
-            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+            return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
           }
           headers.Authorization = `Bearer ${apiKey}`;
         } else if (provider === PROVIDERS.FIREWORKS) {
@@ -423,7 +426,7 @@ class MultiProviderClient {
           apiKey = process.env.FIREWORKS_API_KEY || "";
           if (!apiKey) {
             console.warn("[AI] FIREWORKS_API_KEY missing, falling back to Groq Kimi");
-            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+            return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
           }
           headers.Authorization = `Bearer ${apiKey}`;
         } else if (provider === PROVIDERS.GEMINI) {
@@ -431,7 +434,7 @@ class MultiProviderClient {
           apiKey = process.env.GEMINI_API_KEY || "";
           if (!apiKey) {
              console.warn("[AI] GEMINI_API_KEY missing, falling back to Groq Kimi");
-             return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+             return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
           }
           headers.Authorization = `Bearer ${apiKey}`;
         } else if (provider === PROVIDERS.GROQ) {
@@ -526,8 +529,8 @@ class MultiProviderClient {
           }
           // if xAI fails, fallback to Groq Kimi if it was Grok
           if (provider === PROVIDERS.XAI && model.includes("grok")) {
-            console.warn(`[AI] xAI failed consistently, falling back to Groq ${FALLBACK_MODEL}`);
-            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+            console.warn(`[AI] xAI failed consistently, falling back to ${fallbackToUse}`);
+            return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
           }
           return { content: "", finish_reason: "server_error", truncated: false, cached: false, provider };
         }
@@ -535,10 +538,10 @@ class MultiProviderClient {
         if (!res.ok) {
           const errText = await res.text();
           console.error(`[AI] Error ${res.status} on ${model}: ${errText.slice(0, 300)}`);
-          // For xAI or Ollama: ANY error (400, 403, network error, etc.) should fall back to Kimi k2
-          if ((provider === PROVIDERS.XAI && model.includes("grok")) || provider === PROVIDERS.OLLAMA) {
-            console.warn(`[AI] ${provider} error ${res.status}, falling back to Groq ${FALLBACK_MODEL}`);
-            return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+          // ANY error (400, 403, network error, etc.) should fall back to Kimi k2 / LLaMa for these providers
+          if (provider !== PROVIDERS.GROQ) {
+            console.warn(`[AI] ${provider} error ${res.status}, falling back to ${fallbackToUse}`);
+            return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
           }
           if (res.status === 400 || (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403)) {
             if (attempt < maxRetries) {
@@ -618,8 +621,8 @@ class MultiProviderClient {
           continue;
         }
         if (provider === PROVIDERS.XAI || provider === PROVIDERS.OLLAMA || provider === PROVIDERS.FIREWORKS || provider === PROVIDERS.GEMINI) {
-          console.warn(`[AI] ${provider} failed, falling back to Groq ${FALLBACK_MODEL}`);
-          return this.callWithRetry({ ...params, model: FALLBACK_MODEL }, maxRetries, cachePrefix);
+          console.warn(`[AI] ${provider} failed, falling back to ${fallbackToUse}`);
+          return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
         }
         return { content: "", finish_reason: "exception", truncated: false, cached: false, provider };
       }
