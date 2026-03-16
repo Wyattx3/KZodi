@@ -1694,64 +1694,66 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
         const lastMsg = messages[messages.length - 1];
 
-        let timer: NodeJS.Timeout;
-
         // Only activate if the last message was from AI
-        if (lastMsg.role === "assistant") {
-            // Determine if character is cold/stoic
-            const isCold = /cold|stoic|tsundere|quiet|mysterious|aloof|shy/i.test(
-                character.tag + character.personality
-            );
+        if (lastMsg.role !== "assistant") return;
 
-            // Cold: wait 3-5 minutes, Regular: wait 1.5-3 minutes
-            const delay = isCold
-                ? 180000 + Math.random() * 120000   // 3-5 min
-                : 90000 + Math.random() * 90000;    // 1.5-3 min
+        // Determine if character is cold/stoic
+        const isCold = /cold|stoic|tsundere|quiet|mysterious|aloof|shy/i.test(
+            character.tag + character.personality
+        );
 
-            timer = setTimeout(async () => {
-                // Don't double text if AI is typing or User has typed something
-                if (isTyping || input.trim()) return;
+        // Cold: wait 3-5 minutes, Regular: wait 1.5-3 minutes
+        const delay = isCold
+            ? 180000 + Math.random() * 120000   // 3-5 min
+            : 90000 + Math.random() * 90000;    // 1.5-3 min
 
-                // Probability gate: Cold = 5%, Regular = 50%
-                const chance = isCold ? 0.05 : 0.5;
-                if (Math.random() > chance) return;
+        const timer = setTimeout(async () => {
+            // Don't double text if AI is currently typing, or user has typed something
+            if (isTyping || input.trim() || isAiRespondingRef.current) return;
 
-                setIsTyping(true);
-                try {
-                    const history = messages.map((m) => ({
-                        id: m.id,
-                        role: m.role,
-                        content: m.role === "user" ? `<Message ID: ${m.id}> ${m.content || ""}` : (m.content || ""),
-                    }));
+            // Probability gate: Cold = 5%, Regular = 50%
+            const chance = isCold ? 0.05 : 0.5;
+            if (Math.random() > chance) return;
 
-                    const res = await fetch("/api/roleplay", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            message: "", // No new user message
-                            characterName: character.name,
-                            characterPersonality: character.personality,
-                            characterTag: character.tag,
-                            history: history.slice(-10),
-                            context: "proactive",
-                        }),
-                    });
+            setIsTyping(true);
+            isAiRespondingRef.current = true;
+            try {
+                const history = messages.map((m) => ({
+                    id: m.id,
+                    role: m.role,
+                    content: m.role === "user" ? `<Message ID: ${m.id}> ${m.content || ""}` : (m.content || ""),
+                }));
 
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.reply && data.reply !== "...") {
-                            await processAiResponse(data.reply, undefined, undefined, data.delayFactor);
-                        } else {
-                            setIsTyping(false);
-                        }
+                const res = await fetch("/api/roleplay", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        message: "", // No new user message
+                        characterName: character.name,
+                        characterPersonality: character.personality,
+                        characterTag: character.tag,
+                        history: history.slice(-10),
+                        context: "proactive",
+                    }),
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.reply && data.reply !== "...") {
+                        await processAiResponse(data.reply, undefined, undefined, data.delayFactor);
                     } else {
                         setIsTyping(false);
+                        isAiRespondingRef.current = false;
                     }
-                } catch {
+                } else {
                     setIsTyping(false);
+                    isAiRespondingRef.current = false;
                 }
-            }, delay);
-        }
+            } catch {
+                setIsTyping(false);
+                isAiRespondingRef.current = false;
+            }
+        }, delay);
 
         return () => clearTimeout(timer);
     }, [messages, character, isTyping, input]); // Reset timer on message or input change

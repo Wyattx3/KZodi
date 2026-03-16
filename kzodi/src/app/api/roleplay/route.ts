@@ -267,21 +267,22 @@ function cleanResponseText(rawContent: string, characterName: string): string {
             else if (parsed.response) content = parsed.response;
             else if (parsed.message) content = parsed.message;
         } catch {
-            // Myanmar text often breaks JSON.parse — try regex extraction as fallback
-            const replyExtract = content.match(/"(?:reply|text|content|response|message)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+            // Myanmar text or STICKER tags often break JSON.parse
+            // Try regex extraction as fallback
+            const replyExtract = content.match(/"(?:reply|text|content|response|message)"\s*:\s*"([\s\S]*?)"\s*(?:,|})/);
             if (replyExtract) {
                 content = replyExtract[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
             } else {
                 // Last resort: strip the JSON wrapper characters and keep the inner text
-                content = content.replace(/^\{\s*"(?:reply|text|content|response|message)"\s*:\s*"?/i, '').replace(/"?\s*\}$/, '').trim();
+                content = content.replace(/^\{\s*"(?:reply|text|content|response|message|thought|thoughts)"\s*:\s*"?/i, '').replace(/"?\s*\}$/, '').trim();
             }
         }
     }
 
     // Strip partial JSON fragments embedded in text (e.g., {"reply": "..."} mixed with normal text)
-    content = content.replace(/\{\s*"(reply|text|content|response|message)"\s*:\s*"([^"]*)"\s*\}/g, '$2');
+    content = content.replace(/\{\s*"(?:reply|text|content|response|message)"\s*:\s*"([^"]*)"\s*\}/gi, '$1');
     // Strip remaining orphaned curly braces with key-value patterns
-    content = content.replace(/\{\s*"\w+"\s*:.*?\}/g, "").trim();
+    content = content.replace(/\{\s*"\w+"\s*:\s*(?:"[^"]*"|\[[^\]]*\]|\{[^\}]*\})\s*\}/g, "").trim();
 
     content = content.replace(/^\[MessageID:\s*[^\]]+\]\s*/i, "").trim();
 
