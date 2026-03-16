@@ -1664,7 +1664,6 @@ body {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  margin-bottom: auto; /* Pushes footer to bottom */
   margin-top: 4px;
 }
 
@@ -1672,7 +1671,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
+  margin-top: auto; /* Pushes footer to bottom */
 }
 
 .explore-card-chat-btn {

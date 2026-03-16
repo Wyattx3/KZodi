@@ -1,7 +1,7 @@
-"use client";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SOURCE_CATEGORIES as CATEGORIES, type Category, type Character } from "@/data/characters";
+import { App } from '@capacitor/app';
 
 interface ExploreTabProps {
     onSelectCharacter: (character: Character) => void;
@@ -220,6 +220,19 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
         if (e) e.stopPropagation();
         setSelectedPreview(char);
     };
+
+    // Capacitor Hardware Back Button for Preview Modal
+    useEffect(() => {
+        const handleBack = () => {
+            if (selectedPreview) {
+                setSelectedPreview(null);
+            }
+        };
+        const listener = App.addListener('backButton', handleBack);
+        return () => {
+            listener.then(l => l.remove());
+        };
+    }, [selectedPreview]);
 
     // --- Long Press Logic ---
     const longPressTimer = useRef<NodeJS.Timeout | undefined>(undefined);

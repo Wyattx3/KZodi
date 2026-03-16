@@ -1,9 +1,9 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Character } from "@/data/characters";
 import { useChatStore } from "@/lib/chatStore";
-
+import { App } from '@capacitor/app';
 
 interface CharacterProfileProps {
     character: Character;
@@ -23,6 +23,25 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
 
     const [isLiked, setIsLiked] = useState<boolean>(character.userHasLiked || false);
     const [likesCount, setLikesCount] = useState<number>(character.likesCount || character.likes || 0);
+
+    // Capacitor Hardware Back Button handler for Modals
+    useEffect(() => {
+        const handleBack = () => {
+            if (showResetModal) {
+                setShowResetModal(false);
+            } else if (showNicknameModal) {
+                setShowNicknameModal(false);
+            } else {
+                onBack();
+            }
+        };
+
+        const listener = App.addListener('backButton', handleBack);
+        
+        return () => {
+            listener.then(l => l.remove());
+        };
+    }, [showResetModal, showNicknameModal, onBack]);
 
     React.useEffect(() => {
         const handleLikeUpdate = (e: Event) => {
