@@ -115,7 +115,7 @@ export default function ProfileTab() {
                     )}
                 </div>
 
-                <div className="chats-list" style={{ borderRadius: "20px", border: "1px solid #F3F4F6", background: "#FFFFFF", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
+                <div className="chats-list" style={{ paddingBottom: 0, borderRadius: "20px", border: "1px solid #F3F4F6", background: "#FFFFFF", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
                     <div className="chats-item" style={{ background: "transparent", borderBottom: "1px solid #F3F4F6", cursor: "default", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px", position: "relative", zIndex: 50, borderTopLeftRadius: "20px", borderTopRightRadius: "20px" }}>
                         <div className="chats-item-info">
                             <span className="chats-item-name" style={{ fontSize: "15px", fontWeight: "700" }}>Response Language</span>

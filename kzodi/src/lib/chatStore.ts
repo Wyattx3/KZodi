@@ -221,6 +221,8 @@ export const useChatStore = create<ChatStore>()(
             },
 
             setCustomName: (characterId, customName) => {
+                // Limit custom names to 30 characters to prevent layout overflow
+                const trimmedName = customName.slice(0, 30);
                 set((state) => {
                     const existing = state.conversations[characterId];
                     if (!existing) return state;
@@ -230,7 +232,7 @@ export const useChatStore = create<ChatStore>()(
                             ...state.conversations,
                             [characterId]: {
                                 ...existing,
-                                customName,
+                                customName: trimmedName,
                             }
                         }
                     };

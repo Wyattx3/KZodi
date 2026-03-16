@@ -460,6 +460,7 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                                 value={nicknameInput}
                                 onChange={(e) => setNicknameInput(e.target.value)}
                                 placeholder="Enter nickname"
+                                maxLength={30}
                                 style={{
                                     width: "100%",
                                     padding: "12px 16px",

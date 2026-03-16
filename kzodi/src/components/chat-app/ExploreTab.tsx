@@ -280,7 +280,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                     onClick={() => { setSearchMode(false); setSearch(""); setActiveCategory("All"); }}
                                     style={{
                                         background: 'none', border: 'none', cursor: 'pointer',
-                                        color: '#4A3728', padding: '8px', borderRadius: '12px',
+                                        color: '#4A3728', padding: '6px', borderRadius: '12px',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center'
                                     }}
                                 >
@@ -345,11 +345,11 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                                     <div className="explore-card-name-row">
                                                         <div style={{ width: '70%', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                                     </div>
-                                                    <div style={{ width: '100%', height: '14px', background: '#e5e7eb', borderRadius: '4px', marginTop: '8px', animation: 'pulse 1.5s infinite' }} />
-                                                    <div style={{ width: '80%', height: '14px', background: '#e5e7eb', borderRadius: '4px', marginTop: '4px', animation: 'pulse 1.5s infinite' }} />
-                                                    <div className="explore-card-footer" style={{ marginTop: '12px' }}>
-                                                        <div style={{ width: '50px', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                                        <div style={{ width: '60px', height: '16px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                    <div style={{ width: '100%', height: '12px', background: '#e5e7eb', borderRadius: '4px', marginTop: '6px', animation: 'pulse 1.5s infinite' }} />
+                                                    <div style={{ width: '80%', height: '12px', background: '#e5e7eb', borderRadius: '4px', marginTop: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                    <div className="explore-card-footer" style={{ marginTop: '8px' }}>
+                                                        <div style={{ width: '40px', height: '16px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                        <div style={{ width: '50px', height: '14px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                                     </div>
                                                 </div>
                                             </div>
@@ -438,15 +438,15 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                         <div className="explore-header-sticky">
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 4px 8px' }}>
                                 <div style={{ paddingLeft: "4px" }}>
-                                    <h1 className="explore-hero-title" style={{ fontSize: '26px', marginBottom: '2px' }}>Discover</h1>
-                                    <p className="explore-hero-subtitle" style={{ fontSize: '12px' }}>Find your next partner</p>
+                                    <h1 className="explore-hero-title" style={{ fontSize: '22px', marginBottom: '2px' }}>Discover</h1>
+                                    <p className="explore-hero-subtitle" style={{ fontSize: '11px' }}>Find your next partner</p>
                                 </div>
                                 <motion.button
                                     className="explore-header-search-btn"
                                     onClick={() => setSearchMode(true)}
                                     whileTap={{ scale: 0.95 }}
                                     style={{
-                                        width: '40px', height: '40px', borderRadius: '50%',
+                                        width: '36px', height: '36px', borderRadius: '50%',
                                         background: '#F3F4F6', border: 'none',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                         color: '#4A3728', cursor: 'pointer',
@@ -464,7 +464,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                             {/* ── Category chips ─────────────────────────── */}
                             <motion.div
                                 className="explore-chips no-scrollbar"
-                                style={{ padding: '8px 0 12px' }}
+                                style={{ padding: '4px 0 8px' }}
                             >
                                 {CATEGORIES.map((cat) => (
                                     <button
@@ -497,11 +497,11 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                                         <div className="explore-card-name-row">
                                                             <div style={{ width: '70%', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                                         </div>
-                                                        <div style={{ width: '100%', height: '14px', background: '#e5e7eb', borderRadius: '4px', marginTop: '8px', animation: 'pulse 1.5s infinite' }} />
-                                                        <div style={{ width: '80%', height: '14px', background: '#e5e7eb', borderRadius: '4px', marginTop: '4px', animation: 'pulse 1.5s infinite' }} />
-                                                        <div className="explore-card-footer" style={{ marginTop: '12px' }}>
-                                                            <div style={{ width: '50px', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                                            <div style={{ width: '60px', height: '16px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                        <div style={{ width: '100%', height: '12px', background: '#e5e7eb', borderRadius: '4px', marginTop: '6px', animation: 'pulse 1.5s infinite' }} />
+                                                        <div style={{ width: '80%', height: '12px', background: '#e5e7eb', borderRadius: '4px', marginTop: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                        <div className="explore-card-footer" style={{ marginTop: '8px' }}>
+                                                            <div style={{ width: '40px', height: '16px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+                                                            <div style={{ width: '50px', height: '14px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -719,11 +719,11 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                                                         cursor: 'pointer',
                                                                         display: 'flex',
                                                                         alignItems: 'center',
-                                                                        gap: '4px',
+                                                                        gap: '2px',
                                                                         color: '#ff4d4f',
-                                                                        fontSize: '12px',
+                                                                        fontSize: '11px',
                                                                         fontWeight: 600,
-                                                                        padding: '4px'
+                                                                        padding: '2px'
                                                                     }}
                                                                 >
                                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill={char.userHasLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

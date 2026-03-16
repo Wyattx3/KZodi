@@ -275,7 +275,7 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
                                             <img src={c.image} alt={c.name} style={{
                                                 width: "48px", height: "48px",
                                                 borderRadius: "50%", objectFit: "cover",
-                                                border: isSelected ? "2px solid #4A3728" : "2px solid transparent"
+                                                border: isSelected ? "2px solid #111827" : "2px solid transparent"
                                             }} />
                                             {isSelected && (
                                                 <motion.div
@@ -398,7 +398,7 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
                                             alignItems: "center", gap: "4px", width: "60px"
                                         }}>
                                             <img src={c.image} alt={c.name} style={{
-                                                width: "44px", height: "44px",
+                                                width: "48px", height: "48px",
                                                 borderRadius: "50%", objectFit: "cover"
                                             }} />
                                             <span style={{
@@ -720,15 +720,15 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                         <div className="chats-item-avatar" style={{ position: "relative" }}>
                                             {convo.groupImage ? (
                                                 <img src={convo.groupImage} alt={convo.groupName || "Group"} style={{
-                                                    width: "52px", height: "52px",
+                                                    width: "48px", height: "48px",
                                                     borderRadius: "50%",
                                                     objectFit: "cover"
                                                 }} />
                                             ) : (
                                                 <div style={{
-                                                    width: "52px", height: "52px",
+                                                    width: "48px", height: "48px",
                                                     borderRadius: "50%",
-                                                    background: "linear-gradient(135deg, #FFE566, #FFB347)",
+                                                    background: "#F3F4F6",
                                                     display: "flex", flexWrap: "wrap",
                                                     overflow: "hidden", position: "relative"
                                                 }}>
@@ -874,7 +874,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                     whileTap={{ cursor: "grabbing" }}
                                 >
                                     <div className="chats-item-avatar">
-                                        <img src={char.image} alt={char.name} style={{ pointerEvents: "none" }} />
+                                        <img src={char.image} alt={char.name} style={{ pointerEvents: "none", width: "48px", height: "48px", borderRadius: "50%", objectFit: "cover" }} />
                                         <span className="chats-item-online-dot" />
                                     </div>
                                     <div className="chats-item-info">
