@@ -448,22 +448,36 @@ const TabContent: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </motion.div>
 );
 
+// Global cache to track which paragraph texts have already been animated
+// Using a Set so that remounting after tab switch shows text immediately
+const _animatedParagraphs = new Set<string>();
+
+/** Render inline **bold** markers as <strong> spans */
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} className="font-700 text-warm-black">{part.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+/** Animated paragraph block — skips animation if already seen */
 const ParagraphBlock: React.FC<{ text: string; index: number; targetLang: string; onLangChange?: (l: string) => void }> = ({ text, index, targetLang, onLangChange }) => {
-  const [displayedText, setDisplayedText] = useState("");
-  const [isGenerating, setIsGenerating] = useState(true);
-  
+  const alreadyAnimated = _animatedParagraphs.has(text);
+  const [displayedText, setDisplayedText] = useState(alreadyAnimated ? text : "");
+  const [isGenerating, setIsGenerating] = useState(!alreadyAnimated);
   const [translatedText, setTranslatedText] = useState<string | null>(null);
   const [translatedLang, setTranslatedLang] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
 
-  // Typewriter effect for initial English text
   React.useEffect(() => {
+    if (alreadyAnimated) return;
     let currentIdx = 0;
-    const speed = 15; // ms per char
-    
-    // Slight delay based on index so paragraphs appear sequentially
+    const speed = 12;
     const delayTimeout = setTimeout(() => {
       const interval = setInterval(() => {
         if (currentIdx <= text.length) {
@@ -471,25 +485,22 @@ const ParagraphBlock: React.FC<{ text: string; index: number; targetLang: string
           currentIdx++;
         } else {
           setIsGenerating(false);
+          _animatedParagraphs.add(text);
           clearInterval(interval);
         }
       }, speed);
       return () => clearInterval(interval);
-    }, index * 800);
-    
+    }, index * 600);
     return () => clearTimeout(delayTimeout);
-  }, [text, index]);
+  }, [text, index, alreadyAnimated]);
 
   const handleTranslateTo = async (langCode: string) => {
     setShowLangMenu(false);
     if (onLangChange) onLangChange(langCode);
-    
-    // If already translated properly to requested language, toggle
     if (translatedText && translatedLang === langCode) {
       setShowOriginal(!showOriginal);
       return;
     }
-    
     setIsTranslating(true);
     try {
       const res = await fetch("/api/translate", {
@@ -519,16 +530,16 @@ const ParagraphBlock: React.FC<{ text: string; index: number; targetLang: string
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className="relative flex flex-col gap-2 mb-4"
+      transition={{ duration: 0.35 }}
+      className="relative flex flex-col gap-2 mb-3"
     >
-      <div className={`text-[15px] leading-[1.8] chalk-effect ${isMyanmar ? 'translated-text' : ''}`}>
-        {activeText}
+      <div className={`text-[14.5px] leading-[1.85] chalk-effect ${isMyanmar ? 'translated-text' : ''}`}>
+        {renderInline(activeText)}
         {isCurrentlyAnimating && (
           <span className="quill-anim text-warm-black">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
               <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
               <path d="M2 2l7.586 7.586"></path>
@@ -537,11 +548,10 @@ const ParagraphBlock: React.FC<{ text: string; index: number; targetLang: string
           </span>
         )}
       </div>
-      
       {!isGenerating && (
         <div className="flex justify-end mt-1 relative z-10">
           <div className="flex items-center bg-warm-black rounded-lg shadow-sm border border-warm-black/10">
-            <button 
+            <button
               onClick={() => {
                 if (translatedText && translatedLang === targetLang) {
                   setShowOriginal(!showOriginal);
@@ -571,7 +581,6 @@ const ParagraphBlock: React.FC<{ text: string; index: number; targetLang: string
             >
               <ChevronDown size={12} />
             </button>
-
             <AnimatePresence>
               {showLangMenu && (
                 <motion.div
@@ -600,19 +609,83 @@ const ParagraphBlock: React.FC<{ text: string; index: number; targetLang: string
   );
 };
 
+/** Smart AI text renderer — parses ## headers, • bullets, **bold**, and paragraphs */
 const AiText: React.FC<{ text: string | null; fallbackMsg?: string; lang?: string; onLangChange?: (l: string) => void }> = ({ text, fallbackMsg, lang = "my", onLangChange }) => {
-  if (text) {
-    const paragraphs = text.split("\n\n").filter(Boolean);
-    return (
-      <div className="flex flex-col">
-        {paragraphs.map((p, i) => (
-          <ParagraphBlock key={`${p.slice(0, 10)}-${i}`} text={p.trim()} index={i} targetLang={lang} onLangChange={onLangChange} />
-        ))}
-      </div>
-    );
+  if (!text) {
+    return <p className="text-[13px] text-warm-gray italic chalk-effect">{fallbackMsg || "AI reading is loading..."}</p>;
   }
-  return <p className="text-[13px] text-warm-gray italic chalk-effect">{fallbackMsg || "AI reading is loading..."}</p>;
+
+  const lines = text.split("\n");
+  const blocks: React.ReactNode[] = [];
+  let paragraphLines: string[] = [];
+  let paraIndex = 0;
+  // Track last paragraph text to attach translate button only to last para in a group
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    const paraText = paragraphLines.join(" ").trim();
+    if (paraText) {
+      blocks.push(
+        <ParagraphBlock
+          key={paraText}
+          text={paraText}
+          index={paraIndex++}
+          targetLang={lang}
+          onLangChange={onLangChange}
+        />
+      );
+    }
+    paragraphLines = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // ## Section Header
+    if (line.startsWith("## ")) {
+      flushParagraph();
+      const label = line.slice(3).trim();
+      const [title, subtitle] = label.split(" — ");
+      blocks.push(
+        <div key={`h-${i}`} className="flex items-start gap-2.5 mt-5 mb-2 first:mt-0">
+          <div className="w-[3px] rounded-full bg-warm-black shrink-0 mt-1" style={{ height: subtitle ? 36 : 20 }} />
+          <div>
+            <div className="text-[13px] font-800 text-warm-black leading-tight tracking-[-0.01em]">{title}</div>
+            {subtitle && <div className="text-[11px] font-500 text-warm-gray mt-0.5">{subtitle}</div>}
+          </div>
+        </div>
+      );
+      continue;
+    }
+
+    // • Bullet point
+    if (line.startsWith("• ") || line.startsWith("- ")) {
+      flushParagraph();
+      const bulletText = line.slice(2).trim();
+      blocks.push(
+        <div key={`b-${i}`} className="flex items-center gap-2 mb-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-pastel-yellow shrink-0" />
+          <span className="text-[13.5px] font-500 text-warm-black leading-snug">{renderInline(bulletText)}</span>
+        </div>
+      );
+      continue;
+    }
+
+    // Empty line = flush current paragraph
+    if (line === "") {
+      flushParagraph();
+      continue;
+    }
+
+    // Regular text line — accumulate into paragraph
+    paragraphLines.push(line);
+  }
+
+  // Flush remaining paragraph
+  flushParagraph();
+
+  return <div className="flex flex-col">{blocks}</div>;
 };
+
 
 /* -- Sections -- */
 

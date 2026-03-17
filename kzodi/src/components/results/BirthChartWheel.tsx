@@ -167,9 +167,12 @@ const BirthChartWheel: React.FC<BirthChartWheelProps> = ({ birthChartData }) => 
     );
   }
 
-  /* -- ASC rotation -- */
+  /* -- ASC rotation --
+     We want ASC to appear at the LEFT (9 o'clock = 270° in our polar() space).
+     polar(270, r) = (CX - r, CY), which is the left side.
+     So: adj(ascLon) should equal 270 → off = 270 - ascLon  */
   const ascLon = anglesData?.ascendant?.longitude ?? 0;
-  const off = 180 - ascLon;
+  const off = 270 - ascLon;
   const adj = (d: number) => ((d + off) % 360 + 360) % 360;
 
   /* ============= SIGN RING ============= */
