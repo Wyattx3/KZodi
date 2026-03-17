@@ -5,6 +5,7 @@ import { generateEmbeddings } from "@/lib/ai-setup";
 import { auth } from "@/auth";
 import { processMessage, type EngineInput } from "@/lib/ai-engine";
 import { getLatestReadingForUser } from "@/lib/db";
+import { callGroqCompound, shouldUseCompoundTools } from "@/lib/groq-compound";
 
 // ─── Request Interface ──────────────────────────────────────────────────────
 
@@ -485,7 +486,57 @@ Using this information, generate your response. Remember to format the output wi
 
         console.log(`[Roleplay] Character: ${characterName}, isAstrologer: ${isAstrologer}, Context Length: ${userReadingContext.length}`);
 
+        // ─── 🔍 GROQ COMPOUND TOOLS — Web Search + Visit Website ─────
+        // Trigger when user asks about character lore/history/abilities OR real-time events
+        // that the normal LLM may not know accurately.
+        let compoundContent = "";
+        const useCompound = message &&
+            context === "reply" &&
+            !isAstrologer && // Astrologers use a different enrichment path
+            shouldUseCompoundTools(message, characterName, characterTag || "");
+
+        if (useCompound) {
+            const groqApiKey = process.env.GROQ_API_KEY || "";
+            if (groqApiKey) {
+                console.log(`[Roleplay] 🔍 Routing to Groq Compound for lore/realtime data...`);
+                try {
+                    // Build a focused system prompt: character stays in-persona,
+                    // but the model can freely search the web for facts.
+                    const compoundSystemPrompt = `You are ${characterName}, a ${characterTag} character in a roleplay chat app. \
+Your personality: ${characterPersonality}
+
+The user is asking you something about your story, history, abilities, or about real-world/current events. \
+You MUST answer accurately using your knowledge about ${characterName}'s lore and canon facts. \
+If you need to search the web to verify or supplement your answer, do so.
+
+IMPORTANT RULES:
+- Stay in character as ${characterName} at ALL TIMES. Speak the way ${characterName} would speak.
+- Answer concisely — 1-3 short paragraphs max. This is a chat app, not an essay.
+- Do NOT mention that you searched the web. Speak as if you know this naturally.
+- If the question is about ${characterName}'s own lore, answer AS ${characterName} sharing their own story/knowledge.
+- Language: ${responseLanguage === "English (Default)" || !responseLanguage ? "English" : responseLanguage}`;
+
+                    const compoundResult = await callGroqCompound(
+                        compoundSystemPrompt,
+                        message,
+                        groqApiKey
+                    );
+
+                    if (compoundResult) {
+                        compoundContent = compoundResult;
+                        console.log(`[Roleplay] ✅ Compound returned ${compoundContent.length} chars`);
+                    } else {
+                        console.warn(`[Roleplay] ⚠️ Compound returned empty, falling back to normal engine`);
+                    }
+                } catch (compoundErr) {
+                    console.error(`[Roleplay] ❌ Compound error, falling back:`, compoundErr);
+                }
+            }
+        }
+
         // ─── 🧠❤️ AI ENGINE — Brain + Heart Processing ──────────────
+        // If compound already gave us a good answer, skip the full engine.
+        // Otherwise run the normal Brain+Heart pipeline.
         const engineInput: EngineInput = {
             message,
             characterId: effectiveCharacterId,
@@ -501,6 +552,16 @@ Using this information, generate your response. Remember to format the output wi
             userReadingContext,
             responseLanguage,
         };
+
+        // If compound gave a result, inject it as extra context for the engine
+        // so the normal engine can format it properly with character voice/stickers/splits
+        if (compoundContent) {
+            engineInput.userReadingContext = (
+                engineInput.userReadingContext
+                    ? engineInput.userReadingContext + "\n\n"
+                    : ""
+            ) + `[COMPOUND WEB DATA — Use this factual info to answer the user's question accurately, staying in character as ${characterName}]:\n${compoundContent}\n[END COMPOUND DATA]`;
+        }
 
         const engineOutput = await processMessage(engineInput);
 
