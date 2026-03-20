@@ -2782,6 +2782,19 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     );
 }
 
+/* ── Shared reaction-row layout tokens ─────────────── */
+// Keep in sync with the floating reaction row style in ChatRoom and MessageBubble
+const RX_BUTTON_COUNT = 5;
+const RX_BUTTON_SIZE = 40;   // px (width & height of each emoji button)
+const RX_GAP = 4;            // px (gap between buttons)
+const RX_PADDING_H = 10;     // px (horizontal padding on each side)
+const RX_BORDER = 1;         // px (border width on each side)
+const REACTION_ROW_WIDTH_COMPUTED =
+    RX_BUTTON_COUNT * RX_BUTTON_SIZE +
+    (RX_BUTTON_COUNT - 1) * RX_GAP +
+    RX_PADDING_H * 2 +
+    RX_BORDER * 2;
+
 /* ── Message Bubble ─────────────────────────────────── */
 function MessageBubble({
     message,
@@ -2834,18 +2847,7 @@ function MessageBubble({
     const MENU_HEIGHT_ESTIMATE = 130;
     const MENU_WIDTH = 180;
     const REACTION_ROW_HEIGHT = 52;
-
-    // Shared reaction-row layout tokens — keep in sync with floating row style below
-    const RX_BUTTON_COUNT = 5;
-    const RX_BUTTON_SIZE = 40;   // px (width & height of each emoji button)
-    const RX_GAP = 4;            // px (gap between buttons)
-    const RX_PADDING_H = 10;     // px (horizontal padding on each side)
-    const RX_BORDER = 1;         // px (border width on each side)
-    const REACTION_ROW_WIDTH =
-        RX_BUTTON_COUNT * RX_BUTTON_SIZE +
-        (RX_BUTTON_COUNT - 1) * RX_GAP +
-        RX_PADDING_H * 2 +
-        RX_BORDER * 2;
+    const REACTION_ROW_WIDTH = REACTION_ROW_WIDTH_COMPUTED;
 
     const openMenuWithPlacement = () => {
         // Guard: if ref is unavailable we cannot compute placement — do not open
