@@ -2543,7 +2543,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 )}
             </AnimatePresence>
 
-            {/* Soft backdrop — non-harsh transparent cutout around active bubble */}
+            {/* Soft backdrop with active-bubble cutout */}
             <AnimatePresence>
                 {activeActionMenuId !== null && (
                     <motion.div
@@ -2556,22 +2556,38 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             position: "fixed",
                             inset: 0,
                             zIndex: 149,
-                            pointerEvents: "none",
-                            overflow: "hidden"
+                            pointerEvents: "none"
                         }}
                     >
                         {activeBubbleRect ? (
-                            <div
-                                style={{
-                                    position: "absolute",
-                                    top: activeBubbleRect.top - 4,
-                                    left: activeBubbleRect.left - 4,
-                                    width: activeBubbleRect.width + 8,
-                                    height: activeBubbleRect.height + 8,
-                                    borderRadius: "18px",
-                                    boxShadow: "0 0 0 9999px rgba(0,0,0,0.35)"
-                                }}
-                            />
+                            <svg
+                                width="100%"
+                                height="100%"
+                                style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+                            >
+                                <defs>
+                                    <mask id="backdrop-cutout-mask">
+                                        {/* White = visible (dimmed area) */}
+                                        <rect width="100%" height="100%" fill="white" />
+                                        {/* Black = transparent (active bubble exempt area) */}
+                                        <rect
+                                            x={activeBubbleRect.left - 4}
+                                            y={activeBubbleRect.top - 4}
+                                            width={activeBubbleRect.width + 8}
+                                            height={activeBubbleRect.height + 8}
+                                            rx={18}
+                                            ry={18}
+                                            fill="black"
+                                        />
+                                    </mask>
+                                </defs>
+                                <rect
+                                    width="100%"
+                                    height="100%"
+                                    fill="rgba(0,0,0,0.35)"
+                                    mask="url(#backdrop-cutout-mask)"
+                                />
+                            </svg>
                         ) : (
                             <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)" }} />
                         )}
