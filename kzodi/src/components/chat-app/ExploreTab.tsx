@@ -18,26 +18,45 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
     const [characters, setCharacters] = useState<Character[]>([]);
     const [specialCharacters, setSpecialCharacters] = useState<Character[]>([]);
     const [forYouCharacters, setForYouCharacters] = useState<Character[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    // initialLoading: true only on very first load (no data yet) → shows skeleton grid
+    const [initialLoading, setInitialLoading] = useState(true);
+    // refreshLoading: true on category/search refreshes when cards already exist → shows overlay spinner
+    const [refreshLoading, setRefreshLoading] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(false);
     const [currentOffset, setCurrentOffset] = useState(0);
     const [featuredIndex, setFeaturedIndex] = useState(0);
     const [dragOffset, setDragOffset] = useState(0);
-    const touchStartX = useRef(0);
+    const touchStartX = useRef<number>(0);
     const isDragging = useRef(false);
     const sentinelRef = useRef<HTMLDivElement>(null);
+    const debounceTimer = useRef<NodeJS.Timeout | undefined>(undefined);
+    const abortControllerRef = useRef<AbortController | null>(null);
+    // queryToken: incremented on every category/search change. Lets loadMore detect stale appends.
+    const queryTokenRef = useRef(0);
 
     // Fetch characters (initial or reset)
-    const fetchCharacters = async (append = false, offset = 0) => {
-        if (append) setIsLoadingMore(true);
-        else setIsLoading(true);
+    const fetchCharacters = async (append = false, offset = 0, signal?: AbortSignal, expectedToken?: number) => {
+        if (append) {
+            setIsLoadingMore(true);
+        } else {
+            // Use the full skeleton only on the very first load (no cards, no search query).
+            // When the user is searching, keep existing results visible and show the
+            // overlay spinner instead — this eliminates the blank flash between keystrokes.
+            if (characters.length === 0 && !search) {
+                setInitialLoading(true);
+            } else {
+                setRefreshLoading(true);
+            }
+        }
         try {
-            const res = await fetch(`/api/characters?category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`);
+            const res = await fetch(`/api/characters?category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`, { signal });
             if (res.ok) {
                 const data = await res.json();
                 const chars = data.characters || data;
                 if (append) {
+                    // Discard stale load-more append if the query context has changed
+                    if (expectedToken !== undefined && queryTokenRef.current !== expectedToken) return;
                     setCharacters(prev => [...prev, ...chars]);
                 } else {
                     setCharacters(chars);
@@ -45,18 +64,24 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                 setHasMore(data.hasMore ?? false);
                 setCurrentOffset(offset + chars.length);
             }
-        } catch (error) {
+        } catch (error: any) {
+            if (error?.name === 'AbortError') return; // stale request — do not update state
             console.error("Failed to fetch characters:", error);
         } finally {
-            setIsLoading(false);
-            setIsLoadingMore(false);
+            if (!signal?.aborted) {
+                setInitialLoading(false);
+                setRefreshLoading(false);
+                setIsLoadingMore(false);
+            }
         }
     };
 
     // Load next page
     const loadMore = useCallback(() => {
         if (isLoadingMore || !hasMore) return;
-        fetchCharacters(true, currentOffset);
+        // Capture the token at call-time; fetchCharacters will discard the append if it changes
+        const token = queryTokenRef.current;
+        fetchCharacters(true, currentOffset, undefined, token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isLoadingMore, hasMore, currentOffset, activeCategory, search]);
 
@@ -99,7 +124,25 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
     useEffect(() => {
         setCurrentOffset(0);
         setHasMore(false);
-        fetchCharacters(false, 0);
+        // Bump token to invalidate any in-flight load-more from the previous query
+        queryTokenRef.current += 1;
+
+        // Abort any previous in-flight request
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        const runFetch = () => fetchCharacters(false, 0, controller.signal);
+
+        if (search) {
+            // Debounce search input to avoid stale races on every keystroke
+            clearTimeout(debounceTimer.current);
+            debounceTimer.current = setTimeout(runFetch, 350);
+        } else {
+            // Category change — fire immediately, no debounce needed
+            runFetch();
+        }
+
         if (activeCategory === "All" && !search) {
             fetchSpecialCharacters();
             fetchForYou();
@@ -118,7 +161,11 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
         };
 
         window.addEventListener('characterLikeUpdate', handleLikeUpdate);
-        return () => window.removeEventListener('characterLikeUpdate', handleLikeUpdate);
+        return () => {
+            clearTimeout(debounceTimer.current);
+            abortControllerRef.current?.abort();
+            window.removeEventListener('characterLikeUpdate', handleLikeUpdate);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeCategory, search]);
 
@@ -331,7 +378,8 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                         <div className="explore-scroll-content no-scrollbar">
 
                             {/* Search Results */}
-                            {isLoading ? (
+                            {initialLoading ? (
+                                /* First-load skeleton — shown only when no data exists yet */
                                 <div style={{ paddingTop: '8px' }}>
                                     <div className="explore-section-header">
                                         <div style={{ width: '150px', height: '28px', background: '#F3F4F6', borderRadius: '8px', animation: 'pulse 1.5s infinite' }} />
@@ -357,7 +405,23 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                     </div>
                                 </div>
                             ) : characters.length > 0 ? (
-                                <div style={{ paddingTop: '8px' }}>
+                                <div style={{ paddingTop: '8px', position: 'relative' }}>
+                                    {/* Refresh overlay spinner — shown over existing cards on category/search change */}
+                                    {refreshLoading && (
+                                        <div style={{
+                                            position: 'absolute', inset: 0, zIndex: 10,
+                                            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                                            paddingTop: '48px',
+                                            background: 'rgba(255,253,245,0.65)', backdropFilter: 'blur(2px)',
+                                            borderRadius: '12px', pointerEvents: 'none'
+                                        }}>
+                                            <div style={{
+                                                width: '28px', height: '28px', border: '3px solid #e5e7eb',
+                                                borderTop: '3px solid #4A3728', borderRadius: '50%',
+                                                animation: 'spin 0.8s linear infinite'
+                                            }} />
+                                        </div>
+                                    )}
                                     <div className="explore-section-header">
                                         <h2 className="explore-section-title">
                                             {search ? `Results for "${search}"` : activeCategory === "All" ? "All Characters" : activeCategory}
@@ -481,9 +545,9 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                         {/* ── Scrollable Content ────────────────────── */}
                         <div className="explore-scroll-content no-scrollbar">
 
-                            {isLoading ? (
+                            {initialLoading ? (
+                                /* First-load skeleton — shown only when no data exists yet */
                                 <div style={{ padding: '0px' }}>
-                                    {/* Skeleton Section Header */}
                                     <div className="explore-section">
                                         <div className="explore-section-header">
                                             <div style={{ width: '150px', height: '28px', background: '#F3F4F6', borderRadius: '8px', animation: 'pulse 1.5s infinite' }} />
@@ -510,7 +574,23 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                     </div>
                                 </div>
                             ) : (
-                                <>
+                                <div style={{ position: 'relative' }}>
+                                    {/* Refresh overlay spinner — shown over existing cards on category/search change */}
+                                    {refreshLoading && (
+                                        <div style={{
+                                            position: 'absolute', inset: 0, zIndex: 10,
+                                            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                                            paddingTop: '64px',
+                                            background: 'rgba(255,253,245,0.65)', backdropFilter: 'blur(2px)',
+                                            borderRadius: '12px', pointerEvents: 'none'
+                                        }}>
+                                            <div style={{
+                                                width: '28px', height: '28px', border: '3px solid #e5e7eb',
+                                                borderTop: '3px solid #4A3728', borderRadius: '50%',
+                                                animation: 'spin 0.8s linear infinite'
+                                            }} />
+                                        </div>
+                                    )}
                                     {/* ── Specialist Characters — Horizontal Scroll ── */}
                                     {activeCategory === "All" && !search && specialCharacters.length > 0 && (
                                         <div className="explore-section">
@@ -788,7 +868,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                             <p style={{ fontSize: '14px', color: '#6B7280' }}>Try a different search or category</p>
                                         </motion.div>
                                     )}
-                                </>
+                                </div>
                             )}
                         </div>
                     </motion.div>

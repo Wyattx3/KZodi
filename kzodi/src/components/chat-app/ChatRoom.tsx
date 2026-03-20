@@ -847,6 +847,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
     const [isAstroProfileModalOpen, setIsAstroProfileModalOpen] = useState(false);
     const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
+    const [menuPlacement, setMenuPlacement] = useState<{ top: string; left: string } | null>(null);
+    const [activeMessage, setActiveMessage] = useState<ChatMessage | null>(null);
+    const [activeBubbleRect, setActiveBubbleRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+    const [selectTextContent, setSelectTextContent] = useState<string | null>(null);
     const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -887,6 +891,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             setShowMenu(false);
             if (isTrueAstrologer) setShowStandardMenu(false);
             setActiveActionMenuId(null);
+            setActiveMessage(null);
+            setActiveBubbleRect(null);
         };
         window.addEventListener("click", handleClick);
         return () => window.removeEventListener("click", handleClick);
@@ -1287,12 +1293,18 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     }, [messages, character.id, markAsSeen, unreadMarkerId]);
 
     useEffect(() => {
-        // Direct scrollTop manipulation to prevent page jump issues on mobile
-        const scrollArea = document.querySelector('.chatroom-messages-area');
-        if (scrollArea) {
-            scrollArea.scrollTop = scrollArea.scrollHeight;
+        // On initial load (still fetching), jump instantly to the bottom without animation.
+        // During normal conversation use smooth scrollIntoView for a polished feel.
+        if (isFetchingMessages) {
+            const scrollArea = document.querySelector('.chatroom-messages-area');
+            if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
+        } else {
+            const endEl = document.querySelector('.chatroom-messages-area .chatroom-messages-end');
+            if (endEl) {
+                (endEl as HTMLElement).scrollIntoView({ behavior: "smooth", block: "end" });
+            }
         }
-    }, [messages.length, isTyping]);
+    }, [messages.length, isTyping, isFetchingMessages]);
 
     useEffect(() => {
         if (isFetchingMessages) return; // Wait until API finishes loading
@@ -2180,8 +2192,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                                     useChatStore.getState().addReaction(character.id, msgId, emoji, USER_CHARACTER.id);
                                                 }
                                             }}
-                                            activeActionMenuId={activeActionMenuId}
                                             setActiveActionMenuId={setActiveActionMenuId}
+                                            setActiveMessage={setActiveMessage}
+                                            setMenuPlacement={setMenuPlacement}
+                                            setActiveBubbleRect={setActiveBubbleRect}
                                         />
                                     </React.Fragment>
                                 );
@@ -2217,7 +2231,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             )}
                         </AnimatePresence>
 
-                        <div ref={messagesEndRef} />
+                        <div ref={messagesEndRef} className="chatroom-messages-end" />
                     </div>
                 )}
             </div>
@@ -2511,6 +2525,196 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 )}
             </AnimatePresence>
 
+            {/* Transparent click-catcher — dismiss layer */}
+            <AnimatePresence>
+                {activeActionMenuId !== null && (
+                    <motion.div
+                        key="menu-click-catcher"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        onClick={() => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); }}
+                        style={{ position: "fixed", inset: 0, zIndex: 149, background: "transparent" }}
+                    />
+                )}
+            </AnimatePresence>
+
+            {/* Spotlight div — darkens everything outside the active bubble */}
+            <AnimatePresence>
+                {activeActionMenuId !== null && activeBubbleRect !== null && (
+                    <motion.div
+                        key="menu-spotlight"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        style={{
+                            position: "fixed",
+                            top: activeBubbleRect.top - 8,
+                            left: activeBubbleRect.left - 8,
+                            width: activeBubbleRect.width + 16,
+                            height: activeBubbleRect.height + 16,
+                            zIndex: 150,
+                            borderRadius: "16px",
+                            boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)",
+                            pointerEvents: "none"
+                        }}
+                    />
+                )}
+            </AnimatePresence>
+
+            {/* Top-level fixed action menu — above overlay, unaffected by scroll container stacking */}
+            <AnimatePresence>
+                {activeActionMenuId !== null && activeMessage !== null && (() => {
+                    const emojis = [
+                        { id: "like", icon: <ThumbsUp size={20} strokeWidth={2.5} color="#D48806" /> },
+                        { id: "love", icon: <Heart size={20} strokeWidth={2.5} color="#FF4D4F" /> },
+                        { id: "haha", icon: <Laugh size={20} strokeWidth={2.5} color="#FAAD14" /> },
+                        { id: "wow", icon: <Sparkles size={20} strokeWidth={2.5} color="#FFC53D" /> },
+                        { id: "sad", icon: <Frown size={20} strokeWidth={2.5} color="#4BC0C8" /> }
+                    ];
+                    const dismissMenu = () => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); };
+                    return (
+                        <motion.div
+                            key="chatroom-action-menu-fixed"
+                            initial={{ opacity: 0, y: -6, scale: 0.9 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, transition: { duration: 0 } }}
+                            transition={{ duration: 0.15 }}
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                                position: "fixed",
+                                zIndex: 200,
+                                ...(menuPlacement ?? {}),
+                                backdropFilter: "blur(20px)",
+                                WebkitBackdropFilter: "blur(20px)",
+                                background: "rgba(255,255,255,0.7)",
+                                border: "1px solid rgba(0,0,0,0.08)",
+                                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                                borderRadius: "14px",
+                                minWidth: "160px",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "4px",
+                                padding: "4px"
+                            }}
+                        >
+                            <div className="no-scrollbar" style={{ display: "flex", gap: "4px", padding: "6px 8px", borderBottom: "1px solid rgba(0,0,0,0.05)", marginBottom: "2px", overflowX: "auto" }}>
+                                {emojis.map(e => (
+                                    <button
+                                        key={e.id}
+                                        onClick={() => {
+                                            const hasReacted = activeMessage.reactions?.[e.id]?.includes(USER_CHARACTER.id);
+                                            if (hasReacted) {
+                                                useChatStore.getState().removeReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
+                                            } else {
+                                                useChatStore.getState().addReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
+                                            }
+                                            dismissMenu();
+                                        }}
+                                        style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", fontSize: "22px", cursor: "pointer", padding: "4px", borderRadius: "50%", transition: "transform 0.15s ease", width: "40px", height: "40px" }}
+                                        onMouseEnter={ev => ev.currentTarget.style.transform = "scale(1.2)"}
+                                        onMouseLeave={ev => ev.currentTarget.style.transform = "scale(1)"}
+                                        title={e.id}
+                                    >
+                                        {e.icon}
+                                    </button>
+                                ))}
+                            </div>
+                            <button className="chatroom-msg-action-btn" onClick={() => {
+                                setReplyingTo(activeMessage);
+                                setTimeout(() => inputRef.current?.focus(), 50);
+                                dismissMenu();
+                            }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                    <path d="M3 10h10a5 5 0 015 5v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M7 14L3 10l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                                Reply
+                            </button>
+                            <button className="chatroom-msg-action-btn" onClick={() => {
+                                navigator.clipboard.writeText(activeMessage.content);
+                                dismissMenu();
+                            }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="1.5" />
+                                </svg>
+                                Copy
+                            </button>
+                            <button className="chatroom-msg-action-btn" onClick={() => {
+                                setSelectTextContent(activeMessage.content);
+                                dismissMenu();
+                            }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                    <path d="M4 7h16M4 12h10M4 17h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                </svg>
+                                Select Text
+                            </button>
+                        </motion.div>
+                    );
+                })()}
+            </AnimatePresence>
+
+            {/* Select Text modal */}
+            <AnimatePresence>
+                {selectTextContent !== null && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        onClick={() => setSelectTextContent(null)}
+                        style={{
+                            position: "fixed", inset: 0, zIndex: 500,
+                            display: "flex", alignItems: "center", justifyContent: "center"
+                        }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.92, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.92, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                                background: "#FFFFFF", borderRadius: "16px",
+                                padding: "20px", maxWidth: "340px",
+                                width: "calc(100% - 40px)",
+                                boxShadow: "0 16px 48px rgba(0,0,0,0.18)"
+                            }}
+                        >
+                            <div style={{ fontSize: "15px", fontWeight: 700, color: "#4A3728", marginBottom: "12px" }}>Select Text</div>
+                            <textarea
+                                readOnly
+                                value={selectTextContent}
+                                style={{
+                                    width: "100%", minHeight: "120px",
+                                    border: "1px solid rgba(0,0,0,0.08)",
+                                    borderRadius: "10px", padding: "10px",
+                                    fontSize: "14px", color: "#4A3728",
+                                    lineHeight: 1.5, resize: "none",
+                                    userSelect: "text", WebkitUserSelect: "text",
+                                    outline: "none", fontFamily: "inherit",
+                                    background: "rgba(0,0,0,0.02)"
+                                }}
+                            />
+                            <button
+                                onClick={() => setSelectTextContent(null)}
+                                style={{
+                                    marginTop: "12px", width: "100%", padding: "10px",
+                                    borderRadius: "10px", border: "none",
+                                    background: "#FFE566", color: "#4A3728",
+                                    fontWeight: 600, fontSize: "14px", cursor: "pointer"
+                                }}
+                            >
+                                Close
+                            </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
         </div >
     );
 }
@@ -2525,8 +2729,10 @@ function MessageBubble({
     onReply,
     replyMessage,
     onReaction,
-    activeActionMenuId,
     setActiveActionMenuId,
+    setActiveMessage,
+    setMenuPlacement,
+    setActiveBubbleRect,
 }: {
     message: ChatMessage;
     character: Character;
@@ -2536,15 +2742,17 @@ function MessageBubble({
     onReply?: (msg: ChatMessage) => void;
     replyMessage?: ChatMessage;
     onReaction?: (messageId: string, emoji: string) => void;
-    activeActionMenuId: string | null;
     setActiveActionMenuId: (id: string | null) => void;
+    setActiveMessage: (msg: ChatMessage | null) => void;
+    setMenuPlacement: (p: { top: string; left: string } | null) => void;
+    setActiveBubbleRect: (rect: { top: number; left: number; width: number; height: number } | null) => void;
 }) {
     const isUser = message.role === "user";
-    const showActions = activeActionMenuId === message.id;
     const isStickerOnly = /^\[\[\s*STICKER\s*:\s*.+?\]+$/i.test(message.content.trim());
     const isAttachmentOnly = message.attachment?.type === "image" && (!message.content || message.content.trim() === "");
     const isTransparentBubble = isStickerOnly || isAttachmentOnly;
     const rid = message.id.slice(-6); // unique suffix for SVG gradient IDs
+    // Emoji set used for reaction pill icon lookup (action menu emojis rendered at ChatRoom level)
     const emojis = [
         { id: "like", icon: <ThumbsUp size={20} strokeWidth={2.5} color="#D48806" /> },
         { id: "love", icon: <Heart size={20} strokeWidth={2.5} color="#FF4D4F" /> },
@@ -2552,6 +2760,50 @@ function MessageBubble({
         { id: "wow", icon: <Sparkles size={20} strokeWidth={2.5} color="#FFC53D" /> },
         { id: "sad", icon: <Frown size={20} strokeWidth={2.5} color="#4BC0C8" /> }
     ];
+    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const longPressTriggered = useRef(false);
+    const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+    const bubbleRef = useRef<HTMLDivElement>(null);
+    const LONG_PRESS_MOVE_THRESHOLD = 10; // px
+
+    const MENU_HEIGHT_ESTIMATE = 220;
+    const MENU_WIDTH = 180;
+
+    const openMenuWithPlacement = () => {
+        if (!bubbleRef.current) {
+            setActiveBubbleRect(null);
+            setActiveMessage(message);
+            setActiveActionMenuId(message.id);
+            setMenuPlacement(null);
+            return;
+        }
+        const rect = bubbleRef.current.getBoundingClientRect();
+        const windowHeight = window.innerHeight;
+        const windowWidth = window.innerWidth;
+
+        // Save bubble rect for the spotlight
+        setActiveBubbleRect({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
+
+        const isLowerHalf = rect.bottom > windowHeight / 2;
+
+        // Compute top — always use top, never bottom
+        const top = isLowerHalf
+            ? Math.max(rect.top - MENU_HEIGHT_ESTIMATE - 8, 8)
+            : Math.min(rect.bottom + 8, windowHeight - MENU_HEIGHT_ESTIMATE - 8);
+
+        // Compute left — user bubbles pin right-aligned, AI bubbles pin left-aligned
+        let computedLeft: number;
+        if (isUser) {
+            computedLeft = Math.min(rect.right - MENU_WIDTH, windowWidth - MENU_WIDTH - 8);
+        } else {
+            computedLeft = Math.max(rect.left, 8);
+        }
+        const left = Math.max(computedLeft, 8);
+
+        setMenuPlacement({ top: `${top}px`, left: `${left}px` });
+        setActiveMessage(message);
+        setActiveActionMenuId(message.id);
+    };
 
     return (
         <motion.div
@@ -2570,14 +2822,40 @@ function MessageBubble({
             onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setActiveActionMenuId(showActions ? null : message.id);
+                openMenuWithPlacement();
             }}
-            onClick={(e) => {
-                // Ensure we don't trigger when clicking images
-                if ((e.target as HTMLElement).tagName.toLowerCase() !== 'img') {
-                    e.stopPropagation();
-                    setActiveActionMenuId(showActions ? null : message.id);
+            onTouchStart={(e) => {
+                const touch = e.touches[0];
+                touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+                longPressTriggered.current = false;
+                longPressTimer.current = setTimeout(() => {
+                    longPressTriggered.current = true;
+                    openMenuWithPlacement();
+                }, 400);
+            }}
+            onTouchEnd={(e) => {
+                if (longPressTimer.current) clearTimeout(longPressTimer.current);
+                touchStartPos.current = null;
+                if (longPressTriggered.current) {
+                    e.preventDefault();
+                    longPressTriggered.current = false;
                 }
+            }}
+            onTouchMove={(e) => {
+                if (!touchStartPos.current || !longPressTimer.current) return;
+                const touch = e.touches[0];
+                const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+                const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+                if (dx > LONG_PRESS_MOVE_THRESHOLD || dy > LONG_PRESS_MOVE_THRESHOLD) {
+                    clearTimeout(longPressTimer.current);
+                    longPressTimer.current = null;
+                }
+            }}
+            onTouchCancel={() => {
+                if (longPressTimer.current) clearTimeout(longPressTimer.current);
+                longPressTimer.current = null;
+                touchStartPos.current = null;
+                longPressTriggered.current = false;
             }}
         >
             {!isUser && isLast && (
@@ -2590,7 +2868,7 @@ function MessageBubble({
                 </div>
             )}
             {!isUser && !isLast && <div className="chatroom-msg-avatar-spacer" />}
-            <div className="chatroom-bubble-wrap" style={message.reactions && Object.keys(message.reactions).length > 0 ? { marginBottom: "16px" } : undefined}>
+            <div ref={bubbleRef} className="chatroom-bubble-wrap" style={message.reactions && Object.keys(message.reactions).length > 0 ? { marginBottom: "16px" } : undefined}>
                 <div
                     className={`chatroom-bubble ${isUser ? "chatroom-bubble-user" : "chatroom-bubble-ai"}`}
                     style={isTransparentBubble ? { background: "transparent", boxShadow: "none", padding: 0, border: "none" } : undefined}
@@ -2729,59 +3007,6 @@ function MessageBubble({
                     )}
                 </div>
             </div>
-            {/* Quick action row on context menu */}
-            <AnimatePresence>
-                {showActions && (
-                    <motion.div
-                        className="chatroom-msg-actions"
-                        initial={{ opacity: 0, y: -6, scale: 0.9 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, transition: { duration: 0 } }}
-                        transition={{ duration: 0.15 }}
-                        style={{
-                            backdropFilter: "blur(20px)",
-                            WebkitBackdropFilter: "blur(20px)",
-                            background: "rgba(255,255,255,0.7)",
-                            border: "1px solid rgba(0,0,0,0.08)",
-                            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-                            borderRadius: "14px",
-                            minWidth: "160px"
-                        }}
-                    >
-                        <div className="no-scrollbar" style={{ display: "flex", gap: "4px", padding: "6px 8px", borderBottom: "1px solid rgba(0,0,0,0.05)", marginBottom: "2px", overflowX: "auto" }}>
-                            {emojis.map(e => (
-                                <button
-                                    key={e.id}
-                                    onClick={() => {
-                                        onReaction?.(message.id, e.id);
-                                        setActiveActionMenuId(null);
-                                    }}
-                                    style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", fontSize: "22px", cursor: "pointer", padding: "4px", borderRadius: "50%", transition: "transform 0.15s ease", width: "40px", height: "40px", backgroundClip: "padding-box" }}
-                                    onMouseEnter={ev => ev.currentTarget.style.transform = "scale(1.2)"}
-                                    onMouseLeave={ev => ev.currentTarget.style.transform = "scale(1)"}
-                                    title={e.id}
-                                >
-                                    {e.icon}
-                                </button>
-                            ))}
-                        </div>
-                        <button className="chatroom-msg-action-btn" onClick={() => { onReply?.(message); setActiveActionMenuId(null); }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                <path d="M3 10h10a5 5 0 015 5v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                <path d="M7 14L3 10l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                            Reply
-                        </button>
-                        <button className="chatroom-msg-action-btn" onClick={() => { navigator.clipboard.writeText(message.content); setActiveActionMenuId(null); }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="1.5" />
-                            </svg>
-                            Copy
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
         </motion.div >
     );
 }

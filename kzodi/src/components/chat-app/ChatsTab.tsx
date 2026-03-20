@@ -430,6 +430,10 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
     const [draggingConvo, setDraggingConvo] = React.useState<string | null>(null);
     const [showNewMenu, setShowNewMenu] = React.useState(false);
     const [showGroupModal, setShowGroupModal] = React.useState(false);
+    // resolvedChars: on-demand fetched characters not yet in allCharacters/myCharacters
+    const [resolvedChars, setResolvedChars] = React.useState<Record<string, Character>>({});
+    // profileFetchingId: tracks which char ID is being fetched before opening profile
+    const [profileFetchingId, setProfileFetchingId] = React.useState<string | null>(null);
     const pressTimer = React.useRef<NodeJS.Timeout | null>(null);
     const menuOpenedAt = React.useRef<number>(0);
 
@@ -468,8 +472,32 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
         allCharacters.forEach((c) => (map[c.id] = c));
         // Override with the most recent edits from the active user's library
         myCharacters.forEach((c) => (map[c.id] = c));
+        // Supplement with any on-demand fetched characters (Fix 1)
+        Object.assign(map, resolvedChars);
         return map;
-    }, [allCharacters, myCharacters]);
+    }, [allCharacters, myCharacters, resolvedChars]);
+
+    // Fix 1: fetch missing characters on demand whenever the conversation list changes
+    React.useEffect(() => {
+        if (conversations.length === 0) return;
+        const toFetch = conversations
+            .filter(c => !c.isGroup && !charMap[c.characterId])
+            .map(c => c.characterId);
+        if (toFetch.length === 0) return;
+        for (const id of toFetch) {
+            // Only fetch if not already being resolved
+            if (resolvedChars[id]) continue;
+            fetch(`/api/characters/${id}`)
+                .then(res => res.ok ? res.json() : null)
+                .then(data => {
+                    if (data?.character) {
+                        setResolvedChars(prev => ({ ...prev, [id]: data.character }));
+                    }
+                })
+                .catch(() => { /* silently ignore */ });
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [conversations]);
 
     const filteredConvos = React.useMemo(() => {
         if (!searchQuery.trim()) return conversations.map(convo => ({ convo, matchedMsg: null as any }));
@@ -596,7 +624,9 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                     >
                         {conversations.filter(c => !c.isGroup).map((convo) => {
                             const char = charMap[convo.characterId];
+                            // Fix 5: skip entirely if char is missing or still a DiceBear stub
                             if (!char) return null;
+                            if (char.image?.startsWith('https://api.dicebear.com')) return null;
                             const displayName = convo.customName || char.name;
                             return (
                                 <motion.div
@@ -646,6 +676,16 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         ))
                     ) : (
                         filteredConvos.map(({ convo, matchedMsg }, i) => {
+                        // Helper: replace sticker tags with a friendly label.
+                        // Handles both plain "[[STICKER: ...]]" and group-prefixed "Name: [[STICKER: ...]]"
+                        const formatPreview = (content: string): string => {
+                            // Plain sticker (starts directly with sticker tag)
+                            if (/^\[\[\s*STICKER\s*:/i.test(content)) return "🎭 Sticker";
+                            // Sender-prefixed sticker: "SenderName: [[STICKER: ...]]"
+                            const prefixed = content.match(/^(.*?):\s*(\[\[\s*STICKER\s*:.*)/i);
+                            if (prefixed) return `${prefixed[1]}: 🎭 Sticker`;
+                            return content;
+                        };
                         // ── Group Chat Row ────────────────────────
                         if (convo.isGroup) {
                             const memberChars = (convo.groupMemberIds || []).map(id => charMap[id]).filter(Boolean);
@@ -753,9 +793,9 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                             </div>
                                             <div className="chats-item-bottom">
                                                 <p className="chats-item-preview">
-                                                    {displayContent && displayContent.length > 45
-                                                        ? displayContent.slice(0, 45) + "..."
-                                                        : displayContent || "No messages yet"}
+                                                    {displayContent && formatPreview(displayContent).length > 45
+                                                        ? formatPreview(displayContent).slice(0, 45) + "..."
+                                                        : formatPreview(displayContent) || "No messages yet"}
                                                 </p>
                                                 <div className="chats-item-meta">
                                                     {unreadCount > 0 && <span className="chats-item-msg-count">{unreadCount}</span>}
@@ -799,21 +839,72 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                     }}
                                 >
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); setActionConvo(null); onSelectCharacter(char, true); }}
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            setActionConvo(null);
+                                            // If char is a stub (personality === ""), we must fetch real data first.
+                                            // On any failure we keep the profile CLOSED to avoid showing broken stub data.
+                                            if (char.personality === "") {
+                                                setProfileFetchingId(convo.characterId);
+                                                let opened = false;
+                                                try {
+                                                    const res = await fetch(`/api/characters/${convo.characterId}`);
+                                                    if (res.ok) {
+                                                        const data = await res.json();
+                                                        if (data?.character) {
+                                                            setResolvedChars(prev => ({ ...prev, [convo.characterId]: data.character }));
+                                                            onSelectCharacter(data.character, true);
+                                                            opened = true;
+                                                        }
+                                                    }
+                                                } catch { /* network error — keep profile closed */ }
+                                                finally { setProfileFetchingId(null); }
+                                                // If we could not obtain real data, show feedback and bail out.
+                                                if (!opened) {
+                                                    const toast = document.createElement("div");
+                                                    toast.textContent = "Couldn't load profile — please try again.";
+                                                    Object.assign(toast.style, {
+                                                        position: "fixed", bottom: "90px", left: "50%",
+                                                        transform: "translateX(-50%)",
+                                                        background: "#1F1F1F", color: "#fff",
+                                                        padding: "10px 18px", borderRadius: "20px",
+                                                        fontSize: "13px", fontWeight: "500",
+                                                        zIndex: "9999", pointerEvents: "none",
+                                                        boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+                                                        opacity: "0", transition: "opacity 0.2s"
+                                                    });
+                                                    document.body.appendChild(toast);
+                                                    requestAnimationFrame(() => { toast.style.opacity = "1"; });
+                                                    setTimeout(() => {
+                                                        toast.style.opacity = "0";
+                                                        setTimeout(() => toast.remove(), 300);
+                                                    }, 2500);
+                                                }
+                                                return;
+                                            }
+                                            onSelectCharacter(char, true);
+                                        }}
                                         aria-label="Profile"
+                                        disabled={profileFetchingId === convo.characterId}
                                         style={{
                                             width: "42px", height: "42px", borderRadius: "50%",
                                             border: "none", background: "#4A3728", color: "#fff",
                                             display: "flex", alignItems: "center", justifyContent: "center",
-                                            cursor: "pointer", boxShadow: "0 2px 8px rgba(74,55,40,0.25)",
+                                            cursor: profileFetchingId === convo.characterId ? "wait" : "pointer",
+                                            boxShadow: "0 2px 8px rgba(74,55,40,0.25)",
                                             transition: "transform 0.15s ease",
-                                            flexShrink: 0
+                                            flexShrink: 0,
+                                            opacity: profileFetchingId === convo.characterId ? 0.6 : 1
                                         }}
                                     >
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                                            <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" fill="none" />
-                                            <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
-                                        </svg>
+                                        {profileFetchingId === convo.characterId ? (
+                                            <div style={{ width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.4)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                                        ) : (
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" fill="none" />
+                                                <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
+                                            </svg>
+                                        )}
                                     </button>
                                     <button
                                         onClick={async (e) => {
@@ -885,9 +976,9 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                         <div className="chats-item-bottom">
                                             <p className="chats-item-preview">
                                                 {isAiLast && <span className="chats-item-preview-label">{displayName.split(" ")[0]}: </span>}
-                                                {displayContent.length > 45
-                                                    ? displayContent.slice(0, 45) + "..."
-                                                    : displayContent}
+                                                {formatPreview(displayContent).length > 45
+                                                    ? formatPreview(displayContent).slice(0, 45) + "..."
+                                                    : formatPreview(displayContent)}
                                             </p>
                                             <div className="chats-item-meta">
                                                 {unreadCount > 0 && <span className="chats-item-msg-count">{unreadCount}</span>}

@@ -61,9 +61,12 @@ export async function POST(req: Request) {
             WHERE id = $1
         `, [conversationId]);
 
-        // Invalidate cache in Valkey
+        // Invalidate cache in Valkey — both the per-conversation messages cache
+        // and the user-level conversations list cache (convos:userId) so that
+        // startup reconciliation always reads a fresh snapshot from the DB.
         try {
             await valkey.del(`messages:${userId}:${conversationId}`);
+            await valkey.del(`convos:${userId}`);
         } catch (redisErr) {
             console.warn("Valkey cache deletion failed:", redisErr);
         }
@@ -154,9 +157,11 @@ export async function DELETE(req: Request) {
             WHERE id = $1
         `, [conversationId]);
 
-        // Invalidate Valkey cache
+        // Invalidate Valkey cache — both the per-conversation messages cache
+        // and the conversations list cache so reconciliation cannot use a stale snapshot.
         try {
             await valkey.del(`messages:${userId}:${conversationId}`);
+            await valkey.del(`convos:${userId}`);
         } catch (redisErr) {
             console.warn("Valkey cache deletion failed:", redisErr);
         }

@@ -38,6 +38,8 @@ export interface Conversation {
 interface ChatStore {
     conversations: Record<string, Conversation>;
     activeCharacterId: string | null;
+    /** Persisted owner of this store snapshot. Used to detect cross-account data leakage. */
+    ownerUserId: string | null;
 
     setActiveCharacter: (id: string | null) => void;
     sendMessage: (characterId: string, content: string, attachment?: ChatMessage["attachment"], replyToId?: string) => void;
@@ -52,6 +54,16 @@ interface ChatStore {
     getConversationList: () => Conversation[];
     setTheme: (characterId: string, theme: string) => void;
     setCustomName: (characterId: string, customName: string) => void;
+    /** Stamp the current signed-in user as the store owner. */
+    setOwnerUserId: (id: string | null) => void;
+    /** Wipe all conversations and reset the owner — called when a different user is detected. */
+    resetConversations: () => void;
+    /**
+     * Remove a single conversation from local state ONLY — no API call.
+     * Use this for startup reconciliation so a stale /api/conversations cache
+     * cannot trigger irreversible DB deletions via DELETE /api/messages.
+     */
+    pruneLocalConversation: (characterId: string) => void;
 
     // Reactions
     addReaction: (characterId: string, messageId: string, emoji: string, userId: string) => void;
@@ -73,6 +85,7 @@ export const useChatStore = create<ChatStore>()(
         (set, get) => ({
             conversations: {},
             activeCharacterId: null,
+            ownerUserId: null,
             responseLanguage: "English (Default)",
 
             setResponseLanguage: (lang) => {
@@ -85,6 +98,20 @@ export const useChatStore = create<ChatStore>()(
                 }).catch(err => console.error("Failed to sync language to DB", err));
             },
             setActiveCharacter: (id) => set({ activeCharacterId: id }),
+
+            setOwnerUserId: (id) => set({ ownerUserId: id }),
+
+            resetConversations: () => set({ conversations: {}, ownerUserId: null }),
+
+            // Local-only prune: removes a conversation from state without touching the DB.
+            // Safe to call during startup reconciliation against potentially-stale server snapshots.
+            pruneLocalConversation: (characterId) => {
+                set((state) => {
+                    const newConvos = { ...state.conversations };
+                    delete newConvos[characterId];
+                    return { conversations: newConvos };
+                });
+            },
 
             clearConversation: (characterId) => {
                 set((state) => {
@@ -581,7 +608,9 @@ export const useChatStore = create<ChatStore>()(
             // Keep all conversations but truncate messages to the last 50 
             // so we don't blow up the 5MB localStorage limit, while preserving 
             // unread notifications and the last message preview for the Chats tab.
+            // ownerUserId is also persisted so we can detect cross-account reuse on next load.
             partialize: (state) => ({
+                ownerUserId: state.ownerUserId,
                 conversations: Object.fromEntries(
                     Object.entries(state.conversations).map(([key, conv]) => [
                         key,
