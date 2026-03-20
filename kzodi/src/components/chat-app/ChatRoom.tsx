@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback, createElement, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, createElement, useMemo, useId } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChatStore, type ChatMessage } from "@/lib/chatStore";
 import { CHARACTERS, type Character } from "@/data/characters";
@@ -831,6 +831,8 @@ const StickerPicker = ({ character, onSelect }: { character: Character, onSelect
 };
 
 export default function ChatRoom({ character, onBack, initialShowProfile = false, charMap = {} }: ChatRoomProps) {
+    const instanceId = useId();
+    const backdropMaskId = `backdrop-cutout-mask-${instanceId.replace(/:/g, "")}`;
 
     const isTrueAstrologer = character.id === 'astrologer-specialist' || character.id === 'astrologer_specialist';
     const [showStandardMenu, setShowStandardMenu] = useState(!isTrueAstrologer);
@@ -2566,7 +2568,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
                             >
                                 <defs>
-                                    <mask id="backdrop-cutout-mask">
+                                    <mask id={backdropMaskId}>
                                         {/* White = visible (dimmed area) */}
                                         <rect width="100%" height="100%" fill="white" />
                                         {/* Black = transparent (active bubble exempt area) */}
@@ -2585,7 +2587,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     width="100%"
                                     height="100%"
                                     fill="rgba(0,0,0,0.35)"
-                                    mask="url(#backdrop-cutout-mask)"
+                                    mask={`url(#${backdropMaskId})`}
                                 />
                             </svg>
                         ) : (
