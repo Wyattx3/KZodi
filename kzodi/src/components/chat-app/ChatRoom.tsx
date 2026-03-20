@@ -2770,13 +2770,9 @@ function MessageBubble({
     const MENU_WIDTH = 180;
 
     const openMenuWithPlacement = () => {
-        if (!bubbleRef.current) {
-            setActiveBubbleRect(null);
-            setActiveMessage(message);
-            setActiveActionMenuId(message.id);
-            setMenuPlacement(null);
-            return;
-        }
+        // Guard: if ref is unavailable we cannot compute placement — do not open
+        // with null coords, which would place the menu at the viewport origin.
+        if (!bubbleRef.current) return;
         const rect = bubbleRef.current.getBoundingClientRect();
         const windowHeight = window.innerHeight;
         const windowWidth = window.innerWidth;
@@ -2786,19 +2782,22 @@ function MessageBubble({
 
         const isLowerHalf = rect.bottom > windowHeight / 2;
 
-        // Compute top — always use top, never bottom
-        const top = isLowerHalf
-            ? Math.max(rect.top - MENU_HEIGHT_ESTIMATE - 8, 8)
-            : Math.min(rect.bottom + 8, windowHeight - MENU_HEIGHT_ESTIMATE - 8);
+        // Two-sided viewport bounds
+        const safeMaxLeft = Math.max(8, windowWidth - MENU_WIDTH - 8);
+        const safeMaxTop = Math.max(8, windowHeight - MENU_HEIGHT_ESTIMATE - 8);
+
+        // Compute top — always use top, never bottom; clamp both min and max
+        const rawTop = isLowerHalf
+            ? rect.top - MENU_HEIGHT_ESTIMATE - 8
+            : rect.bottom + 8;
+        const top = Math.min(Math.max(rawTop, 8), safeMaxTop);
 
         // Compute left — user bubbles pin right-aligned, AI bubbles pin left-aligned
-        let computedLeft: number;
-        if (isUser) {
-            computedLeft = Math.min(rect.right - MENU_WIDTH, windowWidth - MENU_WIDTH - 8);
-        } else {
-            computedLeft = Math.max(rect.left, 8);
-        }
-        const left = Math.max(computedLeft, 8);
+        // Both branches get a two-sided clamp: min(max(value, 8), maxLeft)
+        const rawLeft = isUser
+            ? rect.right - MENU_WIDTH   // right-align to bubble right edge
+            : rect.left;                // left-align to bubble left edge
+        const left = Math.min(Math.max(rawLeft, 8), safeMaxLeft);
 
         setMenuPlacement({ top: `${top}px`, left: `${left}px` });
         setActiveMessage(message);
