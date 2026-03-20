@@ -850,6 +850,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [menuPlacement, setMenuPlacement] = useState<{ top: string; left: string } | null>(null);
     const [activeMessage, setActiveMessage] = useState<ChatMessage | null>(null);
     const [activeBubbleRect, setActiveBubbleRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+    const [reactionRowPlacement, setReactionRowPlacement] = useState<{ top: string; left: string } | null>(null);
     const [selectTextContent, setSelectTextContent] = useState<string | null>(null);
     const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -893,6 +894,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             setActiveActionMenuId(null);
             setActiveMessage(null);
             setActiveBubbleRect(null);
+            setReactionRowPlacement(null);
         };
         window.addEventListener("click", handleClick);
         return () => window.removeEventListener("click", handleClick);
@@ -2196,6 +2198,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                             setActiveMessage={setActiveMessage}
                                             setMenuPlacement={setMenuPlacement}
                                             setActiveBubbleRect={setActiveBubbleRect}
+                                            setReactionRowPlacement={setReactionRowPlacement}
                                         />
                                     </React.Fragment>
                                 );
@@ -2534,39 +2537,51 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.15 }}
-                        onClick={() => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); }}
+                        onClick={() => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); setReactionRowPlacement(null); }}
                         style={{ position: "fixed", inset: 0, zIndex: 149, background: "transparent" }}
                     />
                 )}
             </AnimatePresence>
 
-            {/* Spotlight div — darkens everything outside the active bubble */}
+            {/* Soft backdrop — non-harsh transparent cutout around active bubble */}
             <AnimatePresence>
-                {activeActionMenuId !== null && activeBubbleRect !== null && (
+                {activeActionMenuId !== null && (
                     <motion.div
-                        key="menu-spotlight"
+                        key="menu-backdrop"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         style={{
                             position: "fixed",
-                            top: activeBubbleRect.top - 8,
-                            left: activeBubbleRect.left - 8,
-                            width: activeBubbleRect.width + 16,
-                            height: activeBubbleRect.height + 16,
-                            zIndex: 150,
-                            borderRadius: "16px",
-                            boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)",
-                            pointerEvents: "none"
+                            inset: 0,
+                            zIndex: 149,
+                            pointerEvents: "none",
+                            overflow: "hidden"
                         }}
-                    />
+                    >
+                        {activeBubbleRect ? (
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    top: activeBubbleRect.top - 4,
+                                    left: activeBubbleRect.left - 4,
+                                    width: activeBubbleRect.width + 8,
+                                    height: activeBubbleRect.height + 8,
+                                    borderRadius: "18px",
+                                    boxShadow: "0 0 0 9999px rgba(0,0,0,0.35)"
+                                }}
+                            />
+                        ) : (
+                            <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)" }} />
+                        )}
+                    </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Top-level fixed action menu — above overlay, unaffected by scroll container stacking */}
+            {/* Floating reaction pill row — near the active bubble */}
             <AnimatePresence>
-                {activeActionMenuId !== null && activeMessage !== null && (() => {
+                {activeActionMenuId !== null && activeMessage !== null && reactionRowPlacement !== null && (() => {
                     const emojis = [
                         { id: "like", icon: <ThumbsUp size={20} strokeWidth={2.5} color="#D48806" /> },
                         { id: "love", icon: <Heart size={20} strokeWidth={2.5} color="#FF4D4F" /> },
@@ -2574,7 +2589,59 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         { id: "wow", icon: <Sparkles size={20} strokeWidth={2.5} color="#FFC53D" /> },
                         { id: "sad", icon: <Frown size={20} strokeWidth={2.5} color="#4BC0C8" /> }
                     ];
-                    const dismissMenu = () => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); };
+                    const dismissMenu = () => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); setReactionRowPlacement(null); };
+                    return (
+                        <motion.div
+                            key="chatroom-reaction-row-floating"
+                            initial={{ opacity: 0, scale: 0.85, y: 6 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.85 }}
+                            transition={{ duration: 0.15 }}
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                                position: "fixed",
+                                zIndex: 201,
+                                ...reactionRowPlacement,
+                                display: "flex",
+                                gap: "4px",
+                                padding: "8px 10px",
+                                background: "rgba(255,255,255,0.85)",
+                                backdropFilter: "blur(16px)",
+                                WebkitBackdropFilter: "blur(16px)",
+                                borderRadius: "999px",
+                                boxShadow: "0 4px 16px rgba(0,0,0,0.14)",
+                                border: "1px solid rgba(0,0,0,0.07)"
+                            }}
+                        >
+                            {emojis.map(e => (
+                                <button
+                                    key={e.id}
+                                    onClick={() => {
+                                        const hasReacted = activeMessage.reactions?.[e.id]?.includes(USER_CHARACTER.id);
+                                        if (hasReacted) {
+                                            useChatStore.getState().removeReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
+                                        } else {
+                                            useChatStore.getState().addReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
+                                        }
+                                        dismissMenu();
+                                    }}
+                                    style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", fontSize: "22px", cursor: "pointer", padding: "4px", borderRadius: "50%", transition: "transform 0.15s ease", width: "40px", height: "40px" }}
+                                    onMouseEnter={ev => ev.currentTarget.style.transform = "scale(1.2)"}
+                                    onMouseLeave={ev => ev.currentTarget.style.transform = "scale(1)"}
+                                    title={e.id}
+                                >
+                                    {e.icon}
+                                </button>
+                            ))}
+                        </motion.div>
+                    );
+                })()}
+            </AnimatePresence>
+
+            {/* Top-level fixed action menu — Reply / Copy / Select Text only */}
+            <AnimatePresence>
+                {activeActionMenuId !== null && activeMessage !== null && (() => {
+                    const dismissMenu = () => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); setReactionRowPlacement(null); };
                     return (
                         <motion.div
                             key="chatroom-action-menu-fixed"
@@ -2600,28 +2667,6 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 padding: "4px"
                             }}
                         >
-                            <div className="no-scrollbar" style={{ display: "flex", gap: "4px", padding: "6px 8px", borderBottom: "1px solid rgba(0,0,0,0.05)", marginBottom: "2px", overflowX: "auto" }}>
-                                {emojis.map(e => (
-                                    <button
-                                        key={e.id}
-                                        onClick={() => {
-                                            const hasReacted = activeMessage.reactions?.[e.id]?.includes(USER_CHARACTER.id);
-                                            if (hasReacted) {
-                                                useChatStore.getState().removeReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
-                                            } else {
-                                                useChatStore.getState().addReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
-                                            }
-                                            dismissMenu();
-                                        }}
-                                        style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", fontSize: "22px", cursor: "pointer", padding: "4px", borderRadius: "50%", transition: "transform 0.15s ease", width: "40px", height: "40px" }}
-                                        onMouseEnter={ev => ev.currentTarget.style.transform = "scale(1.2)"}
-                                        onMouseLeave={ev => ev.currentTarget.style.transform = "scale(1)"}
-                                        title={e.id}
-                                    >
-                                        {e.icon}
-                                    </button>
-                                ))}
-                            </div>
                             <button className="chatroom-msg-action-btn" onClick={() => {
                                 setReplyingTo(activeMessage);
                                 setTimeout(() => inputRef.current?.focus(), 50);
@@ -2733,6 +2778,7 @@ function MessageBubble({
     setActiveMessage,
     setMenuPlacement,
     setActiveBubbleRect,
+    setReactionRowPlacement,
 }: {
     message: ChatMessage;
     character: Character;
@@ -2746,6 +2792,7 @@ function MessageBubble({
     setActiveMessage: (msg: ChatMessage | null) => void;
     setMenuPlacement: (p: { top: string; left: string } | null) => void;
     setActiveBubbleRect: (rect: { top: number; left: number; width: number; height: number } | null) => void;
+    setReactionRowPlacement: (p: { top: string; left: string } | null) => void;
 }) {
     const isUser = message.role === "user";
     const isStickerOnly = /^\[\[\s*STICKER\s*:\s*.+?\]+$/i.test(message.content.trim());
@@ -2766,8 +2813,10 @@ function MessageBubble({
     const bubbleRef = useRef<HTMLDivElement>(null);
     const LONG_PRESS_MOVE_THRESHOLD = 10; // px
 
-    const MENU_HEIGHT_ESTIMATE = 220;
+    const MENU_HEIGHT_ESTIMATE = 130;
     const MENU_WIDTH = 180;
+    const REACTION_ROW_HEIGHT = 52;
+    const REACTION_ROW_WIDTH = 220;
 
     const openMenuWithPlacement = () => {
         // Guard: if ref is unavailable we cannot compute placement — do not open
@@ -2777,29 +2826,49 @@ function MessageBubble({
         const windowHeight = window.innerHeight;
         const windowWidth = window.innerWidth;
 
-        // Save bubble rect for the spotlight
+        // Save bubble rect for the backdrop
         setActiveBubbleRect({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
 
         const isLowerHalf = rect.bottom > windowHeight / 2;
 
-        // Two-sided viewport bounds
-        const safeMaxLeft = Math.max(8, windowWidth - MENU_WIDTH - 8);
-        const safeMaxTop = Math.max(8, windowHeight - MENU_HEIGHT_ESTIMATE - 8);
+        const GAP = 8;
+        const totalStackHeight = REACTION_ROW_HEIGHT + GAP + MENU_HEIGHT_ESTIMATE;
 
-        // Compute top — always use top, never bottom; clamp both min and max
-        const rawTop = isLowerHalf
-            ? rect.top - MENU_HEIGHT_ESTIMATE - 8
-            : rect.bottom + 8;
-        const top = Math.min(Math.max(rawTop, 8), safeMaxTop);
+        // Base stack position
+        const stackTop = isLowerHalf 
+            ? rect.top - GAP - totalStackHeight 
+            : rect.bottom + GAP;
 
-        // Compute left — user bubbles pin right-aligned, AI bubbles pin left-aligned
-        // Both branches get a two-sided clamp: min(max(value, 8), maxLeft)
-        const rawLeft = isUser
-            ? rect.right - MENU_WIDTH   // right-align to bubble right edge
-            : rect.left;                // left-align to bubble left edge
-        const left = Math.min(Math.max(rawLeft, 8), safeMaxLeft);
+        // Clamp the entire stack so both layers remain fully visible
+        const safeStackTop = Math.min(
+            Math.max(stackTop, GAP),
+            windowHeight - totalStackHeight - GAP
+        );
 
-        setMenuPlacement({ top: `${top}px`, left: `${left}px` });
+        // Position layers within the clamped stack
+        // Reaction row stays closest to the bubble
+        let finalRxTop, finalMenuTop;
+        if (isLowerHalf) {
+            finalMenuTop = safeStackTop;
+            finalRxTop = safeStackTop + MENU_HEIGHT_ESTIMATE + GAP;
+        } else {
+            finalRxTop = safeStackTop;
+            finalMenuTop = safeStackTop + REACTION_ROW_HEIGHT + GAP;
+        }
+
+        // --- Action menu placement ---
+        const safeMaxLeft = Math.max(GAP, windowWidth - MENU_WIDTH - GAP);
+        const rawLeft = isUser ? rect.right - MENU_WIDTH : rect.left;
+        const left = Math.min(Math.max(rawLeft, GAP), safeMaxLeft);
+
+        // --- Reaction row placement ---
+        const rxSafeMaxLeft = Math.max(GAP, windowWidth - REACTION_ROW_WIDTH - GAP);
+        const rxRawLeft = isUser ? rect.right - REACTION_ROW_WIDTH : rect.left;
+        const rxLeft = Math.min(Math.max(rxRawLeft, GAP), rxSafeMaxLeft);
+
+        setMenuPlacement({ top: `${finalMenuTop}px`, left: `${left}px` });
+        setReactionRowPlacement({ top: `${finalRxTop}px`, left: `${rxLeft}px` });
+
         setActiveMessage(message);
         setActiveActionMenuId(message.id);
     };
