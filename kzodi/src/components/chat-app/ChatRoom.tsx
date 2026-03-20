@@ -2621,14 +2621,14 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 zIndex: 201,
                                 ...reactionRowPlacement,
                                 display: "flex",
-                                gap: "4px",
-                                padding: "8px 10px",
+                                gap: `${RX_GAP}px`,
+                                padding: `8px ${RX_PADDING_H}px`,
                                 background: "rgba(255,255,255,0.85)",
                                 backdropFilter: "blur(16px)",
                                 WebkitBackdropFilter: "blur(16px)",
                                 borderRadius: "999px",
                                 boxShadow: "0 4px 16px rgba(0,0,0,0.14)",
-                                border: "1px solid rgba(0,0,0,0.07)"
+                                border: `${RX_BORDER}px solid rgba(0,0,0,0.07)`
                             }}
                         >
                             {emojis.map(e => (
@@ -2643,7 +2643,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                         }
                                         dismissMenu();
                                     }}
-                                    style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", fontSize: "22px", cursor: "pointer", padding: "4px", borderRadius: "50%", transition: "transform 0.15s ease", width: "40px", height: "40px" }}
+                                    style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", fontSize: "22px", cursor: "pointer", padding: "4px", borderRadius: "50%", transition: "transform 0.15s ease", width: `${RX_BUTTON_SIZE}px`, height: `${RX_BUTTON_SIZE}px` }}
                                     onMouseEnter={ev => ev.currentTarget.style.transform = "scale(1.2)"}
                                     onMouseLeave={ev => ev.currentTarget.style.transform = "scale(1)"}
                                     title={e.id}
@@ -2834,7 +2834,18 @@ function MessageBubble({
     const MENU_HEIGHT_ESTIMATE = 130;
     const MENU_WIDTH = 180;
     const REACTION_ROW_HEIGHT = 52;
-    const REACTION_ROW_WIDTH = 220;
+
+    // Shared reaction-row layout tokens — keep in sync with floating row style below
+    const RX_BUTTON_COUNT = 5;
+    const RX_BUTTON_SIZE = 40;   // px (width & height of each emoji button)
+    const RX_GAP = 4;            // px (gap between buttons)
+    const RX_PADDING_H = 10;     // px (horizontal padding on each side)
+    const RX_BORDER = 1;         // px (border width on each side)
+    const REACTION_ROW_WIDTH =
+        RX_BUTTON_COUNT * RX_BUTTON_SIZE +
+        (RX_BUTTON_COUNT - 1) * RX_GAP +
+        RX_PADDING_H * 2 +
+        RX_BORDER * 2;
 
     const openMenuWithPlacement = () => {
         // Guard: if ref is unavailable we cannot compute placement — do not open
