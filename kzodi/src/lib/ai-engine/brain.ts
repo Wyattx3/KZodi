@@ -113,9 +113,22 @@ function buildThinkingPrompt(
     userReadingContext?: string
 ): string {
     // Get recent conversation summary (last 5 messages, condensed)
-    const recentContext = history.slice(-5).map(h =>
-        `${h.role === "user" ? "User" : characterName}: ${h.content.slice(0, 100)}`
-    ).join("\n");
+    // For group chats, extract the actual speaker name from [Name]: prefixes
+    // instead of always labeling non-user messages as characterName
+    const recentContext = history.slice(-5).map(h => {
+        if (h.role === "user") {
+            return `User: ${h.content.slice(0, 100)}`;
+        }
+        // If content starts with [Name]:, extract the bracketed name as the speaker
+        if (h.content.startsWith("[")) {
+            const bracketMatch = h.content.match(/^\[([^\]]+)\]:\s*/);
+            if (bracketMatch) {
+                return `${bracketMatch[1]}: ${h.content.slice(bracketMatch[0].length, bracketMatch[0].length + 100)}`;
+            }
+        }
+        // Own message (no prefix) — label as characterName
+        return `${characterName}: ${h.content.slice(0, 100)}`;
+    }).join("\n");
 
     // Build personality description for inner voice
     const personalityNote = buildPersonalityNote(traits, characterName);

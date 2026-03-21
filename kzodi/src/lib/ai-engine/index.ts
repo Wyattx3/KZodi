@@ -49,6 +49,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         userGender,
         userBirthday,
         isOfficialCharacter,
+        groupCue,
     } = input;
 
     console.log(`\n${"═".repeat(60)}`);
@@ -167,6 +168,11 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     const historyLimit = isFireworksModel ? 20 : 30;
     const recentHistory = history.slice(-historyLimit);
 
+    // For group chats, prepend the groupCue to the user message so the AI sees
+    // which character just spoke, enabling inter-character banter.
+    // groupCue is ONLY used here in generation — Heart, Brain, and memory use clean `message`.
+    const generationMessage = groupCue && message ? `${groupCue} ${message}` : message;
+
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
         { role: "system", content: systemPrompt },
         ...recentHistory.map((h, idx) => {
@@ -190,7 +196,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
                 content: finalContent,
             };
         }),
-        ...(message ? [{ role: "user" as const, content: message }] : []),
+        ...(generationMessage ? [{ role: "user" as const, content: generationMessage }] : []),
     ];
 
     // Emotional state affects generation parameters

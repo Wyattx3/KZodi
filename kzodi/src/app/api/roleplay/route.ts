@@ -23,6 +23,8 @@ interface RoleplayRequest {
     groupImage?: string;
     responseLanguage?: string;
     creatorId?: string;
+    /** Inter-character reaction cue for group chats (prompt-building only, never stored in memory) */
+    groupCue?: string;
 }
 
 // ─── Pinecone Setup ─────────────────────────────────────────────────────────
@@ -417,7 +419,8 @@ export async function POST(request: NextRequest) {
             isGroupChat = false,
             groupMembers = [],
             responseLanguage = "English (Default)",
-            creatorId
+            creatorId,
+            groupCue
         } = body;
 
         let userNickname, userGender, userBirthday;
@@ -452,7 +455,7 @@ export async function POST(request: NextRequest) {
         const effectiveCharacterId = reqCharId || characterName;
 
         // ─── RAG Memory Retrieval ────────────────────────────────────
-        const memoryQuery = `${characterName} ${message || history[history.length - 1]?.content || ""}`;
+        const memoryQuery = `${characterName} ${message || history[history.length - 1]?.content || ""} ${groupCue || ""}`.trim();
         const relevantContext = await retrieveContext(memoryQuery, effectiveCharacterId, userId);
 
         // ─── Reading Context Retrieval (for Astrologers) ─────────────
@@ -586,7 +589,8 @@ IMPORTANT RULES:
             userNickname,
             userGender,
             userBirthday,
-            isOfficialCharacter
+            isOfficialCharacter,
+            groupCue
         };
 
         // If compound gave a result, inject it as extra context for the engine
@@ -643,6 +647,12 @@ IMPORTANT RULES:
             const interactionText = `User: ${message}\n${characterName}: ${cleanContent}`;
             saveContext(interactionText, effectiveCharacterId, userId, importance)
                 .catch(err => console.error("Async memory save failed", err));
+
+            if (isGroupChat && groupCue) {
+                const groupInteractionText = `${groupCue} → ${characterName}: ${cleanContent}`;
+                saveContext(groupInteractionText, effectiveCharacterId, userId, "medium")
+                    .catch(err => console.error("Async group memory save failed", err));
+            }
 
             if (importance === "high") {
                 const userFact = `User said: ${message}`;

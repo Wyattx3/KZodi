@@ -106,6 +106,8 @@ export interface EngineInput {
     userBirthday?: string;
     /** Is the character an official one (no creatorId) */
     isOfficialCharacter?: boolean;
+    /** Inter-character reaction cue for group chats (prompt-building only, never stored in memory) */
+    groupCue?: string;
 }
 
 export interface EngineOutput {

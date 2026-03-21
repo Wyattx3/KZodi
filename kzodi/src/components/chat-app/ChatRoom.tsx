@@ -949,6 +949,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             // Shuffle members so the order varies each time
             const shuffled = [...groupMemberChars].sort(() => Math.random() - 0.5);
 
+            // Snapshot language once for the entire turn to prevent mixed-language responses
+            const responseLanguage = useChatStore.getState().responseLanguage;
+
             // Mark that AI is actively responding (pauses syncFromDB)
             isAiRespondingRef.current = true;
 
@@ -986,6 +989,20 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             ),
                     }));
 
+                    // Surface the last other-member's reply from THIS turn so this character can react to it
+                    // Scope to assistant messages after the most recent user message to avoid stale cross-turn references
+                    // Pass as separate groupCue field to avoid contaminating emotion/memory analysis
+                    let groupCue: string | undefined;
+                    const lastUserMsgIndex = currentMessages.reduce((acc, m, idx) => m.role === "user" ? idx : acc, -1);
+                    const thisRoundMessages = lastUserMsgIndex >= 0 ? currentMessages.slice(lastUserMsgIndex + 1) : [];
+                    const lastOtherMsg = [...thisRoundMessages].reverse().find(
+                        m => m.role === "assistant" && m.senderId && m.senderId !== member.id
+                    );
+                    if (lastOtherMsg) {
+                        const speakerName = lastOtherMsg.senderName || "Another member";
+                        groupCue = `[${speakerName} just said: "${(lastOtherMsg.content || "").slice(0, 120)}"]`;
+                    }
+
                     const res = await fetch("/api/roleplay", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -1000,6 +1017,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             isGroupChat: true,
                             groupMembers: groupMemberNames,
                             creatorId: member.creatorId,
+                            responseLanguage,
+                            groupCue,
                         }),
                     });
 
@@ -1329,6 +1348,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 const groupMemberNames = groupMemberChars.map((c: Character) => c.name);
                 const shuffled = [...groupMemberChars].sort(() => Math.random() - 0.5);
 
+                // Snapshot language once for the entire intro loop
+                const introResponseLanguage = useChatStore.getState().responseLanguage;
+
                 // Each character introduces themselves / reacts to being in the group
                 (async () => {
                     for (let i = 0; i < shuffled.length; i++) {
@@ -1361,8 +1383,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             const isFirst = i === 0;
                             const previousNames = shuffled.slice(0, i).map(m => m.name).join(", ");
                             const introPrompt = isFirst
-                                ? `System: A new group chat was just created with ${groupMemberNames.join(", ")} and the user.You are ${member.name}. Be the FIRST to speak! React naturally — you might be excited, confused, annoyed, or curious about who's in this group. Stay 100% in character. Keep it short (1-2 messages max). Do NOT greet formally. Act like your anime character would when randomly thrown into a group chat.`
-                                : `System: A group chat was just created. ${previousNames} already said something above. You are ${member.name}. React to what they said OR introduce yourself in your own way. You can tease them, argue, agree, or be dramatic — whatever fits your personality. Stay 100% in character. Keep it short. Think anime group dynamics.`;
+                                ? `System: A new group chat was just created with ${groupMemberNames.join(", ")} and the user. You are ${member.name} (${member.tag}). Your personality: "${member.personality}". Be the FIRST to speak! React naturally — you might be excited, confused, annoyed, or curious about who's in this group. Stay 100% in character. Keep it short (1-2 messages max). Do NOT greet formally. Act like your anime character would when randomly thrown into a group chat.`
+                                : `System: A group chat was just created. ${previousNames} already said something above. You are ${member.name} (${member.tag}). Your personality: "${member.personality}". React to what they said OR introduce yourself in your own way. You can tease them, argue, agree, or be dramatic — whatever fits your personality. Stay 100% in character. Keep it short. Think anime group dynamics.`;
 
                             const res = await fetch("/api/roleplay", {
                                 method: "POST",
@@ -1377,6 +1399,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     context: "reply",
                                     isGroupChat: true,
                                     groupMembers: groupMemberNames,
+                                    creatorId: member.creatorId,
+                                    responseLanguage: introResponseLanguage,
                                 }),
                             });
 
