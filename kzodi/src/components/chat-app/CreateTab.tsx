@@ -45,7 +45,8 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
     };
 
     return (
-        <div className="no-scrollbar" style={{ height: "100%", overflowY: "auto", position: "relative", padding: "0 18px 120px" }}>
+        <div className="no-scrollbar" style={{ height: "100%", overflowY: "auto", position: "relative", padding: "0 18px var(--nav-clearance)" }}>
+            <div style={{ position: "sticky", top: 0, zIndex: 60, background: "#FFFDF5", margin: "0 -18px", padding: "20px 18px 16px", borderBottom: "1px solid #F3F4F6" }}></div>
             <AnimatePresence mode="wait">
                 {view === "library" && (
                     <LibraryView
@@ -98,9 +99,7 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
 
 const LibraryView = ({ onCreateClick, onEditClick, onChatClick, characters = [] }: { onCreateClick: () => void, onEditClick: (char: any) => void, onChatClick: (char: any) => void, characters: Character[] }) => {
     return (
-        <motion.div
-            style={{ paddingBottom: "100px" }}
-        >
+        <motion.div>
             <div className="explore-hero" style={{ paddingBottom: '20px' }}>
                 <h1 className="explore-hero-title">My Library</h1>
                 <p className="explore-hero-subtitle">

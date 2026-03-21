@@ -799,6 +799,23 @@
 
 :root {
   --app-max-width: 500px;
+
+  /* ── Nav geometry tokens ─────────────────────────────────── */
+  --chat-nav-item-size: 48px;    /* icon-button / tab-item size (used by FABs & pill items) */
+  --chat-nav-bar-padding: 6px;   /* vertical padding inside center pill (.chat-tab-bar) */
+  --chat-nav-bar-border: 1px;    /* border width on center pill */
+  /* effective height of center pill = item + 2×padding + 2×border */
+  --chat-nav-tallest: calc(
+    var(--chat-nav-item-size)
+    + var(--chat-nav-bar-padding) * 2
+    + var(--chat-nav-bar-border) * 2
+  );
+  --chat-nav-offset: 12px;       /* gap between nav bottom edge and safe-area */
+  --chat-nav-buffer: 20px;       /* extra breathing room above nav for content */
+  --nav-clearance: calc(
+    var(--chat-nav-tallest) + var(--chat-nav-offset) + var(--chat-nav-buffer)
+    + env(safe-area-inset-bottom, 0px)
+  );
 }
 
 html,
@@ -900,7 +917,7 @@ body {
 
 .chat-nav-wrapper {
   position: fixed;
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--chat-nav-offset) + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -922,11 +939,11 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: var(--chat-nav-bar-padding) 10px;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: var(--chat-nav-bar-border) solid rgba(255, 255, 255, 0.6);
   border-radius: 36px;
   box-shadow:
     0 10px 40px -10px rgba(0, 0, 0, 0.1),
@@ -939,8 +956,8 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: var(--chat-nav-item-size);
+  height: var(--chat-nav-item-size);
   border: 1px solid rgba(255, 255, 255, 0.6);
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px) saturate(180%);
@@ -980,8 +997,8 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
+  width: var(--chat-nav-item-size);
+  height: var(--chat-nav-item-size);
   border: none;
   background: transparent;
   cursor: pointer;
@@ -1096,7 +1113,7 @@ body {
 .explore-scroll-content {
   flex: 1;
   overflow-y: auto;
-  padding: 0 18px calc(120px + env(safe-area-inset-bottom, 0px));
+  padding: 0 18px var(--nav-clearance);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -2128,7 +2145,7 @@ body {
   flex-direction: column;
   gap: 0;
   margin: 0 -16px;
-  padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); /* Space for bottom nav + safe area */
+  padding-bottom: var(--nav-clearance); /* Space for bottom nav + safe area */
   /* negate container padding so items go edge-to-edge */
 }
 

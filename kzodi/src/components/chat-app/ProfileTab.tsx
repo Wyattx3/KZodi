@@ -263,7 +263,7 @@ export default function ProfileTab() {
             </div>
 
             {/* Scroll Content Area */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 18px calc(120px + env(safe-area-inset-bottom, 0px))" }}>
+            <div className="no-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "0 18px 16px" }}>
                 <motion.div
                     className="explore-section"
             >

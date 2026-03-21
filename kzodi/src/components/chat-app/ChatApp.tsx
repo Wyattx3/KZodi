@@ -557,7 +557,7 @@ export default function ChatApp() {
                                 setMyCharacters={setMyCharacters}
                             />
                         </div>
-                        <div style={{ width: "100%", height: "100%", display: activeTab === "profile" ? "block" : "none" }}>
+                        <div style={{ width: "100%", height: "calc(100% - var(--nav-clearance))", display: activeTab === "profile" ? "flex" : "none", flexDirection: "column" }}>
                             <ProfileTab />
                         </div>
                     </div>
