@@ -98,6 +98,14 @@ export interface EngineInput {
     userReadingContext?: string;
     /** User's preferred response language */
     responseLanguage?: string;
+    /** User's nickname */
+    userNickname?: string;
+    /** User's gender */
+    userGender?: string;
+    /** User's birthday */
+    userBirthday?: string;
+    /** Is the character an official one (no creatorId) */
+    isOfficialCharacter?: boolean;
 }
 
 export interface EngineOutput {

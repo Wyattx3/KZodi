@@ -999,6 +999,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             context: "reply",
                             isGroupChat: true,
                             groupMembers: groupMemberNames,
+                            creatorId: member.creatorId,
                         }),
                     });
 
@@ -1052,6 +1053,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     isGroupChat: false,
                     groupMembers: [],
                     responseLanguage,
+                    creatorId: character.creatorId,
                 }),
             });
 
@@ -1108,6 +1110,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     context: "comfort",
                                     isGroupChat: false,
                                     groupMembers: [],
+                                    creatorId: character.creatorId,
                                 }),
                             });
 

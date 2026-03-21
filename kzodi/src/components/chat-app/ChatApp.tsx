@@ -264,10 +264,12 @@ export default function ChatApp() {
                 const incoming = (data.characters || data) as Character[];
                 // Always let richer API records replace any placeholder conversation entries
                 setAllCharacters(prev => mergeCharacters(prev, incoming));
+                return incoming;
             }
         } catch (err) {
             console.error("Failed to load characters:", err);
         }
+        return [];
     };
 
     useEffect(() => {
@@ -301,13 +303,71 @@ export default function ChatApp() {
                 // best-effort; it must not block the UI entirely.
             }
 
-            await Promise.all([
+            const [,, loadedAllChars] = await Promise.all([
                 loadConversations(),
                 loadMyCharacters(),
                 loadAllCharacters(),
             ]);
 
             setIsLoadingChats(false);
+
+            // Birthday greeting logic
+            try {
+                const profileRes = await fetch("/api/user/profile");
+                if (profileRes.ok) {
+                    const profile = await profileRes.json();
+                    if (profile.birthday && profile.timezone) {
+                        const userDate = new Date().toLocaleString("en-US", { timeZone: profile.timezone });
+                        const today = new Date(userDate);
+                        const mm = String(today.getMonth() + 1).padStart(2, '0');
+                        const dd = String(today.getDate()).padStart(2, '0');
+                        const yyyy = today.getFullYear();
+                        const todayStr = `${yyyy}-${mm}-${dd}`;
+                        const parts = profile.birthday.split('-');
+                        if (parts.length === 3) {
+                            const bMonth = parts[1];
+                            const bDay = parts[2];
+
+                            if (mm === bMonth && dd === bDay) {
+                                const flagKey = `kakoei-birthday-greeted-${todayStr}`;
+                                if (!localStorage.getItem(flagKey)) {
+                                    const { conversations, addReply } = useChatStore.getState();
+                                    const charsToGreet = Object.values(conversations)
+                                        .filter(c => !c.isGroup)
+                                        .sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0))
+                                        .slice(0, 2);
+
+                                    for (const convo of charsToGreet) {
+                                        const char = (loadedAllChars as Character[]).find(c => c.id === convo.characterId);
+                                        if (!char) continue;
+
+                                        fetch("/api/roleplay", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({
+                                                message: "[BIRTHDAY DIRECTIVE: Today is the user's birthday! Send a warm, in-character birthday greeting. Be genuine and stay true to your personality.]",
+                                                characterId: char.id,
+                                                characterName: char.name,
+                                                characterPersonality: char.personality,
+                                                characterTag: char.tag,
+                                                history: [],
+                                                context: "proactive-friendly"
+                                            })
+                                        })
+                                        .then(r => r.json())
+                                        .then(data => {
+                                            if (data.reply) addReply(char.id, data.reply);
+                                        });
+                                    }
+                                    localStorage.setItem(flagKey, "1");
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Birthday check failed", err);
+            }
         };
 
         initWithIdentityCheck();
@@ -482,7 +542,7 @@ export default function ChatApp() {
                     className="chat-app-view"
                 >
                     {/* Tab content — all tabs stay mounted to preserve state/data */}
-                    <div className="chat-app-content no-scrollbar">
+                    <div className="chat-app-content no-scrollbar" style={{ overflowY: activeTab === "profile" ? "hidden" : undefined }}>
                         <div style={{ width: "100%", display: activeTab === "explore" ? "block" : "none" }}>
                             <ExploreTab onSelectCharacter={handleSelectCharacter} />
                         </div>
@@ -497,7 +557,7 @@ export default function ChatApp() {
                                 setMyCharacters={setMyCharacters}
                             />
                         </div>
-                        <div style={{ width: "100%", display: activeTab === "profile" ? "block" : "none" }}>
+                        <div style={{ width: "100%", height: "100%", display: activeTab === "profile" ? "block" : "none" }}>
                             <ProfileTab />
                         </div>
                     </div>

@@ -22,6 +22,7 @@ interface RoleplayRequest {
     groupMembers?: string[];
     groupImage?: string;
     responseLanguage?: string;
+    creatorId?: string;
 }
 
 // ─── Pinecone Setup ─────────────────────────────────────────────────────────
@@ -415,8 +416,38 @@ export async function POST(request: NextRequest) {
             context = "reply",
             isGroupChat = false,
             groupMembers = [],
-            responseLanguage = "English (Default)"
+            responseLanguage = "English (Default)",
+            creatorId
         } = body;
+
+        let userNickname, userGender, userBirthday;
+        try {
+            const valkey = (await import("@/lib/redis")).default;
+            const { pool } = await import("@/lib/db");
+            const cacheKey = `user:${userId}:profile`;
+            const cachedProfile = await valkey.get(cacheKey);
+            if (cachedProfile) {
+                const p = JSON.parse(cachedProfile);
+                userNickname = p.nickname;
+                userGender = p.gender;
+                userBirthday = p.birthday;
+            } else {
+                const res = await pool.query("SELECT nickname, gender, birthday FROM users WHERE id = $1 LIMIT 1", [userId]);
+                if (res.rows[0]) {
+                    userNickname = res.rows[0].nickname;
+                    userGender = res.rows[0].gender;
+                    if (res.rows[0].birthday) {
+                        const d = res.rows[0].birthday;
+                        const offset = d.getTimezoneOffset();
+                        userBirthday = new Date(d.getTime() - (offset*60*1000)).toISOString().split('T')[0];
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[Roleplay] Failed to fetch user profile context:", e);
+        }
+
+        const isOfficialCharacter = !characterTag?.match(/^(Original|Specialist)$/i) && !creatorId;
 
         const effectiveCharacterId = reqCharId || characterName;
 
@@ -552,6 +583,10 @@ IMPORTANT RULES:
             userId,
             userReadingContext,
             responseLanguage,
+            userNickname,
+            userGender,
+            userBirthday,
+            isOfficialCharacter
         };
 
         // If compound gave a result, inject it as extra context for the engine

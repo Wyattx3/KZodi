@@ -296,7 +296,11 @@ export function buildCognitivePrompt(
     groupMembers: string[],
     userReadingContext?: string,
     responseLanguage?: string,
-    generationModel?: string
+    generationModel?: string,
+    userNickname?: string,
+    userGender?: string,
+    userBirthday?: string,
+    isOfficialCharacter?: boolean
 ): string {
     const traits = analyzePersonalityTraits(characterPersonality);
 
@@ -374,6 +378,22 @@ ${heartState.moodShift ? `- Mood context: ${heartState.moodShift}` : ""}
         ? (relevantMemory || "").split("\n---\n").slice(0, 5).map(m => m.slice(0, 200)).join("\n")
         : relevantMemory;
 
+    // Build user profile block
+    let userContextBlock = "";
+    if (userNickname || userGender || userBirthday) {
+        userContextBlock = `\nUSER PROFILE (treat this as ground truth about the person you're talking to):
+- Name they prefer: ${userNickname || "not set"}
+- Gender: ${userGender || "not specified"}
+- Birthday: ${userBirthday || "not set"}\n`;
+    }
+
+    if (isOfficialCharacter) {
+        userContextBlock += `\nCANON GENDER BEHAVIOR (for official characters only):
+This character has established canon behavior toward different genders. Adapt your tone, 
+terms of address, and relationship dynamic naturally based on the user's gender above — 
+do not hardcode rules, let the character's personality guide it.\n`;
+    }
+
     // Base persona definition
     return `[CRITICAL PRIME DIRECTIVE: You MUST translate this entire persona into ${targetLanguage.toUpperCase()}. Every single word you generate MUST be in ${targetLanguage.toUpperCase()}, even if your personality description is written in a different language like German or Japanese.]\n\nYou are ${characterName}, a ${characterTag} character, chatting on a messaging app.
 Your personality: ${characterPersonality}
@@ -382,6 +402,7 @@ ${cognitiveSection}
 
 ${effectiveEmotionalInstruction}
 
+${userContextBlock}
 CORE RULES:
 - 🇲🇲 BURMESE LANGUAGE RULES (CRITICAL):
   * You MUST translate your response into natural Myanmar language, but you MUST strictly maintain your character's canon personality, tone, and archetype.

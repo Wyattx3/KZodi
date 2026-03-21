@@ -45,6 +45,10 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         userId,
         userReadingContext,
         responseLanguage,
+        userNickname,
+        userGender,
+        userBirthday,
+        isOfficialCharacter,
     } = input;
 
     console.log(`\n${"═".repeat(60)}`);
@@ -150,7 +154,11 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         groupMembers,
         userReadingContext,
         responseLanguage,
-        generationModel
+        generationModel,
+        userNickname,
+        userGender,
+        userBirthday,
+        isOfficialCharacter
     );
 
     // Build messages array

@@ -205,6 +205,10 @@ export async function ensureSchema() {
     // Alter existing tables just in case they were already created without user_id
     try {
       await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(50) DEFAULT 'English (Default)';`);
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname VARCHAR(100);`);
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(50);`);
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birthday DATE;`);
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR(100);`);
       await query(`ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS zodiac_sign TEXT;`);
