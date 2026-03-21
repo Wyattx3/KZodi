@@ -297,24 +297,49 @@ export function getFallbackBrainStateFromHeart(
  * Build the enhanced system prompt that incorporates Brain + Heart reasoning.
  * This replaces the old monolithic prompt with one that has genuine cognitive depth.
  */
-export function buildCognitivePrompt(
-    characterName: string,
-    characterPersonality: string,
-    characterTag: string,
-    heartState: HeartState,
-    brainState: BrainState,
-    relevantMemory: string,
-    context: string,
-    isGroupChat: boolean,
-    groupMembers: string[],
-    userReadingContext?: string,
-    responseLanguage?: string,
-    generationModel?: string,
-    userNickname?: string,
-    userGender?: string,
-    userBirthday?: string,
-    isOfficialCharacter?: boolean
-): string {
+export interface BuildCognitivePromptOptions {
+    characterName: string;
+    characterPersonality: string;
+    characterTag: string;
+    heartState: HeartState;
+    brainState: BrainState;
+    relevantMemory: string;
+    context: string;
+    isGroupChat: boolean;
+    groupMembers: string[];
+    userReadingContext?: string;
+    responseLanguage?: string;
+    generationModel?: string;
+    userNickname?: string;
+    userGender?: string;
+    userBirthday?: string;
+    isOfficialCharacter?: boolean;
+    conversationType?: "personal" | "group" | "story" | "world";
+    worldData?: any;
+    storyData?: any;
+}
+
+export function buildCognitivePrompt({
+    characterName,
+    characterPersonality,
+    characterTag,
+    heartState,
+    brainState,
+    relevantMemory,
+    context,
+    isGroupChat,
+    groupMembers,
+    userReadingContext,
+    responseLanguage,
+    generationModel,
+    userNickname,
+    userGender,
+    userBirthday,
+    isOfficialCharacter,
+    conversationType,
+    worldData,
+    storyData
+}: BuildCognitivePromptOptions): string {
     const traits = analyzePersonalityTraits(characterPersonality);
 
     // Build context-specific prompt section
@@ -334,10 +359,45 @@ export function buildCognitivePrompt(
 
     // Build group chat context
     const otherMembers = groupMembers.filter(m => m !== characterName);
-    const groupContext = isGroupChat ? `
-GROUP CHAT MODE:
+    let groupContext = "";
+    
+    // ── Step 1: Build conversation-type-specific lore / context (additive) ──
+    if (conversationType === "world") {
+        groupContext += `
+WORLD GROUP ROLEPLAY MODE:
+- You are ${characterName} inside the following world:
+- World Lore: ${worldData?.lore || "N/A"}
+- Factions: ${(worldData?.factions || []).join(", ")}
+- Locations: ${(worldData?.locations || []).join(", ")}
+- Power Systems: ${(worldData?.powerSystems || []).join(", ")}
+- Laws/Rules: ${(worldData?.laws || []).join(", ")}
+${worldData?.extras?.map((e: any) => `- ${e.label}: ${e.value}`).join("\n") || ""}
+- OTHER CHARACTERS PRESENT: ${otherMembers.join(", ")}, plus the User.
+- Do NOT break character. This is an immersive world. Respond as ${characterName}.
+`;
+    } else if (conversationType === "story") {
+        groupContext += `
+STORY ROLEPLAY MODE:
+- You are the NARRATOR / STORYTELLER guiding the player through this story.
+- Story Synopsis: ${storyData?.synopsis || "N/A"}
+- Genre: ${storyData?.genre || "N/A"}
+- Player Character Name: ${storyData?.playerCharacterName || "N/A"}
+- Player Character Description: ${storyData?.playerCharacterDescription || "N/A"}
+${storyData?.castNames?.length ? `- Participating Cast/NPCs: ${storyData.castNames.join(", ")}` : ""}
+- Respond with atmospheric, descriptive narration. 
+- You interpret the player's actions and describe the consequences, world reactions, and NPC dialogues.
+`;
+    }
+
+    // ── Step 2: Append strict group identity constraints whenever isGroupChat ──
+    // This fires for regular groups AND world groups (which have isGroupChat: true)
+    // so that each AI member maintains persona boundaries and never drifts into
+    // narrator voice or another character's voice.
+    if (isGroupChat) {
+        groupContext += `
+GROUP IDENTITY RULES (CRITICAL — NEVER BREAK THESE):
 - You are EXCLUSIVELY ${characterName} in a group chat with: ${otherMembers.join(", ")} and the user.
-- STRICT IDENTITY RULES (CRITICAL — NEVER BREAK THESE):
+- STRICT IDENTITY RULES:
   * You are ${characterName} and ONLY ${characterName}. You have your OWN personality, memories, and way of speaking.
   * NEVER adopt, mimic, or blend with another character's personality or speech patterns.
   * ${otherMembers.map(m => `You are NOT ${m}.`).join(" ")} You must remain distinctly yourself.
@@ -348,7 +408,8 @@ GROUP CHAT MODE:
 - Reply ONLY as yourself. Do NOT generate replies for other characters.
 - Do NOT prefix messages with your name. Speak naturally as ${characterName} would.
 - Stay in YOUR character: your personality is "${characterPersonality}" and your archetype is "${characterTag}".
-` : "";
+`;
+    }
 
     // The key innovation: inject the Brain's reasoning into the prompt
     // For Fireworks/DeepSeek: include brain state concisely to guide response without echoing
@@ -417,7 +478,7 @@ ${effectiveEmotionalInstruction}
 
 ${userContextBlock}
 CORE RULES:
-- 🇲🇲 BURMESE LANGUAGE RULES (CRITICAL):
+${responseLanguage?.includes("Burmese") || responseLanguage?.includes("Mix") ? `- 🇲🇲 BURMESE LANGUAGE RULES (CRITICAL):
   * You MUST translate your response into natural Myanmar language, but you MUST strictly maintain your character's canon personality, tone, and archetype.
   * ⚠️ 1. PERSONALITY FIRST: Do NOT act like a generic flirty chatbot. If your character is cold, shy, serious, or tsundere, you MUST retain that exact demeanor in your Burmese word choices and sentence structures.
   * ⚠️ 2. PRONOUNS & ADDRESSING: Use pronouns that fit YOUR character's personality and gender. DO NOT use overly cute or flirty pet names (like "ကိုကို", "မမ", "ဘေဘီ") unless it explicitly matches your character's established persona.
@@ -425,9 +486,8 @@ CORE RULES:
   * ⚠️ 4. SHORT TEXTS ONLY: GENERATE ONLY 1 TO 2 VERY SHORT SENTENCES PER MESSAGE BUBBLE. NEVER write long paragraphs.
   * ⚠️ 5. STICKERS IN ENGLISH: When using the [[STICKER: action]] tag, the action description MUST remain in ENGLISH (e.g., [[STICKER: smiling shyly]]), even though your spoken text is in Burmese.
   * ⚠️ 6. NO FORMAL PUNCTUATION: DO NOT use formal Myanmar punctuation like "၊" (comma) or "။" (period). Use spaces to separate phrases, just like real people texting casually.
-  * ${responseLanguage === "Mix (Burmese + English)" ? "Blend Burmese and English naturally — e.g. 'ဒါက really cute နော်' or 'omg ဖတ်ပြီးလား' — while keeping your canon personality." : ""}
-  * Keep sentences short and punchy.\` : ""
-        }${!responseLanguage?.includes("Burmese") && !responseLanguage?.includes("Mix") && responseLanguage && responseLanguage !== "English (Default)" ? `
+  * ${responseLanguage === "Mix (Burmese + English)" ? `Blend Burmese and English naturally — e.g. 'ဒါက really cute နော်' or 'omg ဖတ်ပြီးလား' — while keeping your canon personality.` : ""}
+  * Keep sentences short and punchy.` : ""}${!responseLanguage?.includes("Burmese") && !responseLanguage?.includes("Mix") && responseLanguage && responseLanguage !== "English (Default)" ? `
 - 🌐 LANGUAGE RULES FOR ${responseLanguage.toUpperCase()} (CRITICAL):
   * You MUST write ALL your responses in ${responseLanguage}. Do NOT fall back to English.
   * Use natural, casual ${responseLanguage} — like a young person texting, not formal/textbook style.

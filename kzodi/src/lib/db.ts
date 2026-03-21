@@ -133,6 +133,7 @@ export async function ensureSchema() {
         attachment JSONB,
         sender_id VARCHAR(255),
         sender_name VARCHAR(255),
+        conversation_type VARCHAR(50) DEFAULT 'personal',
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
@@ -141,6 +142,41 @@ export async function ensureSchema() {
     await query(`CREATE INDEX IF NOT EXISTS msg_conv_idx ON messages (conversation_id);`);
     await query(`CREATE INDEX IF NOT EXISTS msg_user_idx ON messages (user_id);`);
     await query(`CREATE INDEX IF NOT EXISTS msg_conv_user_idx ON messages (conversation_id, user_id);`);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS stories (
+        id VARCHAR(255) PRIMARY KEY,
+        user_id uuid REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT,
+        synopsis TEXT,
+        genre TEXT,
+        image TEXT,
+        world_data JSONB,
+        story_data JSONB,
+        is_published BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // Add index for fast retrieval and sorting of the public stories feed
+    await query(`CREATE INDEX IF NOT EXISTS stories_published_idx ON stories (is_published, created_at DESC);`);
+
+    // ── Conversation Metadata ──────────────────────────────────────────
+    // Durably stores per-conversation metadata: group names, images,
+    // member IDs, world lore, and story setup. Survives reload/cross-device.
+    await query(`
+      CREATE TABLE IF NOT EXISTS conversation_metadata (
+        conversation_id VARCHAR(255) NOT NULL,
+        user_id VARCHAR(255) NOT NULL,
+        group_name TEXT,
+        group_image TEXT,
+        group_member_ids JSONB,
+        world_data JSONB,
+        story_data JSONB,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (conversation_id, user_id)
+      )
+    `);
 
     await query(`
       CREATE TABLE IF NOT EXISTS user_stickers (
@@ -214,6 +250,7 @@ export async function ensureSchema() {
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS zodiac_sign TEXT;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS mbti_type TEXT;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS name TEXT;`);
+      await query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_type VARCHAR(50) DEFAULT 'personal';`);
     } catch (e) { /* ignore if already exists */ }
 
   } catch (e) {

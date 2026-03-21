@@ -2,19 +2,25 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion";
 import { SOURCE_CATEGORIES as CATEGORIES, type Category, type Character } from "@/data/characters";
 import { App } from '@capacitor/app';
+import { useChatStore } from "@/lib/chatStore";
 
 interface ExploreTabProps {
     onSelectCharacter: (character: Character) => void;
+    onSelectGroup?: (groupId: string) => void;
 }
 
 const PAGE_SIZE = 50;
 
-export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
+export default function ExploreTab({ onSelectCharacter, onSelectGroup }: ExploreTabProps) {
     const [activeCategory, setActiveCategory] = useState<Category>("All");
     const [search, setSearch] = useState("");
     const [searchMode, setSearchMode] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [selectedPreview, setSelectedPreview] = useState<Character | null>(null);
+    // Pre-play character setup modal state
+    const [storySetupChar, setStorySetupChar] = useState<Character | null>(null);
+    const [playerName, setPlayerName] = useState("");
+    const [playerDesc, setPlayerDesc] = useState("");
     const [characters, setCharacters] = useState<Character[]>([]);
     const [specialCharacters, setSpecialCharacters] = useState<Character[]>([]);
     const [forYouCharacters, setForYouCharacters] = useState<Character[]>([]);
@@ -50,10 +56,33 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
             }
         }
         try {
-            const res = await fetch(`/api/characters?category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`, { signal });
+            let fetchUrl = `/api/characters?category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`;
+            if (activeCategory === "Stories") {
+                fetchUrl = `/api/stories?search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`;
+            }
+            const res = await fetch(fetchUrl, { signal });
             if (res.ok) {
                 const data = await res.json();
-                const chars = data.characters || data;
+                let chars: Character[] = [];
+                if (activeCategory === "Stories") {
+                    const storyItems = data.items || data;
+                    chars = (Array.isArray(storyItems) ? storyItems : []).map((story: any) => ({
+                        id: story.id,
+                        name: story.name,
+                        tag: story.genre || "Story",
+                        description: story.synopsis || "",
+                        personality: "Play Story",
+                        greeting: story.synopsis || "Begin your story...",
+                        image: story.image,
+                        source: "story",
+                        creatorId: story.creator_id,
+                        storyData: typeof story.story_data === 'string' ? JSON.parse(story.story_data) : story.story_data,
+                        worldData: typeof story.world_data === 'string' ? JSON.parse(story.world_data) : story.world_data,
+                    } as Character));
+                } else {
+                    chars = data.characters || data;
+                }
+
                 if (append) {
                     // Discard stale load-more append if the query context has changed
                     if (expectedToken !== undefined && queryTokenRef.current !== expectedToken) return;
@@ -61,7 +90,7 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                 } else {
                     setCharacters(chars);
                 }
-                setHasMore(data.hasMore ?? false);
+                setHasMore(activeCategory === "Stories" ? (data.hasMore ?? false) : (data.hasMore ?? false));
                 setCurrentOffset(offset + chars.length);
             }
         } catch (error: any) {
@@ -308,7 +337,75 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
             e.stopPropagation();
             return;
         }
-        onSelectCharacter(char);
+        if (char.source === "story" && onSelectGroup) {
+            // Show the pre-play character setup modal instead of directly opening
+            const store = useChatStore.getState();
+            const existingConvo = store.conversations[char.id];
+            // Pre-fill with existing player values if available
+            setPlayerName(
+                existingConvo?.storyData?.playerCharacterName ||
+                char.storyData?.playerCharacterName || ""
+            );
+            setPlayerDesc(
+                existingConvo?.storyData?.playerCharacterDescription ||
+                char.storyData?.playerCharacterDescription || ""
+            );
+            setStorySetupChar(char);
+        } else {
+            onSelectCharacter(char);
+        }
+    };
+
+    /** Called when the player confirms their character in the pre-play setup modal. */
+    const handleStorySetupConfirm = () => {
+        if (!storySetupChar || !onSelectGroup) return;
+        const char = storySetupChar;
+        const finalName = playerName.trim() || "Player";
+        const finalDesc = playerDesc.trim() || "The protagonist";
+
+        const store = useChatStore.getState();
+        const existingConvo = store.conversations[char.id];
+
+        if (existingConvo) {
+            // Existing conversation found — persist updated story metadata to the backend
+            // Prefer reusing createStory with the explicit id so sync is consistent
+            store.createStory(
+                char.name,
+                char.image,
+                {
+                    synopsis: char.storyData?.synopsis || char.description || existingConvo.storyData?.synopsis || "",
+                    genre: char.storyData?.genre || char.tag || existingConvo.storyData?.genre || "",
+                    isPublished: true,
+                    playerCharacterName: finalName,
+                    playerCharacterDescription: finalDesc,
+                    castIds: char.storyData?.castIds || existingConvo.storyData?.castIds || []
+                },
+                char.worldData ?? existingConvo.worldData,
+                char.id,
+                char.creatorId ?? existingConvo.creatorId
+            );
+            onSelectGroup(char.id);
+        } else {
+            // No existing conversation — create a new one
+            const storyId = store.createStory(
+                char.name,
+                char.image,
+                {
+                    synopsis: char.storyData?.synopsis || char.description || "",
+                    genre: char.storyData?.genre || char.tag || "",
+                    isPublished: true,
+                    playerCharacterName: finalName,
+                    playerCharacterDescription: finalDesc,
+                    castIds: char.storyData?.castIds || []
+                },
+                char.worldData,
+                char.id,
+                char.creatorId
+            );
+            onSelectGroup(storyId);
+        }
+
+        setStorySetupChar(null);
     };
 
     return (
@@ -790,38 +887,51 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                                                     {char.name}
                                                                     {char.nickname && <span style={{ fontSize: '12px', color: '#9CA3AF', marginLeft: '6px', fontWeight: 'normal' }}>"{char.nickname}"</span>}
                                                                 </h3>
-                                                                <button
-                                                                    onClick={(e) => handleLike(char, e)}
-                                                                    className="explore-like-btn"
-                                                                    style={{
-                                                                        background: 'transparent',
-                                                                        border: 'none',
-                                                                        cursor: 'pointer',
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: '2px',
-                                                                        color: '#ff4d4f',
-                                                                        fontSize: '11px',
-                                                                        fontWeight: 600,
-                                                                        padding: '2px'
-                                                                    }}
-                                                                >
-                                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill={char.userHasLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-                                                                    </svg>
-                                                                    {char.likes || 0}
-                                                                </button>
+                                                                {char.source !== "story" && (
+                                                                    <button
+                                                                        onClick={(e) => handleLike(char, e)}
+                                                                        className="explore-like-btn"
+                                                                        style={{
+                                                                            background: 'transparent',
+                                                                            border: 'none',
+                                                                            cursor: 'pointer',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '2px',
+                                                                            color: '#ff4d4f',
+                                                                            fontSize: '11px',
+                                                                            fontWeight: 600,
+                                                                            padding: '2px'
+                                                                        }}
+                                                                    >
+                                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill={char.userHasLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                                                        </svg>
+                                                                        {char.likes || 0}
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                             <p className="explore-card-desc">{char.description}</p>
                                                             <div className="explore-card-footer">
                                                                 <span className="explore-card-chat-btn">
-                                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                                                                        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                                    </svg>
-                                                                    Chat
+                                                                    {char.source === "story" ? (
+                                                                        <>
+                                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                                                <path d="M8 5v14l11-7z" />
+                                                                            </svg>
+                                                                            Play
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                                                                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                                            </svg>
+                                                                            Chat
+                                                                        </>
+                                                                    )}
                                                                 </span>
                                                                 <span className="explore-card-personality">
-                                                                    {char.personality.split(",")[0].trim()}
+                                                                    {char.source === "story" ? (char.tag || "Story") : char.personality.split(",")[0].trim()}
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -910,27 +1020,29 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                                     <span className="explore-preview-tag-pill">{selectedPreview.tag}</span>
                                     <div className="explore-preview-online-row">
                                         <span className="explore-preview-online-dot" />
-                                        <span>Online • {selectedPreview.likes || 0} Likes</span>
+                                        <span>Online{selectedPreview.source !== "story" ? ` • ${selectedPreview.likes || 0} Likes` : ""}</span>
                                     </div>
-                                    <button
-                                        onClick={(e) => handleLike(selectedPreview, e)}
-                                        style={{
-                                            marginTop: '8px',
-                                            padding: '8px 16px',
-                                            background: selectedPreview.userHasLiked ? '#FFF0F0' : '#F9FAFB',
-                                            color: selectedPreview.userHasLiked ? '#FF4D4F' : '#6B7280',
-                                            border: selectedPreview.userHasLiked ? '1px solid #FFCCC7' : '1px solid #E5E7EB',
-                                            borderRadius: '20px',
-                                            cursor: 'pointer',
-                                            fontWeight: 600,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '6px'
-                                        }}
-                                    >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill={selectedPreview.userHasLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
-                                        {selectedPreview.userHasLiked ? 'Liked' : 'Like'}
-                                    </button>
+                                    {selectedPreview.source !== "story" && (
+                                        <button
+                                            onClick={(e) => handleLike(selectedPreview, e)}
+                                            style={{
+                                                marginTop: '8px',
+                                                padding: '8px 16px',
+                                                background: selectedPreview.userHasLiked ? '#FFF0F0' : '#F9FAFB',
+                                                color: selectedPreview.userHasLiked ? '#FF4D4F' : '#6B7280',
+                                                border: selectedPreview.userHasLiked ? '1px solid #FFCCC7' : '1px solid #E5E7EB',
+                                                borderRadius: '20px',
+                                                cursor: 'pointer',
+                                                fontWeight: 600,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill={selectedPreview.userHasLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+                                            {selectedPreview.userHasLiked ? 'Liked' : 'Like'}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                             <div className="explore-preview-body">
@@ -991,16 +1103,203 @@ export default function ExploreTab({ onSelectCharacter }: ExploreTabProps) {
                             </div>
                             <button
                                 className="explore-preview-start"
-                                onClick={() => {
+                                onClick={(e) => {
                                     setSelectedPreview(null);
-                                    onSelectCharacter(selectedPreview);
+                                    if (selectedPreview.source === "story") {
+                                        handleCardClick(selectedPreview, e);
+                                    } else {
+                                        onSelectCharacter(selectedPreview);
+                                    }
                                 }}
                             >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                                Start Conversation
+                                {selectedPreview.source === "story" ? (
+                                    <>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                        Play Story
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                        Start Conversation
+                                    </>
+                                )}
                             </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Pre-Play Character Setup Modal ── */}
+            <AnimatePresence>
+                {storySetupChar && (
+                    <motion.div
+                        className="explore-preview-backdrop"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setStorySetupChar(null)}
+                        style={{ zIndex: 1100 }}
+                    >
+                        <motion.div
+                            className="explore-preview-modal"
+                            initial={{ opacity: 0, y: 60, scale: 0.9 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 40, scale: 0.95 }}
+                            transition={{ type: "spring", damping: 28, stiffness: 340 }}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ maxWidth: '400px' }}
+                        >
+                            <button
+                                className="explore-preview-close"
+                                onClick={() => setStorySetupChar(null)}
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                                </svg>
+                            </button>
+
+                            {/* Story Info Header */}
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '12px',
+                                padding: '20px 20px 0', marginBottom: '4px'
+                            }}>
+                                <div style={{
+                                    width: '56px', height: '56px', borderRadius: '14px',
+                                    overflow: 'hidden', flexShrink: 0,
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                }}>
+                                    <img
+                                        src={storySetupChar.image}
+                                        alt={storySetupChar.name}
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    />
+                                </div>
+                                <div>
+                                    <h3 style={{
+                                        fontWeight: 700, fontSize: '17px', color: '#1F2937',
+                                        margin: 0, lineHeight: 1.3
+                                    }}>{storySetupChar.name}</h3>
+                                    <span style={{
+                                        fontSize: '12px', color: '#6B7280',
+                                        background: '#F3F4F6', padding: '2px 8px',
+                                        borderRadius: '6px', marginTop: '4px', display: 'inline-block'
+                                    }}>{storySetupChar.tag || 'Story'}</span>
+                                </div>
+                            </div>
+
+                            {/* Setup Form */}
+                            <div style={{ padding: '16px 20px 20px' }}>
+                                <div style={{
+                                    background: 'linear-gradient(135deg, #FFF7ED, #FEF3C7)',
+                                    borderRadius: '12px', padding: '14px 16px',
+                                    marginBottom: '16px', border: '1px solid #FDE68A'
+                                }}>
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                        marginBottom: '6px'
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ color: '#D97706' }}>
+                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="currentColor" />
+                                        </svg>
+                                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#92400E' }}>
+                                            Set up your character
+                                        </span>
+                                    </div>
+                                    <p style={{ fontSize: '12px', color: '#78716C', margin: 0, lineHeight: 1.5 }}>
+                                        Create your player persona to immerse yourself in the story. The AI narrator will address you by this identity.
+                                    </p>
+                                </div>
+
+                                <label style={{
+                                    display: 'block', fontSize: '13px', fontWeight: 600,
+                                    color: '#374151', marginBottom: '6px'
+                                }}>
+                                    Character Name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={playerName}
+                                    onChange={(e) => setPlayerName(e.target.value)}
+                                    placeholder="e.g. Arya, Kai, your name..."
+                                    maxLength={40}
+                                    style={{
+                                        width: '100%', padding: '10px 14px',
+                                        border: '1.5px solid #E5E7EB', borderRadius: '10px',
+                                        fontSize: '14px', outline: 'none',
+                                        background: '#FAFAFA', color: '#1F2937',
+                                        transition: 'border-color 0.2s',
+                                        boxSizing: 'border-box',
+                                        marginBottom: '14px'
+                                    }}
+                                    onFocus={(e) => e.currentTarget.style.borderColor = '#D97706'}
+                                    onBlur={(e) => e.currentTarget.style.borderColor = '#E5E7EB'}
+                                    autoFocus
+                                />
+
+                                <label style={{
+                                    display: 'block', fontSize: '13px', fontWeight: 600,
+                                    color: '#374151', marginBottom: '6px'
+                                }}>
+                                    Character Description
+                                </label>
+                                <textarea
+                                    value={playerDesc}
+                                    onChange={(e) => setPlayerDesc(e.target.value)}
+                                    placeholder="e.g. A wandering swordsman seeking redemption..."
+                                    maxLength={200}
+                                    rows={3}
+                                    style={{
+                                        width: '100%', padding: '10px 14px',
+                                        border: '1.5px solid #E5E7EB', borderRadius: '10px',
+                                        fontSize: '14px', outline: 'none',
+                                        background: '#FAFAFA', color: '#1F2937',
+                                        transition: 'border-color 0.2s',
+                                        resize: 'none', fontFamily: 'inherit',
+                                        boxSizing: 'border-box',
+                                        marginBottom: '18px'
+                                    }}
+                                    onFocus={(e) => e.currentTarget.style.borderColor = '#D97706'}
+                                    onBlur={(e) => e.currentTarget.style.borderColor = '#E5E7EB'}
+                                />
+
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <button
+                                        onClick={() => setStorySetupChar(null)}
+                                        style={{
+                                            flex: 1, padding: '12px',
+                                            borderRadius: '12px', border: '1px solid #E5E7EB',
+                                            background: '#F9FAFB', color: '#6B7280',
+                                            fontWeight: 600, fontSize: '14px',
+                                            cursor: 'pointer', transition: 'background 0.2s'
+                                        }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleStorySetupConfirm}
+                                        style={{
+                                            flex: 2, padding: '12px',
+                                            borderRadius: '12px', border: 'none',
+                                            background: 'linear-gradient(135deg, #4A3728, #6B4F3A)',
+                                            color: '#FFF', fontWeight: 700,
+                                            fontSize: '14px', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center',
+                                            justifyContent: 'center', gap: '8px',
+                                            boxShadow: '0 2px 8px rgba(74, 55, 40, 0.3)',
+                                            transition: 'opacity 0.2s'
+                                        }}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                        Start Playing
+                                    </button>
+                                </div>
+                            </div>
                         </motion.div>
                     </motion.div>
                 )}

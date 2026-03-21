@@ -143,7 +143,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     // ─── Phase 3: Response Generation (main LLM call) ────────────────
     console.log(`[AI Engine] Phase 3: 💬 Generating response...`);
 
-    const systemPrompt = buildCognitivePrompt(
+    const systemPrompt = buildCognitivePrompt({
         characterName,
         characterPersonality,
         characterTag,
@@ -159,8 +159,11 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         userNickname,
         userGender,
         userBirthday,
-        isOfficialCharacter
-    );
+        isOfficialCharacter,
+        conversationType: input.conversationType,
+        worldData: input.worldData,
+        storyData: input.storyData,
+    });
 
     // Build messages array
     // For Fireworks/DeepSeek: increase history to 20 messages to provide enough context

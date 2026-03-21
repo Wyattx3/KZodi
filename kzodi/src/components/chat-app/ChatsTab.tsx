@@ -1,8 +1,10 @@
 "use client";
 import React from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useChatStore, type Conversation } from "@/lib/chatStore";
 import { CHARACTERS, type Character } from "@/data/characters";
+import WorldBuildingModal from "./WorldBuildingModal";
+import StoryCreateModal from "./StoryCreateModal";
 
 interface ChatsTabProps {
     onSelectCharacter: (character: Character, openProfile?: boolean) => void;
@@ -430,6 +432,9 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
     const [draggingConvo, setDraggingConvo] = React.useState<string | null>(null);
     const [showNewMenu, setShowNewMenu] = React.useState(false);
     const [showGroupModal, setShowGroupModal] = React.useState(false);
+    const [showWorldModal, setShowWorldModal] = React.useState(false);
+    const [showStoryModal, setShowStoryModal] = React.useState(false);
+    const [activeFilter, setActiveFilter] = React.useState<"all" | "personal" | "group" | "story">("all");
     // resolvedChars: on-demand fetched characters not yet in allCharacters/myCharacters
     const [resolvedChars, setResolvedChars] = React.useState<Record<string, Character>>({});
     // profileFetchingId: tracks which char ID is being fetched before opening profile
@@ -481,7 +486,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
     React.useEffect(() => {
         if (conversations.length === 0) return;
         const toFetch = conversations
-            .filter(c => !c.isGroup && !charMap[c.characterId])
+            .filter(c => !c.isGroup && c.conversationType !== "story" && !charMap[c.characterId])
             .map(c => c.characterId);
         if (toFetch.length === 0) return;
         for (const id of toFetch) {
@@ -500,11 +505,20 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
     }, [conversations]);
 
     const filteredConvos = React.useMemo(() => {
-        if (!searchQuery.trim()) return conversations.map(convo => ({ convo, matchedMsg: null as any }));
+        let baseConvos = conversations;
+        if (activeFilter === "personal") {
+            baseConvos = conversations.filter(c => !c.isGroup && c.conversationType !== "story");
+        } else if (activeFilter === "group") {
+            baseConvos = conversations.filter(c => c.isGroup && c.conversationType !== "story");
+        } else if (activeFilter === "story") {
+            baseConvos = conversations.filter(c => c.conversationType === "story");
+        }
+
+        if (!searchQuery.trim()) return baseConvos.map(convo => ({ convo, matchedMsg: null as any }));
         const q = searchQuery.toLowerCase();
-        return conversations.flatMap((convo) => {
-            if (convo.isGroup) {
-                const nameMatch = convo.groupName?.toLowerCase().includes(q);
+        return baseConvos.flatMap((convo) => {
+            if (convo.isGroup || convo.conversationType === "story") {
+                const nameMatch = (convo.groupName?.toLowerCase().includes(q)) || (convo.customName?.toLowerCase().includes(q));
                 const matchedMsg = [...convo.messages].reverse().find(m => m.content.toLowerCase().includes(q));
                 if (nameMatch || matchedMsg) return [{ convo, matchedMsg: nameMatch ? null : matchedMsg }];
                 return [];
@@ -519,7 +533,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             }
             return [];
         });
-    }, [conversations, searchQuery, charMap]);
+    }, [conversations, searchQuery, charMap, activeFilter]);
 
     return (
         <div className="chats-container">
@@ -592,11 +606,99 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                         </svg>
                                         New Group
                                     </button>
+                                    <button
+                                        onClick={() => {
+                                            setShowNewMenu(false);
+                                            setShowWorldModal(true);
+                                        }}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: "10px",
+                                            background: "transparent", border: "none",
+                                            padding: "12px 14px", borderRadius: "12px",
+                                            cursor: "pointer", color: "#4A3728",
+                                            fontSize: "14px", fontWeight: 500, width: "100%",
+                                            transition: "background 0.15s"
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
+                                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                                    >
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+                                            <path d="M2 12h20" stroke="currentColor" strokeWidth="1.5" />
+                                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" strokeWidth="1.5" />
+                                        </svg>
+                                        New World
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setShowNewMenu(false);
+                                            setShowStoryModal(true);
+                                        }}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: "10px",
+                                            background: "transparent", border: "none",
+                                            padding: "12px 14px", borderRadius: "12px",
+                                            cursor: "pointer", color: "#4A3728",
+                                            fontSize: "14px", fontWeight: 500, width: "100%",
+                                            transition: "background 0.15s"
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
+                                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                                    >
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                        New Story
+                                    </button>
                                 </motion.div>
                             )}
                         </AnimatePresence>
                     </div>
                 </div>
+
+                {/* Filter Tabs */}
+                {conversations.length > 0 && (
+                    <LayoutGroup>
+                        <div style={{ padding: "0 20px 12px", display: "flex", gap: "8px", overflowX: "auto" }} className="no-scrollbar">
+                            {["all", "personal", "group", "story"].map((filter) => (
+                                <motion.button
+                                    key={filter}
+                                    onClick={() => setActiveFilter(filter as any)}
+                                    style={{
+                                        padding: "6px 16px",
+                                        borderRadius: "20px",
+                                        border: "none",
+                                        fontSize: "14px",
+                                        fontWeight: 600,
+                                        textTransform: "capitalize",
+                                        cursor: "pointer",
+                                        background: "transparent",
+                                        color: activeFilter === filter ? "#fff" : "#4A3728",
+                                        position: "relative",
+                                        zIndex: 1,
+                                        transition: "color 0.2s"
+                                    }}
+                                    whileTap={{ scale: 0.95 }}
+                                >
+                                    {activeFilter === filter && (
+                                        <motion.div
+                                            layoutId="chatFilterIndicator"
+                                            style={{
+                                                position: "absolute",
+                                                inset: 0,
+                                                borderRadius: "20px",
+                                                background: "#4A3728",
+                                                zIndex: -1,
+                                            }}
+                                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                        />
+                                    )}
+                                    {filter}
+                                </motion.button>
+                            ))}
+                        </div>
+                    </LayoutGroup>
+                )}
 
                 {/* Search bar */}
                 {conversations.length > 0 && (
@@ -687,7 +789,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                             return content;
                         };
                         // ── Group Chat Row ────────────────────────
-                        if (convo.isGroup) {
+                        if (convo.isGroup || convo.conversationType === "story") {
                             const memberChars = (convo.groupMemberIds || []).map(id => charMap[id]).filter(Boolean);
                             const msgToDisplay = matchedMsg || convo.messages[convo.messages.length - 1];
                             const displayContent = matchedMsg ? matchedMsg.content : convo.lastMessage;
@@ -759,7 +861,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                         {/* Group avatar: stacked */}
                                         <div className="chats-item-avatar" style={{ position: "relative" }}>
                                             {convo.groupImage ? (
-                                                <img src={convo.groupImage} alt={convo.groupName || "Group"} style={{
+                                                <img src={convo.groupImage} alt={convo.groupName || (convo.conversationType === "story" ? "Story" : "Group")} style={{
                                                     width: "48px", height: "48px",
                                                     borderRadius: "50%",
                                                     objectFit: "cover"
@@ -787,7 +889,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                         <div className="chats-item-info">
                                             <div className="chats-item-top">
                                                 <span className="chats-item-name">
-                                                    {convo.groupName || "Group"}
+                                                    {convo.groupName || (convo.conversationType === "story" ? "Story" : "Group")}
                                                 </span>
                                                 <span className="chats-item-time">{formatTime(convo.lastTimestamp)}</span>
                                             </div>
@@ -1064,6 +1166,28 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         onCreated={(groupId) => {
                             setShowGroupModal(false);
                             onSelectGroup?.(groupId);
+                        }}
+                    />
+                )}
+                {showWorldModal && (
+                    <WorldBuildingModal
+                        charMap={charMap}
+                        conversations={conversations}
+                        onClose={() => setShowWorldModal(false)}
+                        onCreated={(groupId) => {
+                            setShowWorldModal(false);
+                            onSelectGroup?.(groupId);
+                        }}
+                    />
+                )}
+                {showStoryModal && (
+                    <StoryCreateModal
+                        charMap={charMap}
+                        conversations={conversations}
+                        onClose={() => setShowStoryModal(false)}
+                        onCreated={(storyId) => {
+                            setShowStoryModal(false);
+                            onSelectGroup?.(storyId);
                         }}
                     />
                 )}

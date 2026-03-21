@@ -190,10 +190,35 @@ export default function ChatApp() {
                 // a potentially stale /api/conversations cache. The convos cache is
                 // now invalidated on every message write, making this safe.
                 for (const localId of localIds) {
-                    // Preserve locally-created group chats (they are not synced to the
-                    // conversation API and would be wrongly pruned otherwise).
-                    const isGroup = store.conversations[localId]?.isGroup;
-                    if (!isGroup && !serverIds.has(localId)) {
+                    if (serverIds.has(localId)) continue;
+
+                    // Only preserve truly local-only conversation types.
+                    // Standard group chats (conversationType === "group") are created
+                    // locally and are NOT synced to the /api/conversations endpoint,
+                    // so they would be wrongly pruned here.
+                    //
+                    // Legacy groups created before conversationType was introduced
+                    // may only have isGroup === true without a conversationType.
+                    // Treat those as local-only too, to avoid silent data loss.
+                    //
+                    // Story and world conversations ARE server-backed (their metadata
+                    // is persisted via /api/messages on creation), so if the server
+                    // no longer reports them they were deleted on another device and
+                    // must be pruned to maintain cross-device consistency.
+                    //
+                    // However, if the conversation's initial metadata upsert
+                    // hasn't been acknowledged yet (_pendingSync === true), e.g.
+                    // due to a transient auth/network failure, skip pruning to
+                    // prevent silent data loss.
+                    const localConvo = store.conversations[localId];
+                    const convoType = localConvo?.conversationType;
+                    const isLocalOnly = convoType === "group" || (!convoType && localConvo?.isGroup === true);
+                    const isPendingSync = localConvo?._pendingSync === true;
+                    // Bounded exemption for failed syncs: 1 hour window.
+                    // This stops permanent ghost conversations while avoiding immediate drop after retry exhaustion.
+                    const recentSyncFailure = localConvo?._syncFailedAt && (Date.now() - localConvo._syncFailedAt < 60 * 60 * 1000);
+
+                    if (!isLocalOnly && !isPendingSync && !recentSyncFailure) {
                         store.pruneLocalConversation(localId);
                     }
                 }
@@ -202,8 +227,22 @@ export default function ChatApp() {
                     const newChars: Character[] = [];
 
                     for (const conv of serverConvos) {
-                        // Ensure each server-reported conversation exists locally.
-                        store.ensureConversation(conv.characterId);
+                        // Merge server metadata (conversationType, isGroup, etc.)
+                        // into the local conversation. upsertConversation preserves
+                        // existing messages while patching metadata fields so tab
+                        // categorization, story/world prompts, and filters remain
+                        // correct after a reload.
+                        const ct = (conv as any).conversationType || "personal";
+                        store.upsertConversation(conv.characterId, {
+                            conversationType: ct,
+                            isGroup: ct === "group" || ct === "world",
+                            groupName: (conv as any).groupName || undefined,
+                            groupImage: (conv as any).groupImage || undefined,
+                            groupMemberIds: (conv as any).groupMemberIds || undefined,
+                            worldData: (conv as any).worldData || undefined,
+                            storyData: (conv as any).storyData || undefined,
+                            creatorId: (conv as any).creatorId || undefined,
+                        });
 
                         if (conv.character && !newChars.some((c) => c.id === conv.character!.id)) {
                             newChars.push({
@@ -517,7 +556,8 @@ export default function ChatApp() {
                 tags: ["group"],
                 personality: "Mixed",
                 greeting: "",
-                image: convo.groupImage || `https://api.dicebear.com/7.x/identicon/svg?seed=${activeGroupId}`
+                image: convo.groupImage || `https://api.dicebear.com/7.x/identicon/svg?seed=${activeGroupId}`,
+                creatorId: convo.creatorId,
             };
         }
     }
@@ -544,7 +584,7 @@ export default function ChatApp() {
                     {/* Tab content — all tabs stay mounted to preserve state/data */}
                     <div className="chat-app-content no-scrollbar" style={{ overflowY: activeTab === "profile" ? "hidden" : undefined }}>
                         <div style={{ width: "100%", display: activeTab === "explore" ? "block" : "none" }}>
-                            <ExploreTab onSelectCharacter={handleSelectCharacter} />
+                            <ExploreTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} />
                         </div>
                         <div style={{ width: "100%", display: activeTab === "chats" ? "block" : "none" }}>
                             <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} myCharacters={myCharacters} allCharacters={allCharacters} isLoading={isLoadingChats} />

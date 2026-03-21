@@ -31,26 +31,71 @@ export async function GET() {
 
         await ensureSchema();
 
-        // Get distinct conversations for this user with their latest message info
+        // Get distinct conversations for this user with their latest message info.
+        // Also include zero-message conversations that only exist in conversation_metadata
+        // (e.g. newly created world/story chats persisted before the first message).
         const dbRes = await query(
             `SELECT 
-                m.conversation_id,
-                MAX(m.content) FILTER (WHERE m.timestamp = sub.max_ts) as last_message,
-                MAX(m.timestamp) as last_timestamp,
-                COUNT(*) as message_count,
+                conv_id as conversation_id,
+                last_message,
+                last_timestamp,
+                CASE
+                    WHEN cm.story_data IS NOT NULL THEN 'story'
+                    WHEN cm.world_data IS NOT NULL THEN 'world'
+                    WHEN cm.group_member_ids IS NOT NULL THEN 'group'
+                    ELSE COALESCE(combined.conversation_type, 'personal')
+                END as conversation_type,
+                message_count,
                 c.name as char_name,
                 c.image as char_image,
-                c.tag as char_tag
-            FROM messages m
-            INNER JOIN (
-                SELECT conversation_id as cid, MAX(timestamp) as max_ts
-                FROM messages
-                WHERE user_id = $1
-                GROUP BY conversation_id
-            ) sub ON m.conversation_id = sub.cid AND m.user_id = $1
-            LEFT JOIN characters c ON c.id = m.conversation_id
-            GROUP BY m.conversation_id, c.name, c.image, c.tag
-            ORDER BY MAX(m.timestamp) DESC`,
+                c.tag as char_tag,
+                cm.group_name,
+                cm.group_image,
+                cm.group_member_ids,
+                cm.world_data,
+                cm.story_data,
+                s.user_id as story_creator_id
+            FROM (
+                -- Conversations that have messages
+                SELECT
+                    m.conversation_id as conv_id,
+                    MAX(m.content) FILTER (WHERE m.timestamp = sub.max_ts) as last_message,
+                    MAX(m.timestamp) as last_timestamp,
+                    MAX(m.conversation_type) FILTER (WHERE m.timestamp = sub.max_ts) as conversation_type,
+                    COUNT(*) as message_count
+                FROM messages m
+                INNER JOIN (
+                    SELECT conversation_id as cid, MAX(timestamp) as max_ts
+                    FROM messages
+                    WHERE user_id = $1
+                    GROUP BY conversation_id
+                ) sub ON m.conversation_id = sub.cid AND m.user_id = $1
+                GROUP BY m.conversation_id
+
+                UNION ALL
+
+                -- Zero-message conversations that only exist in metadata
+                SELECT
+                    cm2.conversation_id as conv_id,
+                    '' as last_message,
+                    EXTRACT(EPOCH FROM cm2.updated_at)::bigint * 1000 as last_timestamp,
+                    CASE
+                        WHEN cm2.story_data IS NOT NULL THEN 'story'
+                        WHEN cm2.world_data IS NOT NULL THEN 'world'
+                        WHEN cm2.group_member_ids IS NOT NULL THEN 'group'
+                        ELSE 'personal'
+                    END as conversation_type,
+                    0 as message_count
+                FROM conversation_metadata cm2
+                WHERE cm2.user_id = $1
+                AND cm2.conversation_id NOT IN (
+                    SELECT DISTINCT conversation_id FROM messages WHERE user_id = $1
+                )
+            ) combined
+            LEFT JOIN characters c ON c.id = combined.conv_id
+            LEFT JOIN conversation_metadata cm ON cm.conversation_id = combined.conv_id AND cm.user_id = $1
+            LEFT JOIN stories s ON s.id = combined.conv_id
+            ORDER BY last_timestamp DESC`,
             [userId]
         );
 
@@ -59,6 +104,13 @@ export async function GET() {
             lastMessage: row.last_message || "",
             lastTimestamp: Number(row.last_timestamp),
             messageCount: Number(row.message_count),
+            conversationType: row.conversation_type || "personal",
+            groupName: row.group_name || null,
+            groupImage: row.group_image || null,
+            groupMemberIds: row.group_member_ids || null,
+            worldData: row.world_data || null,
+            storyData: row.story_data || null,
+            creatorId: row.story_creator_id || null,
             character: row.char_name ? {
                 id: row.conversation_id,
                 name: row.char_name,

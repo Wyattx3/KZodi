@@ -25,6 +25,9 @@ interface RoleplayRequest {
     creatorId?: string;
     /** Inter-character reaction cue for group chats (prompt-building only, never stored in memory) */
     groupCue?: string;
+    conversationType?: "personal" | "group" | "story" | "world";
+    worldData?: any;
+    storyData?: any;
 }
 
 // ─── Pinecone Setup ─────────────────────────────────────────────────────────
@@ -420,7 +423,10 @@ export async function POST(request: NextRequest) {
             groupMembers = [],
             responseLanguage = "English (Default)",
             creatorId,
-            groupCue
+            groupCue,
+            conversationType,
+            worldData,
+            storyData
         } = body;
 
         let userNickname, userGender, userBirthday;
@@ -590,7 +596,10 @@ IMPORTANT RULES:
             userGender,
             userBirthday,
             isOfficialCharacter,
-            groupCue
+            groupCue,
+            conversationType,
+            worldData,
+            storyData
         };
 
         // If compound gave a result, inject it as extra context for the engine

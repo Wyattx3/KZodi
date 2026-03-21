@@ -108,6 +108,12 @@ export interface EngineInput {
     isOfficialCharacter?: boolean;
     /** Inter-character reaction cue for group chats (prompt-building only, never stored in memory) */
     groupCue?: string;
+    /** Conversation type */
+    conversationType?: "personal" | "group" | "story" | "world";
+    /** Data for world building groups */
+    worldData?: any;
+    /** Data for story groups */
+    storyData?: any;
 }
 
 export interface EngineOutput {

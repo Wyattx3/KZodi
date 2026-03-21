@@ -862,10 +862,18 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const isAiRespondingRef = useRef(false);
     const pendingMessagesRef = useRef<{ text: string; repliedContent?: string; repliedId?: string }[]>([]);
     const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+    const [isPublishingStory, setIsPublishingStory] = useState(false);
 
     const { sendMessage, addReply, markAsSeen, addGroupReply } = useChatStore.getState();
 
-    const isGroupChat = character.id.startsWith("group-");
+    const convoFromStore = useChatStore(state => state.conversations[character.id]);
+    const isGroupChat = convoFromStore?.isGroup ?? character.id.startsWith("group-");
+    const conversationType = convoFromStore?.conversationType || "personal";
+    const worldData = convoFromStore?.worldData;
+    const storyData = convoFromStore?.storyData ? {
+        ...convoFromStore.storyData,
+        castNames: convoFromStore.storyData.castIds?.map(id => charMap[id]?.name || CHARACTERS.find(c => c.id === id)?.name).filter(Boolean) as string[]
+    } : undefined;
     const groupMemberChars = useMemo(() => {
         if (!isGroupChat) return [];
         const convo = useChatStore.getState().conversations[character.id];
@@ -1019,6 +1027,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             creatorId: member.creatorId,
                             responseLanguage,
                             groupCue,
+                            conversationType,
+                            worldData,
+                            storyData,
                         }),
                     });
 
@@ -1041,6 +1052,54 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         }
 
         if (isGroupChat) {
+            // Empty-member world/story group: generate a narrator response
+            // instead of silently returning with no reply.
+            if ((conversationType === "world" || conversationType === "story") && groupMemberChars.length === 0) {
+                markAsSeen(character.id, "user");
+                await new Promise((resolve) => setTimeout(resolve, 400 + Math.random() * 300));
+                setIsTyping(true);
+                isAiRespondingRef.current = true;
+                try {
+                    const responseLanguage = useChatStore.getState().responseLanguage;
+                    const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
+                    const history = currentMessages.map((m) => ({
+                        id: m.id,
+                        role: m.role,
+                        content: m.role === "user" ? `<Message ID: ${m.id}> [User]: ${m.content || ""}` : (m.content || ""),
+                    }));
+                    const res = await fetch("/api/roleplay", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            message: finalMessageText,
+                            characterId: character.id,
+                            characterName: "Narrator",
+                            characterPersonality: "Omniscient narrator, descriptive storyteller",
+                            characterTag: "Narrator",
+                            history: history.slice(-15),
+                            context: "reply",
+                            isGroupChat: false,
+                            groupMembers: [],
+                            responseLanguage,
+                            conversationType,
+                            worldData,
+                            storyData,
+                        }),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.reply && data.reply !== "..." && data.action !== "ignore") {
+                            await processAiResponse(data.reply, character.id, "Narrator", data.delayFactor, data.replyToId);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Narrator response failed:", err);
+                } finally {
+                    isAiRespondingRef.current = false;
+                    setIsTyping(false);
+                }
+                return;
+            }
             setIsTyping(false);
             return;
         }
@@ -1073,6 +1132,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     groupMembers: [],
                     responseLanguage,
                     creatorId: character.creatorId,
+                    conversationType,
+                    worldData,
+                    storyData,
                 }),
             });
 
@@ -1130,6 +1192,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     isGroupChat: false,
                                     groupMembers: [],
                                     creatorId: character.creatorId,
+                                    conversationType,
+                                    worldData,
+                                    storyData,
                                 }),
                             });
 
@@ -1401,6 +1466,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     groupMembers: groupMemberNames,
                                     creatorId: member.creatorId,
                                     responseLanguage: introResponseLanguage,
+                                    conversationType,
+                                    worldData,
+                                    storyData,
                                 }),
                             });
 
@@ -1418,7 +1486,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     setIsTyping(false);
                     setTypingMemberName(null);
                 })();
-            } else {
+            } else if (conversationType !== "story") {
                 addReply(character.id, character.greeting);
             }
         } else {
@@ -1548,12 +1616,20 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         // Sync the updated transcript message to the backend immediately
                         // so poll timer doesn't overwrite it with the old __transcribing__ string
                         if (updatedMessage) {
+                            const convoForSync = useChatStore.getState().conversations[character.id];
+                            const buildMeta = (c: any) => {
+                                if (!c) return undefined;
+                                if (!c.groupName && !c.groupImage && !c.groupMemberIds && !c.worldData && !c.storyData) return undefined;
+                                return { groupName: c.groupName || null, groupImage: c.groupImage || null, groupMemberIds: c.groupMemberIds || null, worldData: c.worldData || null, storyData: c.storyData || null };
+                            };
                             await fetch("/api/messages", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({
                                     conversationId: character.id,
-                                    messages: [updatedMessage]
+                                    messages: [updatedMessage],
+                                    conversationType: convoForSync?.conversationType || conversationType,
+                                    conversationMetadata: buildMeta(convoForSync),
                                 })
                             }).catch(err => console.error("Failed to sync transcript:", err));
                         }
@@ -1733,7 +1809,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
     // Proactive messaging (Double texting)
     useEffect(() => {
-        if (messages.length === 0 || isBlocked || isGroupChat) return;
+        if (messages.length === 0 || isBlocked || isGroupChat || conversationType === "story") return;
 
         const lastMsg = messages[messages.length - 1];
 
@@ -2001,6 +2077,81 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                         >
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 19l-7-7 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                                             Back to Astrologer
+                                        </button>
+                                    )}
+                                    {/* ── Publish Story Action ── */}
+                                    {conversationType === "story" && (!convoFromStore?.creatorId || convoFromStore.creatorId === useChatStore.getState().ownerUserId) && (
+                                        <button
+                                            disabled={isPublishingStory || storyData?.isPublished}
+                                            onClick={async (e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setIsPublishingStory(true);
+                                                try {
+                                                    const updatedStoryData = {
+                                                        ...(storyData || { synopsis: "", genre: "", isPublished: false, playerCharacterName: "", playerCharacterDescription: "" }),
+                                                        isPublished: true,
+                                                    };
+                                                    const res = await fetch("/api/stories", {
+                                                        method: "POST",
+                                                        headers: { "Content-Type": "application/json" },
+                                                        body: JSON.stringify({
+                                                            id: character.id,
+                                                            name: convoFromStore?.groupName || character.name,
+                                                            image: convoFromStore?.groupImage || character.image,
+                                                            synopsis: storyData?.synopsis || "",
+                                                            genre: storyData?.genre || "",
+                                                            story_data: updatedStoryData,
+                                                            world_data: worldData || null,
+                                                            is_published: true,
+                                                        }),
+                                                    });
+                                                    if (res.ok) {
+                                                        // Update local storyData to reflect published status
+                                                        useChatStore.setState((state) => {
+                                                            const convo = state.conversations[character.id];
+                                                            if (!convo) return state;
+                                                            return {
+                                                                conversations: {
+                                                                    ...state.conversations,
+                                                                    [character.id]: {
+                                                                        ...convo,
+                                                                        storyData: updatedStoryData,
+                                                                    },
+                                                                },
+                                                            };
+                                                        });
+
+                                                        // Backend now atomically updates conversation_metadata during /api/stories POST,
+                                                        // so we no longer need a separate, chained call here.
+
+                                                        alert("Story published successfully!");
+                                                    } else {
+                                                        const data = await res.json().catch(() => ({}));
+                                                        alert(data.error || "Failed to publish story.");
+                                                    }
+                                                } catch (err) {
+                                                    console.error("Failed to publish story:", err);
+                                                    alert("Network error while publishing.");
+                                                } finally {
+                                                    setIsPublishingStory(false);
+                                                    setShowMenu(false);
+                                                }
+                                            }}
+                                            style={{
+                                                display: "flex", alignItems: "center", gap: "8px",
+                                                background: storyData?.isPublished ? "rgba(16,185,129,0.08)" : "rgba(59,130,246,0.08)",
+                                                border: "none", padding: "10px 12px",
+                                                borderRadius: "10px",
+                                                cursor: storyData?.isPublished || isPublishingStory ? "default" : "pointer",
+                                                color: storyData?.isPublished ? "#10B981" : "#3B82F6",
+                                                fontSize: "14px", fontWeight: 600,
+                                                opacity: storyData?.isPublished || isPublishingStory ? 0.7 : 1,
+                                                marginBottom: "4px",
+                                            }}
+                                        >
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                            {isPublishingStory ? "Publishing..." : storyData?.isPublished ? "Published ✓" : "Publish Story"}
                                         </button>
                                     )}
                                     <button

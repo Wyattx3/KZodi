@@ -1,6 +1,6 @@
 // Main Source Categories
 export const SOURCE_CATEGORIES = [
-    "All", "Anime", "Manga", "Game", "K-pop", "Movies", "TV", "Books",
+    "All", "Stories", "Anime", "Manga", "Game", "K-pop", "Movies", "TV", "Books",
     "VTuber", "Original", "History", "Mythology", "Philosophy",
     "Celebrity", "Roleplay", "BL", "GL", "Specialist"
 ] as const;
@@ -48,6 +48,10 @@ export interface Character {
     isPublic?: boolean;
     createdAt?: number;
     userHasLiked?: boolean;
+
+    // Story metadata
+    worldData?: any;
+    storyData?: any;
 }
 
 export const CHARACTERS: Character[] = [];
