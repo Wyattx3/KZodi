@@ -268,4 +268,5 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
 // Re-export types and utilities for convenience
 export { processHeart, calculateTiming } from "./heart";
 export { thinkAboutMessage, buildCognitivePrompt } from "./brain";
+export { applyBehaviorCooldowns } from "./cooldown";
 export type { EngineInput, EngineOutput, CognitiveState, HeartState, BrainState } from "./types";

@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { processMessage, type EngineInput } from "@/lib/ai-engine";
 import { getLatestReadingForUser } from "@/lib/db";
 import { callGroqCompound, shouldUseCompoundTools } from "@/lib/groq-compound";
+import { applyBehaviorCooldowns } from "@/lib/ai-engine/cooldown";
 
 // ─── Request Interface ──────────────────────────────────────────────────────
 
@@ -575,6 +576,18 @@ IMPORTANT RULES:
             responseLanguage === "Mix (Burmese + English)";
         content = enforceShortMessages(content, isBurmeseResponse);
 
+        const cooldownResult = await applyBehaviorCooldowns({
+            userId,
+            characterId: effectiveCharacterId,
+            characterPersonality,
+            userEmotionIntensity: engineOutput.cognitiveState.heart.userEmotionIntensity,
+            content,
+            shouldReplyToId: engineOutput.cognitiveState.brain.shouldReplyToId
+        });
+        
+        content = cooldownResult.content;
+        const finalReplyToId = cooldownResult.shouldReplyToId;
+
         // Strip [[REACT:...]] tags from the final reply text.
         // These are AI directives for reactions; they should not appear in the chat UI.
         // The client-side (ChatRoom.tsx processAiResponse) also strips them, but this acts as
@@ -624,7 +637,7 @@ IMPORTANT RULES:
             aiSentiment: engineOutput.aiSentiment,
             seenDelay: engineOutput.seenDelay,
             readDelay: engineOutput.readDelay,
-            replyToId: engineOutput.cognitiveState.brain.shouldReplyToId,
+            replyToId: finalReplyToId,
         });
     } catch (error) {
         console.error("Roleplay error:", error);
