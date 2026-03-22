@@ -7,6 +7,18 @@ type ExploreCategory = (typeof CATEGORIES)[number];
 import { App } from '@capacitor/app';
 import { useChatStore } from "@/lib/chatStore";
 
+const getSafeImage = (image?: string | null, seedName?: string) => {
+    if (image && image.trim() !== '') return image;
+    const firstLetter = seedName && seedName.trim() ? seedName.trim().charAt(0).toUpperCase() : '?';
+    const colors = [['#FF9A9E','#FECFEF'],['#a18cd1','#fbc2eb'],['#84fab0','#8fd3f4'],['#a6c0fe','#f68084'],['#fccb90','#d57eeb'],['#e0c3fc','#8ec5fc']];
+    let hash = 0;
+    if (seedName) for (let i = 0; i < seedName.length; i++) hash = seedName.charCodeAt(i) + ((hash << 5) - hash);
+    const index = Math.abs(hash) % colors.length;
+    const [c1, c2] = colors[index];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"><defs><linearGradient id="g${index}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${c1}" /><stop offset="100%" stop-color="${c2}" /></linearGradient></defs><rect width="400" height="400" fill="url(#g${index})" /><text x="50%" y="50%" font-family="sans-serif" font-size="120" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle" opacity="0.8">${firstLetter}</text></svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+};
+
 interface ExploreTabProps {
     onSelectCharacter: (character: Character) => void;
     onSelectGroup?: (groupId: string) => void;
@@ -560,7 +572,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                     layout
                                                 >
                                                     <div className="explore-card-img-wrap">
-                                                        <img src={char.image} alt={char.name} className="explore-card-img" />
+                                                        <img src={getSafeImage(char.image, char.name)} alt={char.name} className="explore-card-img" />
                                                         <div className="explore-card-img-overlay" />
                                                         <div className="explore-card-float-tag">
                                                             <span>{char.tag}</span>
@@ -727,7 +739,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                         onMouseLeave={handlePressEnd}
                                                         whileTap={{ scale: 0.96 }}
                                                     >
-                                                        <img src={char.image} alt={char.name} className="explore-specialist-img" />
+                                                        <img src={getSafeImage(char.image, char.name)} alt={char.name} className="explore-specialist-img" />
                                                         <div className="explore-specialist-overlay" />
                                                         <div className="explore-specialist-badge-wrap">
                                                             <span className="explore-specialist-badge">
@@ -773,7 +785,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                     onMouseLeave={handlePressEnd}
                                                 >
                                                     <div className="explore-featured-img-wrap">
-                                                        <img src={currentChar.image} alt={currentChar.name} className="explore-featured-img" style={{ pointerEvents: 'none', userSelect: 'none' }} />
+                                                        <img src={getSafeImage(currentChar.image, currentChar.name)} alt={currentChar.name} className="explore-featured-img" style={{ pointerEvents: 'none', userSelect: 'none' }} />
                                                         <div className="explore-featured-overlay" />
                                                         <div className="explore-featured-content">
                                                             <span className="explore-featured-label">#{featuredIndex + 1} Trending</span>
@@ -849,7 +861,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                         whileTap={{ scale: 0.96 }}
                                                     >
                                                         <div className="explore-fy-img-wrap">
-                                                            <img src={char.image} alt={char.name} className="explore-fy-img" />
+                                                            <img src={getSafeImage(char.image, char.name)} alt={char.name} className="explore-fy-img" />
                                                             <div className="explore-fy-overlay" />
                                                         </div>
                                                         <div className="explore-fy-info">
@@ -895,7 +907,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                         layout
                                                     >
                                                         <div className="explore-card-img-wrap">
-                                                            <img src={char.image} alt={char.name} className="explore-card-img" />
+                                                            <img src={getSafeImage(char.image, char.name)} alt={char.name} className="explore-card-img" />
                                                             <div className="explore-card-img-overlay" />
                                                             <div className="explore-card-float-tag">
                                                                 <span>{char.tag}</span>
@@ -1043,7 +1055,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                             </button>
                             <div className="explore-preview-header">
                                 <div className="explore-preview-avatar">
-                                    <img src={selectedPreview.image} alt={selectedPreview.name} />
+                                    <img src={getSafeImage(selectedPreview.image, selectedPreview.name)} alt={selectedPreview.name} />
                                 </div>
                                 <div className="explore-preview-header-info">
                                     <h3 className="explore-preview-name">{selectedPreview.name}</h3>
@@ -1203,7 +1215,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                                 }}>
                                     <img
-                                        src={storySetupChar.image}
+                                        src={getSafeImage(storySetupChar.image, storySetupChar.name)}
                                         alt={storySetupChar.name}
                                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                     />

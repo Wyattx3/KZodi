@@ -43,11 +43,11 @@ export async function GET(req: Request) {
 
         const hasMore = res.rows.length > limit;
         const items = hasMore ? res.rows.slice(0, limit) : res.rows;
-        
         // Strip out base64 images from summary response
+        // Update: We now return the full image so that story cards have a cover.
         const filteredItems = items.map(item => ({
             ...item,
-            image: item.image?.startsWith('data:') ? null : item.image
+            image: item.image
         }));
 
         return NextResponse.json({
