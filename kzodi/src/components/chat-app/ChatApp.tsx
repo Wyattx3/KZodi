@@ -263,6 +263,38 @@ export default function ChatApp() {
                         } else {
                             store.pruneLocalConversation(localId);
                         }
+                    } else if (isPendingSync) {
+                        // Startup retry for conversations still marked pending but absent from server
+                        const buildMeta = (c: any) => {
+                            if (!c) return null;
+                            return {
+                                groupName: c.groupName || null,
+                                groupImage: c.groupImage || null,
+                                groupMemberIds: c.groupMemberIds || null,
+                                worldData: c.worldData || null,
+                                storyData: c.storyData || null,
+                            };
+                        };
+                        fetch("/api/messages", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                conversationId: localId,
+                                conversationType: convoType,
+                                messages: localConvo.messages || [],
+                                conversationMetadata: buildMeta(localConvo)
+                            })
+                        }).then(res => {
+                            if (res.ok) {
+                                store.upsertConversation(localId, { _pendingSync: undefined, _syncFailedAt: undefined } as any);
+                            } else if (res.status === 403 || res.status === 404) {
+                                store.pruneLocalConversation(localId);
+                            } else {
+                                store.upsertConversation(localId, { _syncFailedAt: Date.now(), _pendingSync: undefined } as any);
+                            }
+                        }).catch(() => {
+                            store.upsertConversation(localId, { _syncFailedAt: Date.now(), _pendingSync: undefined } as any);
+                        });
                     }
                 }
 
@@ -285,7 +317,9 @@ export default function ChatApp() {
                             worldData: (conv as any).worldData || undefined,
                             storyData: (conv as any).storyData || undefined,
                             creatorId: (conv as any).creatorId || undefined,
-                        });
+                            _pendingSync: undefined,
+                            _syncFailedAt: undefined,
+                        } as any);
 
                         if (conv.character && !newChars.some((c) => c.id === conv.character!.id)) {
                             newChars.push({

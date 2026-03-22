@@ -83,7 +83,7 @@ interface ChatStore {
      * worldData, storyData, groupName, groupImage, groupMemberIds are patched;
      * messages and timestamps are preserved.
      */
-    upsertConversation: (characterId: string, metadata: Partial<Pick<Conversation, "conversationType" | "isGroup" | "groupName" | "groupImage" | "groupMemberIds" | "worldData" | "storyData" | "creatorId">>) => void;
+    upsertConversation: (characterId: string, metadata: Partial<Pick<Conversation, "conversationType" | "isGroup" | "groupName" | "groupImage" | "groupMemberIds" | "worldData" | "storyData" | "creatorId" | "_pendingSync" | "_syncFailedAt">>) => void;
     setMessages: (characterId: string, messages: ChatMessage[]) => void;
     toggleBlock: (characterId: string) => void;
     getConversation: (characterId: string) => Conversation | undefined;
@@ -253,6 +253,8 @@ export const useChatStore = create<ChatStore>()(
                                     worldData: metadata.worldData ?? existing.worldData,
                                     storyData: metadata.storyData ?? existing.storyData,
                                     creatorId: metadata.creatorId ?? existing.creatorId,
+                                    _pendingSync: metadata._pendingSync !== undefined ? metadata._pendingSync : existing._pendingSync,
+                                    _syncFailedAt: metadata._syncFailedAt !== undefined ? metadata._syncFailedAt : existing._syncFailedAt,
                                 }
                             }
                         };
@@ -274,6 +276,8 @@ export const useChatStore = create<ChatStore>()(
                                 worldData: metadata.worldData,
                                 storyData: metadata.storyData,
                                 creatorId: metadata.creatorId,
+                                _pendingSync: metadata._pendingSync,
+                                _syncFailedAt: metadata._syncFailedAt,
                             }
                         }
                     };
@@ -407,7 +411,13 @@ export const useChatStore = create<ChatStore>()(
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ conversationId: characterId, messages: [msg], conversationType: convo?.conversationType || "personal", conversationMetadata: buildConversationMetadata(convo) })
-                }).catch(err => console.error("Failed to sync message", err));
+                })
+                .then(res => {
+                    if (res.ok) {
+                        get().upsertConversation(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
+                    }
+                })
+                .catch(err => console.error("Failed to sync message", err));
             },
 
             addReply: (characterId, content, attachment, replyToId) => {
@@ -447,7 +457,13 @@ export const useChatStore = create<ChatStore>()(
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ conversationId: characterId, messages: [msg], conversationType: convo?.conversationType || "personal", conversationMetadata: buildConversationMetadata(convo) })
-                }).catch(err => console.error("Failed to sync message", err));
+                })
+                .then(res => {
+                    if (res.ok) {
+                        get().upsertConversation(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
+                    }
+                })
+                .catch(err => console.error("Failed to sync message", err));
 
                 // AI replied → mark user's messages as "seen" (the AI has read them)
                 get().markAsSeen(characterId, "user");

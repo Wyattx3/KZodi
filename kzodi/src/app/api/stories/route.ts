@@ -65,12 +65,16 @@ export async function POST(req: Request) {
         await ensureSchema();
         const body = await req.json();
         const { id, name, synopsis, genre, image, story_data, world_data, is_published } = body;
-        const normalized_story_data = story_data || {};
 
         // Validate required fields
-        if (!id || !name) {
-            return NextResponse.json({ error: "Missing required fields: id and name" }, { status: 400 });
+        if (!id || !name || is_published === undefined) {
+            return NextResponse.json({ error: "Missing required fields: id, name, and is_published" }, { status: 400 });
         }
+        
+        const normalized_story_data = {
+            ...(story_data || {}),
+            isPublished: Boolean(is_published)
+        };
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (session.user as any).id;

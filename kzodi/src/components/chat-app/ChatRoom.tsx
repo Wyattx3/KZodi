@@ -2082,7 +2082,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     )}
                                     {/* ── Publish Story Action ── */}
                                     {conversationType === "story" && (!convoFromStore?.creatorId || convoFromStore.creatorId === ownerUserId) && (() => {
-                                        const isActuallyPendingSync = convoFromStore?._pendingSync && !convoFromStore?._syncFailedAt;
+                                        const isActuallyPendingSync = convoFromStore?._pendingSync && !convoFromStore?._syncFailedAt && !convoFromStore?.creatorId;
                                         return (
                                             <button
                                                 disabled={isPublishingStory || storyData?.isPublished || isActuallyPendingSync}
