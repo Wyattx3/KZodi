@@ -29,10 +29,12 @@ export default function StoryCreateModal({ charMap, conversations, onClose, onCr
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Available characters from charMap (filter out groups)
     const availableCharacters = useMemo(() => {
-        return Object.values(charMap).filter(c => !c.id.startsWith("group-") && !c.id.startsWith("story-"));
-    }, [charMap]);
+        return conversations
+            .filter(c => !c.isGroup && c.conversationType !== "story")
+            .map(c => charMap[c.characterId])
+            .filter(Boolean);
+    }, [conversations, charMap]);
 
     const toggleCast = (charId: string) => {
         setSelectedCastIds(prev =>

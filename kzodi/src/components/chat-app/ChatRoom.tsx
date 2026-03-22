@@ -2091,61 +2091,63 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                                     e.stopPropagation();
                                                     setIsPublishingStory(true);
                                                     try {
-                                                        // Preflight sync to guarantee draft existence
-                                                        if (convoFromStore?._syncFailedAt || !isActuallyPendingSync) {
-                                                            const res = await fetch("/api/messages", {
-                                                                method: "POST",
-                                                                headers: { "Content-Type": "application/json" },
-                                                                body: JSON.stringify({
-                                                                    conversationId: character.id,
-                                                                    conversationType: "story",
-                                                                    conversationMetadata: {
-                                                                        groupName: convoFromStore?.groupName || character.name,
-                                                                        groupImage: convoFromStore?.groupImage || character.image,
-                                                                        groupMemberIds: null,
-                                                                        worldData: worldData || null,
-                                                                        storyData: storyData || { synopsis: "", genre: "", isPublished: false }
-                                                                    }
-                                                                })
-                                                            });
-                                                            if (!res.ok) {
-                                                                alert("Failed to sync story metadata. Please try again.");
-                                                                return;
-                                                            }
-                                                        }
-
                                                         const updatedStoryData = {
                                                             ...(storyData || { synopsis: "", genre: "", isPublished: false, playerCharacterName: "", playerCharacterDescription: "" }),
                                                             isPublished: true,
                                                         };
-                                                        const res = await fetch("/api/stories", {
+                                                        const publishPayload = {
+                                                            id: character.id,
+                                                            name: convoFromStore?.groupName || character.name,
+                                                            image: convoFromStore?.groupImage || character.image,
+                                                            synopsis: storyData?.synopsis || "",
+                                                            genre: storyData?.genre || "",
+                                                            story_data: updatedStoryData,
+                                                            world_data: worldData || null,
+                                                            is_published: true,
+                                                        };
+
+                                                        let res = await fetch("/api/stories", {
                                                             method: "POST",
                                                             headers: { "Content-Type": "application/json" },
-                                                            body: JSON.stringify({
-                                                                id: character.id,
-                                                                name: convoFromStore?.groupName || character.name,
-                                                                image: convoFromStore?.groupImage || character.image,
-                                                                synopsis: storyData?.synopsis || "",
-                                                                genre: storyData?.genre || "",
-                                                                story_data: updatedStoryData,
-                                                                world_data: worldData || null,
-                                                                is_published: true,
-                                                            }),
+                                                            body: JSON.stringify(publishPayload),
                                                         });
+
+                                                        // Fallback to metadata preflight if 403 (draft not found)
+                                                        if (!res.ok && res.status === 403) {
+                                                            if (convoFromStore?._syncFailedAt || !isActuallyPendingSync) {
+                                                                const preflightRes = await fetch("/api/messages", {
+                                                                    method: "POST",
+                                                                    headers: { "Content-Type": "application/json" },
+                                                                    body: JSON.stringify({
+                                                                        conversationId: character.id,
+                                                                        conversationType: "story",
+                                                                        conversationMetadata: {
+                                                                            groupName: convoFromStore?.groupName || character.name,
+                                                                            groupImage: convoFromStore?.groupImage || character.image,
+                                                                            groupMemberIds: null,
+                                                                            worldData: worldData || null,
+                                                                            storyData: storyData || { synopsis: "", genre: "", isPublished: false }
+                                                                        }
+                                                                    })
+                                                                });
+                                                                if (!preflightRes.ok) {
+                                                                    alert("Failed to sync story metadata. Please try again.");
+                                                                    return;
+                                                                }
+                                                                // Retry publish
+                                                                res = await fetch("/api/stories", {
+                                                                    method: "POST",
+                                                                    headers: { "Content-Type": "application/json" },
+                                                                    body: JSON.stringify(publishPayload),
+                                                                });
+                                                            }
+                                                        }
+
                                                         if (res.ok) {
-                                                            // Update local storyData to reflect published status
-                                                            useChatStore.setState((state) => {
-                                                                const convo = state.conversations[character.id];
-                                                                if (!convo) return state;
-                                                                return {
-                                                                    conversations: {
-                                                                        ...state.conversations,
-                                                                        [character.id]: {
-                                                                            ...convo,
-                                                                            storyData: updatedStoryData,
-                                                                        },
-                                                                    },
-                                                                };
+                                                            // Update local storyData and ownership to reflect published status
+                                                            useChatStore.getState().upsertConversation(character.id, {
+                                                                storyData: updatedStoryData,
+                                                                creatorId: ownerUserId || undefined
                                                             });
 
                                                             // Backend now atomically updates conversation_metadata during /api/stories POST,

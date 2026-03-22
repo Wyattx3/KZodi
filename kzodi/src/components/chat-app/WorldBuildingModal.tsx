@@ -29,8 +29,11 @@ export default function WorldBuildingModal({ charMap, conversations, onClose, on
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const availableChars = useMemo(() => {
-        return Object.values(charMap);
-    }, [charMap]);
+        return conversations
+            .filter(c => !c.isGroup && c.conversationType !== "story")
+            .map(c => charMap[c.characterId])
+            .filter(Boolean);
+    }, [conversations, charMap]);
 
     const filteredChars = useMemo(() => {
         if (!searchQ.trim()) return availableChars;
