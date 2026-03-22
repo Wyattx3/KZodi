@@ -317,6 +317,8 @@ export default function ChatApp() {
                             worldData: (conv as any).worldData || undefined,
                             storyData: (conv as any).storyData || undefined,
                             creatorId: (conv as any).creatorId || undefined,
+                            lastMessage: (conv as any).lastMessage || undefined,
+                            lastTimestamp: (conv as any).lastTimestamp || undefined,
                             _pendingSync: undefined,
                             _syncFailedAt: undefined,
                         } as any);

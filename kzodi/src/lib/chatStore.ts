@@ -83,7 +83,7 @@ interface ChatStore {
      * worldData, storyData, groupName, groupImage, groupMemberIds are patched;
      * messages and timestamps are preserved.
      */
-    upsertConversation: (characterId: string, metadata: Partial<Pick<Conversation, "conversationType" | "isGroup" | "groupName" | "groupImage" | "groupMemberIds" | "worldData" | "storyData" | "creatorId" | "_pendingSync" | "_syncFailedAt">>) => void;
+    upsertConversation: (characterId: string, metadata: Partial<Pick<Conversation, "conversationType" | "isGroup" | "groupName" | "groupImage" | "groupMemberIds" | "worldData" | "storyData" | "creatorId" | "_pendingSync" | "_syncFailedAt" | "lastMessage" | "lastTimestamp">>) => void;
     setMessages: (characterId: string, messages: ChatMessage[]) => void;
     toggleBlock: (characterId: string) => void;
     getConversation: (characterId: string) => Conversation | undefined;
@@ -236,7 +236,9 @@ export const useChatStore = create<ChatStore>()(
                     const existing = state.conversations[characterId];
                     // Derive isGroup from conversationType when not explicitly provided
                     const derivedIsGroup = metadata.isGroup ?? (
-                        metadata.conversationType === "group" || metadata.conversationType === "world"
+                        metadata.conversationType !== undefined 
+                            ? (metadata.conversationType === "group" || metadata.conversationType === "world")
+                            : undefined
                     );
                     if (existing) {
                         // Merge only metadata fields; preserve messages and timestamps
@@ -255,6 +257,8 @@ export const useChatStore = create<ChatStore>()(
                                     creatorId: metadata.creatorId ?? existing.creatorId,
                                     _pendingSync: metadata._pendingSync !== undefined ? metadata._pendingSync : existing._pendingSync,
                                     _syncFailedAt: metadata._syncFailedAt !== undefined ? metadata._syncFailedAt : existing._syncFailedAt,
+                                    lastMessage: metadata.lastMessage ?? existing.lastMessage,
+                                    lastTimestamp: metadata.lastTimestamp ?? existing.lastTimestamp,
                                 }
                             }
                         };
@@ -266,8 +270,8 @@ export const useChatStore = create<ChatStore>()(
                             [characterId]: {
                                 characterId,
                                 messages: [],
-                                lastMessage: "",
-                                lastTimestamp: Date.now(),
+                                lastMessage: metadata.lastMessage ?? "",
+                                lastTimestamp: metadata.lastTimestamp ?? Date.now(),
                                 conversationType: metadata.conversationType,
                                 isGroup: derivedIsGroup,
                                 groupName: metadata.groupName,
