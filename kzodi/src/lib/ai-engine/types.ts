@@ -1,3 +1,5 @@
+import type { WorldData, StoryData } from "@/lib/chatStore";
+
 /**
  * AI Engine — Shared Types
  * 
@@ -111,9 +113,9 @@ export interface EngineInput {
     /** Conversation type */
     conversationType?: "personal" | "group" | "story" | "world";
     /** Data for world building groups */
-    worldData?: any;
+    worldData?: WorldData;
     /** Data for story groups */
-    storyData?: any;
+    storyData?: StoryData & { castNames?: string[] };
 }
 
 export interface EngineOutput {

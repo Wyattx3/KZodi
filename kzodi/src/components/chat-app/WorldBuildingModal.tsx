@@ -1,15 +1,49 @@
 "use client";
 import React, { useRef, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { useChatStore } from "@/lib/chatStore";
+import { useChatStore, type Conversation } from "@/lib/chatStore";
 import { Character } from "@/data/characters";
 
 interface WorldBuildingModalProps {
     charMap: Record<string, Character>;
-    conversations: any[]; // Conversation[]
+    conversations: Conversation[];
     onClose: () => void;
     onCreated: (groupId: string) => void;
 }
+
+const ArrayInput = ({ label, items, setItems }: { label: string, items: string[], setItems: (i: string[]) => void }) => {
+    const [val, setVal] = useState("");
+    const add = () => {
+        if (val.trim() && !items.includes(val.trim())) {
+            setItems([...items, val.trim()]);
+            setVal("");
+        }
+    };
+    return (
+        <div style={{ marginBottom: "16px" }}>
+            <label style={{ fontSize: "13px", fontWeight: 600, color: "#8B8680", marginBottom: "8px", display: "block" }}>
+                {label.toUpperCase()}
+            </label>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: items.length > 0 ? "8px" : "0" }}>
+                {items.map((item, i) => (
+                    <div key={i} style={{ background: "rgba(74,55,40,0.08)", padding: "4px 10px", borderRadius: "16px", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}>
+                        {item}
+                        <button onClick={() => setItems(items.filter((_, idx) => idx !== i))} style={{ background: "none", border: "none", cursor: "pointer", opacity: 0.6 }}>×</button>
+                    </div>
+                ))}
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+                <input 
+                    value={val} onChange={e => setVal(e.target.value)} 
+                    onKeyDown={e => e.key === "Enter" && add()}
+                    placeholder={`Add ${label}...`}
+                    style={{ flex: 1, padding: "8px 12px", borderRadius: "10px", border: "1px solid #ddd", outline: "none" }}
+                />
+                <button onClick={add} style={{ padding: "8px 16px", background: "#4A3728", color: "#fff", border: "none", borderRadius: "10px" }}>Add</button>
+            </div>
+        </div>
+    );
+};
 
 export default function WorldBuildingModal({ charMap, conversations, onClose, onCreated }: WorldBuildingModalProps) {
     const [step, setStep] = useState<"select" | "info" | "world">("select");
@@ -69,40 +103,6 @@ export default function WorldBuildingModal({ charMap, conversations, onClose, on
             setGroupImage(ev.target?.result as string);
         };
         reader.readAsDataURL(file);
-    };
-
-    const ArrayInput = ({ label, items, setItems }: { label: string, items: string[], setItems: (i: string[]) => void }) => {
-        const [val, setVal] = useState("");
-        const add = () => {
-            if (val.trim() && !items.includes(val.trim())) {
-                setItems([...items, val.trim()]);
-                setVal("");
-            }
-        };
-        return (
-            <div style={{ marginBottom: "16px" }}>
-                <label style={{ fontSize: "13px", fontWeight: 600, color: "#8B8680", marginBottom: "8px", display: "block" }}>
-                    {label.toUpperCase()}
-                </label>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: items.length > 0 ? "8px" : "0" }}>
-                    {items.map((item, i) => (
-                        <div key={i} style={{ background: "rgba(74,55,40,0.08)", padding: "4px 10px", borderRadius: "16px", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}>
-                            {item}
-                            <button onClick={() => setItems(items.filter((_, idx) => idx !== i))} style={{ background: "none", border: "none", cursor: "pointer", opacity: 0.6 }}>×</button>
-                        </div>
-                    ))}
-                </div>
-                <div style={{ display: "flex", gap: "8px" }}>
-                    <input 
-                        value={val} onChange={e => setVal(e.target.value)} 
-                        onKeyDown={e => e.key === "Enter" && add()}
-                        placeholder={`Add ${label}...`}
-                        style={{ flex: 1, padding: "8px 12px", borderRadius: "10px", border: "1px solid #ddd", outline: "none" }}
-                    />
-                    <button onClick={add} style={{ padding: "8px 16px", background: "#4A3728", color: "#fff", border: "none", borderRadius: "10px" }}>Add</button>
-                </div>
-            </div>
-        );
     };
 
     return (

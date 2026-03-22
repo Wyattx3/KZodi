@@ -43,9 +43,15 @@ export async function GET(req: Request) {
 
         const hasMore = res.rows.length > limit;
         const items = hasMore ? res.rows.slice(0, limit) : res.rows;
+        
+        // Strip out base64 images from summary response
+        const filteredItems = items.map(item => ({
+            ...item,
+            image: item.image?.startsWith('data:') ? null : item.image
+        }));
 
         return NextResponse.json({
-            items,
+            items: filteredItems,
             hasMore,
             nextOffset: hasMore ? offset + limit : null,
         });

@@ -21,6 +21,7 @@ import type {
     Emotion,
 } from "./types";
 import { analyzePersonalityTraits } from "./types";
+import type { WorldData, StoryData } from "@/lib/chatStore";
 
 // ─── Brain Thinking Call ─────────────────────────────────────────────────────
 
@@ -315,8 +316,8 @@ export interface BuildCognitivePromptOptions {
     userBirthday?: string;
     isOfficialCharacter?: boolean;
     conversationType?: "personal" | "group" | "story" | "world";
-    worldData?: any;
-    storyData?: any;
+    worldData?: WorldData;
+    storyData?: StoryData & { castNames?: string[] };
 }
 
 export function buildCognitivePrompt({

@@ -44,7 +44,7 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
     // Only show characters that have existing conversations (chat list contacts)
     const availableChars = React.useMemo(() => {
         return conversations
-            .filter(c => !c.isGroup)
+            .filter(c => !c.isGroup && c.conversationType !== 'story')
             .map(c => charMap[c.characterId])
             .filter(Boolean);
     }, [conversations, charMap]);

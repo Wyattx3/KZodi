@@ -1,12 +1,12 @@
 "use client";
 import React, { useRef, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { useChatStore } from "@/lib/chatStore";
+import { useChatStore, type Conversation } from "@/lib/chatStore";
 import { Character } from "@/data/characters";
 
 interface StoryCreateModalProps {
     charMap: Record<string, Character>;
-    conversations: any[]; // Conversation[]
+    conversations: Conversation[];
     onClose: () => void;
     onCreated: (storyId: string) => void;
 }
