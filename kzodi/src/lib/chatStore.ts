@@ -655,7 +655,7 @@ export const useChatStore = create<ChatStore>()(
                         set((state) => {
                             const convo = state.conversations[groupId];
                             if (!convo) return state;
-                            return { conversations: { ...state.conversations, [groupId]: { ...convo, _pendingSync: undefined, _syncFailedAt: Date.now() } } };
+                            return { conversations: { ...state.conversations, [groupId]: { ...convo, _syncFailedAt: Date.now(), _pendingSync: undefined } } };
                         });
                     }
                 };
@@ -745,7 +745,7 @@ export const useChatStore = create<ChatStore>()(
                         set((state) => {
                             const convo = state.conversations[storyId];
                             if (!convo) return state;
-                            return { conversations: { ...state.conversations, [storyId]: { ...convo, _pendingSync: undefined, _syncFailedAt: Date.now() } } };
+                            return { conversations: { ...state.conversations, [storyId]: { ...convo, _syncFailedAt: Date.now(), _pendingSync: undefined } } };
                         });
                     }
                 };

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { pool, ensureSchema } from "@/lib/db";
 import { auth } from "@/auth";
+import valkey from "@/lib/redis";
 
 export async function GET(req: Request) {
     try {
@@ -64,6 +65,7 @@ export async function POST(req: Request) {
         await ensureSchema();
         const body = await req.json();
         const { id, name, synopsis, genre, image, story_data, world_data, is_published } = body;
+        const normalized_story_data = story_data || {};
 
         // Validate required fields
         if (!id || !name) {
@@ -95,7 +97,7 @@ export async function POST(req: Request) {
         } else {
             // Publishing a new story draft: verify ownership of metadata draft
             const draft = await pool.query(
-                `SELECT 1 FROM conversation_metadata WHERE conversation_id = $1 AND user_id = $2 AND story_data IS NOT NULL`,
+                `SELECT 1 FROM conversation_metadata WHERE conversation_id = $1 AND user_id = $2`,
                 [id, userId]
             );
             if (draft.rows.length === 0) {
@@ -121,7 +123,7 @@ export async function POST(req: Request) {
                  world_data = EXCLUDED.world_data, 
                  is_published = EXCLUDED.is_published
                  RETURNING id`,
-                [id, userId, name, synopsis, genre, image, story_data, world_data, is_published]
+                [id, userId, name, synopsis, genre, image, normalized_story_data, world_data, is_published]
             );
 
             // Also update conversation metadata atomically to prevent 
@@ -135,10 +137,14 @@ export async function POST(req: Request) {
                  group_image = EXCLUDED.group_image,
                  world_data = EXCLUDED.world_data,
                  updated_at = NOW()`,
-                [id, userId, story_data, name, image, world_data]
+                [id, userId, normalized_story_data, name, image, world_data]
             );
 
             await client.query('COMMIT');
+            
+            // Invalidate conversation cache so the chat list reflects published state
+            valkey.del(`convos:${userId}`).catch(err => console.warn("Failed to clear conv cache", err));
+            
             return NextResponse.json({ success: true, storyId: result.rows[0].id });
         } catch (e) {
             await client.query('ROLLBACK');

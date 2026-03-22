@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SOURCE_CATEGORIES as CATEGORIES, type Category, type Character } from "@/data/characters";
+import { SOURCE_CATEGORIES, type Category, type Character } from "@/data/characters";
+
+const CATEGORIES = ["All", "Stories", ...SOURCE_CATEGORIES] as const;
+type ExploreCategory = (typeof CATEGORIES)[number];
 import { App } from '@capacitor/app';
 import { useChatStore } from "@/lib/chatStore";
 
@@ -12,7 +15,7 @@ interface ExploreTabProps {
 const PAGE_SIZE = 50;
 
 export default function ExploreTab({ onSelectCharacter, onSelectGroup }: ExploreTabProps) {
-    const [activeCategory, setActiveCategory] = useState<Category>("All");
+    const [activeCategory, setActiveCategory] = useState<ExploreCategory>("All");
     const [search, setSearch] = useState("");
     const [searchMode, setSearchMode] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -63,6 +66,17 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
             const res = await fetch(fetchUrl, { signal });
             if (res.ok) {
                 const data = await res.json();
+
+                const safeParseJSON = (jsonStr: any) => {
+                    if (typeof jsonStr !== 'string') return jsonStr;
+                    try {
+                        return JSON.parse(jsonStr);
+                    } catch (e) {
+                        console.warn("Safe JSON parse failed for story metadata, returning undefined", e);
+                        return undefined;
+                    }
+                };
+
                 let chars: Character[] = [];
                 if (activeCategory === "Stories") {
                     const storyItems = data.items || data;
@@ -76,8 +90,8 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                         image: story.image,
                         source: "story",
                         creatorId: story.creator_id,
-                        storyData: typeof story.story_data === 'string' ? JSON.parse(story.story_data) : story.story_data,
-                        worldData: typeof story.world_data === 'string' ? JSON.parse(story.world_data) : story.world_data,
+                        storyData: safeParseJSON(story.story_data),
+                        worldData: safeParseJSON(story.world_data),
                     } as Character));
                 } else {
                     chars = data.characters || data;
@@ -763,10 +777,21 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                             <div className="explore-featured-actions">
                                                                 <span className="explore-featured-tag">{currentChar.tag}</span>
                                                                 <span className="explore-featured-chat-btn">
-                                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                                                        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                                    </svg>
-                                                                    Start Chat
+                                                                    {currentChar.source === "story" ? (
+                                                                        <>
+                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                                                                <path d="M8 5v14l11-7z" />
+                                                                            </svg>
+                                                                            Play Story
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                                                                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                                            </svg>
+                                                                            Start Chat
+                                                                        </>
+                                                                    )}
                                                                 </span>
                                                             </div>
                                                         </div>

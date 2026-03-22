@@ -1156,6 +1156,28 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                 </motion.div>
             )}
 
+            {/* Filter empty */}
+            {conversations.length > 0 && filteredConvos.length === 0 && !searchQuery && (
+                <motion.div
+                    className="chats-empty-filter"
+                    style={{ padding: "80px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}
+                >
+                    <div style={{ width: "80px", height: "80px", marginBottom: "16px", background: "rgba(0,0,0,0.04)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "32px" }}>
+                        {activeFilter === "personal" ? "👤" : activeFilter === "group" ? "👥" : "📖"}
+                    </div>
+                    <p style={{ fontWeight: 700, color: "#4A3728", fontSize: "18px", marginBottom: "8px" }}>
+                        {activeFilter === "personal" ? "No personal chats" : 
+                         activeFilter === "group" ? "No groups" : 
+                         "No stories"}
+                    </p>
+                    <p style={{ color: "#8B8680", fontSize: "14px", maxWidth: "240px" }}>
+                        {activeFilter === "personal" ? "Start chatting with an AI character or astrologer from the Explore tab." : 
+                         activeFilter === "group" ? "Create a group to chat with multiple characters at once." : 
+                         "Create or join a story to start your adventure."}
+                    </p>
+                </motion.div>
+            )}
+
             {/* Group Creation Modal */}
             <AnimatePresence>
                 {showGroupModal && (

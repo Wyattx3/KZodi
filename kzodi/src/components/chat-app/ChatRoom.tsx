@@ -864,6 +864,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [isVoiceRecording, setIsVoiceRecording] = useState(false);
     const [isPublishingStory, setIsPublishingStory] = useState(false);
 
+    const ownerUserId = useChatStore(state => state.ownerUserId);
     const { sendMessage, addReply, markAsSeen, addGroupReply } = useChatStore.getState();
 
     const convoFromStore = useChatStore(state => state.conversations[character.id]);
@@ -2080,80 +2081,106 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                         </button>
                                     )}
                                     {/* ── Publish Story Action ── */}
-                                    {conversationType === "story" && (!convoFromStore?.creatorId || convoFromStore.creatorId === useChatStore.getState().ownerUserId) && (
-                                        <button
-                                            disabled={isPublishingStory || storyData?.isPublished}
-                                            onClick={async (e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                setIsPublishingStory(true);
-                                                try {
-                                                    const updatedStoryData = {
-                                                        ...(storyData || { synopsis: "", genre: "", isPublished: false, playerCharacterName: "", playerCharacterDescription: "" }),
-                                                        isPublished: true,
-                                                    };
-                                                    const res = await fetch("/api/stories", {
-                                                        method: "POST",
-                                                        headers: { "Content-Type": "application/json" },
-                                                        body: JSON.stringify({
-                                                            id: character.id,
-                                                            name: convoFromStore?.groupName || character.name,
-                                                            image: convoFromStore?.groupImage || character.image,
-                                                            synopsis: storyData?.synopsis || "",
-                                                            genre: storyData?.genre || "",
-                                                            story_data: updatedStoryData,
-                                                            world_data: worldData || null,
-                                                            is_published: true,
-                                                        }),
-                                                    });
-                                                    if (res.ok) {
-                                                        // Update local storyData to reflect published status
-                                                        useChatStore.setState((state) => {
-                                                            const convo = state.conversations[character.id];
-                                                            if (!convo) return state;
-                                                            return {
-                                                                conversations: {
-                                                                    ...state.conversations,
-                                                                    [character.id]: {
-                                                                        ...convo,
-                                                                        storyData: updatedStoryData,
-                                                                    },
-                                                                },
-                                                            };
+                                    {conversationType === "story" && (!convoFromStore?.creatorId || convoFromStore.creatorId === ownerUserId) && (() => {
+                                        const isActuallyPendingSync = convoFromStore?._pendingSync && !convoFromStore?._syncFailedAt;
+                                        return (
+                                            <button
+                                                disabled={isPublishingStory || storyData?.isPublished || isActuallyPendingSync}
+                                                onClick={async (e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setIsPublishingStory(true);
+                                                    try {
+                                                        // Preflight sync to guarantee draft existence
+                                                        if (convoFromStore?._syncFailedAt || !isActuallyPendingSync) {
+                                                            const res = await fetch("/api/messages", {
+                                                                method: "POST",
+                                                                headers: { "Content-Type": "application/json" },
+                                                                body: JSON.stringify({
+                                                                    conversationId: character.id,
+                                                                    conversationType: "story",
+                                                                    conversationMetadata: {
+                                                                        groupName: convoFromStore?.groupName || character.name,
+                                                                        groupImage: convoFromStore?.groupImage || character.image,
+                                                                        groupMemberIds: null,
+                                                                        worldData: worldData || null,
+                                                                        storyData: storyData || { synopsis: "", genre: "", isPublished: false }
+                                                                    }
+                                                                })
+                                                            });
+                                                            if (!res.ok) {
+                                                                alert("Failed to sync story metadata. Please try again.");
+                                                                return;
+                                                            }
+                                                        }
+
+                                                        const updatedStoryData = {
+                                                            ...(storyData || { synopsis: "", genre: "", isPublished: false, playerCharacterName: "", playerCharacterDescription: "" }),
+                                                            isPublished: true,
+                                                        };
+                                                        const res = await fetch("/api/stories", {
+                                                            method: "POST",
+                                                            headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({
+                                                                id: character.id,
+                                                                name: convoFromStore?.groupName || character.name,
+                                                                image: convoFromStore?.groupImage || character.image,
+                                                                synopsis: storyData?.synopsis || "",
+                                                                genre: storyData?.genre || "",
+                                                                story_data: updatedStoryData,
+                                                                world_data: worldData || null,
+                                                                is_published: true,
+                                                            }),
                                                         });
+                                                        if (res.ok) {
+                                                            // Update local storyData to reflect published status
+                                                            useChatStore.setState((state) => {
+                                                                const convo = state.conversations[character.id];
+                                                                if (!convo) return state;
+                                                                return {
+                                                                    conversations: {
+                                                                        ...state.conversations,
+                                                                        [character.id]: {
+                                                                            ...convo,
+                                                                            storyData: updatedStoryData,
+                                                                        },
+                                                                    },
+                                                                };
+                                                            });
 
-                                                        // Backend now atomically updates conversation_metadata during /api/stories POST,
-                                                        // so we no longer need a separate, chained call here.
+                                                            // Backend now atomically updates conversation_metadata during /api/stories POST,
+                                                            // so we no longer need a separate, chained call here.
 
-                                                        alert("Story published successfully!");
-                                                    } else {
-                                                        const data = await res.json().catch(() => ({}));
-                                                        alert(data.error || "Failed to publish story.");
+                                                            alert("Story published successfully!");
+                                                        } else {
+                                                            const data = await res.json().catch(() => ({}));
+                                                            alert(data.error || "Failed to publish story.");
+                                                        }
+                                                    } catch (err) {
+                                                        console.error("Failed to publish story:", err);
+                                                        alert("Network error while publishing.");
+                                                    } finally {
+                                                        setIsPublishingStory(false);
+                                                        setShowMenu(false);
                                                     }
-                                                } catch (err) {
-                                                    console.error("Failed to publish story:", err);
-                                                    alert("Network error while publishing.");
-                                                } finally {
-                                                    setIsPublishingStory(false);
-                                                    setShowMenu(false);
-                                                }
-                                            }}
-                                            style={{
-                                                display: "flex", alignItems: "center", gap: "8px",
-                                                background: storyData?.isPublished ? "rgba(16,185,129,0.08)" : "rgba(59,130,246,0.08)",
-                                                border: "none", padding: "10px 12px",
-                                                borderRadius: "10px",
-                                                cursor: storyData?.isPublished || isPublishingStory ? "default" : "pointer",
-                                                color: storyData?.isPublished ? "#10B981" : "#3B82F6",
-                                                fontSize: "14px", fontWeight: 600,
-                                                opacity: storyData?.isPublished || isPublishingStory ? 0.7 : 1,
-                                                marginBottom: "4px",
-                                            }}
-                                        >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                            {isPublishingStory ? "Publishing..." : storyData?.isPublished ? "Published ✓" : "Publish Story"}
-                                        </button>
-                                    )}
+                                                }}
+                                                style={{
+                                                    display: "flex", alignItems: "center", gap: "8px",
+                                                    background: storyData?.isPublished ? "rgba(16,185,129,0.08)" : isActuallyPendingSync ? "rgba(156,163,175,0.08)" : "rgba(59,130,246,0.08)",
+                                                    border: "none", padding: "10px 12px",
+                                                    borderRadius: "10px",
+                                                    cursor: storyData?.isPublished || isPublishingStory || isActuallyPendingSync ? "default" : "pointer",
+                                                    color: storyData?.isPublished ? "#10B981" : isActuallyPendingSync ? "#9CA3AF" : "#3B82F6",
+                                                    fontSize: "14px", fontWeight: 600,
+                                                    opacity: storyData?.isPublished || isPublishingStory || isActuallyPendingSync ? 0.7 : 1,
+                                                    marginBottom: "4px",
+                                                }}
+                                            >
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                                {isPublishingStory ? "Publishing..." : isActuallyPendingSync ? "Syncing Draft..." : storyData?.isPublished ? "Published ✓" : "Publish Story"}
+                                            </button>
+                                        );
+                                    })()}
                                     <button
                                         onClick={(e) => {
                                             e.preventDefault();

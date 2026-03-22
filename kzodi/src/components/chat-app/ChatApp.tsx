@@ -213,13 +213,56 @@ export default function ChatApp() {
                     const localConvo = store.conversations[localId];
                     const convoType = localConvo?.conversationType;
                     const isLocalOnly = convoType === "group" || (!convoType && localConvo?.isGroup === true);
-                    const isPendingSync = localConvo?._pendingSync === true;
+                    const isPendingSync = localConvo?._pendingSync === true && !localConvo?._syncFailedAt;
                     // Bounded exemption for failed syncs: 1 hour window.
                     // This stops permanent ghost conversations while avoiding immediate drop after retry exhaustion.
                     const recentSyncFailure = localConvo?._syncFailedAt && (Date.now() - localConvo._syncFailedAt < 60 * 60 * 1000);
 
+                    // Draft protection: detect draftable local content
+                    const isDraftableType = convoType === "world" || convoType === "story";
+                    const hasMessages = localConvo?.messages && localConvo.messages.length > 0;
+                    const hasMetadata = !!(localConvo?.worldData || localConvo?.storyData);
+                    const hasDurableContent = isDraftableType && (hasMessages || hasMetadata);
+
                     if (!isLocalOnly && !isPendingSync && !recentSyncFailure) {
-                        store.pruneLocalConversation(localId);
+                        if (hasDurableContent && localConvo?._syncFailedAt) {
+                            // Attempt a best-effort resync for unsynced draft content that expired the 1 hour window
+                            const buildMeta = (c: any) => {
+                                if (!c) return null;
+                                return {
+                                    groupName: c.groupName || null,
+                                    groupImage: c.groupImage || null,
+                                    groupMemberIds: c.groupMemberIds || null,
+                                    worldData: c.worldData || null,
+                                    storyData: c.storyData || null,
+                                };
+                            };
+                            fetch("/api/messages", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    conversationId: localId,
+                                    conversationType: convoType,
+                                    messages: localConvo.messages || [],
+                                    conversationMetadata: buildMeta(localConvo)
+                                })
+                            }).then(res => {
+                                if (res.ok) {
+                                    // Successfully synced, update store to clear failed state
+                                    useChatStore.getState().upsertConversation(localId, { 
+                                        _pendingSync: undefined, 
+                                        _syncFailedAt: undefined 
+                                    } as any);
+                                } else if (res.status === 403 || res.status === 404) {
+                                    // Explicit server confirmation of deletion, prune it
+                                    store.pruneLocalConversation(localId);
+                                }
+                            }).catch(() => {
+                                // Network failure during best-effort resync; keep it local
+                            });
+                        } else {
+                            store.pruneLocalConversation(localId);
+                        }
                     }
                 }
 
