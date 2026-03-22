@@ -1124,9 +1124,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 body: JSON.stringify({
                     message: finalMessageText,
                     characterId: character.id,
-                    characterName: character.name,
-                    characterPersonality: character.personality,
-                    characterTag: character.tag,
+                    characterName: conversationType === "story" ? "Narrator" : character.name,
+                    characterPersonality: conversationType === "story" ? "Omniscient narrator, descriptive storyteller" : character.personality,
+                    characterTag: conversationType === "story" ? "Narrator" : character.tag,
                     history: history.slice(-25),
                     context: "reply",
                     isGroupChat: false,
@@ -1185,9 +1185,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 body: JSON.stringify({
                                     message: "",
                                     characterId: character.id,
-                                    characterName: character.name,
-                                    characterPersonality: character.personality,
-                                    characterTag: character.tag,
+                                    characterName: conversationType === "story" ? "Narrator" : character.name,
+                                    characterPersonality: conversationType === "story" ? "Omniscient narrator, descriptive storyteller" : character.personality,
+                                    characterTag: conversationType === "story" ? "Narrator" : character.tag,
                                     history: updatedHistory.slice(-15),
                                     context: "comfort",
                                     isGroupChat: false,
@@ -2093,14 +2093,16 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                                     try {
                                                         const updatedStoryData = {
                                                             ...(storyData || { synopsis: "", genre: "", isPublished: false, playerCharacterName: "", playerCharacterDescription: "" }),
+                                                            synopsis: storyData?.synopsis || character.description || "",
+                                                            genre: storyData?.genre || character.tag || "",
                                                             isPublished: true,
                                                         };
                                                         const publishPayload = {
                                                             id: character.id,
                                                             name: convoFromStore?.groupName || character.name,
                                                             image: convoFromStore?.groupImage || character.image,
-                                                            synopsis: storyData?.synopsis || "",
-                                                            genre: storyData?.genre || "",
+                                                            synopsis: updatedStoryData.synopsis,
+                                                            genre: updatedStoryData.genre,
                                                             story_data: updatedStoryData,
                                                             world_data: worldData || null,
                                                             is_published: true,

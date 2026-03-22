@@ -90,7 +90,12 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                         image: story.image,
                         source: "story",
                         creatorId: story.creator_id,
-                        storyData: safeParseJSON(story.story_data),
+                        storyData: {
+                            ...(safeParseJSON(story.story_data) || {}),
+                            isPublished: Boolean(story.is_published),
+                            synopsis: story.synopsis || safeParseJSON(story.story_data)?.synopsis || "",
+                            genre: story.genre || safeParseJSON(story.story_data)?.genre || "",
+                        },
                         worldData: safeParseJSON(story.world_data),
                     } as Character));
                 } else {

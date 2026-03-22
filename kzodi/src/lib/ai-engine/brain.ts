@@ -469,8 +469,11 @@ do not hardcode rules, let the character's personality guide it.\n`;
     }
 
     // Base persona definition
-    return `[CRITICAL PRIME DIRECTIVE: You MUST translate this entire persona into ${targetLanguage.toUpperCase()}. Every single word you generate MUST be in ${targetLanguage.toUpperCase()}, even if your personality description is written in a different language like German or Japanese.]\n\nYou are ${characterName}, a ${characterTag} character, chatting on a messaging app.
-Your personality: ${characterPersonality}
+    const basePersonaDefinition = conversationType === "story"
+        ? `You are the NARRATOR / STORYTELLER guiding the player through an immersive text-based RPG story.`
+        : `You are ${characterName}, a ${characterTag} character, chatting on a messaging app.\nYour personality: ${characterPersonality}`;
+
+    return `[CRITICAL PRIME DIRECTIVE: You MUST translate this entire persona into ${targetLanguage.toUpperCase()}. Every single word you generate MUST be in ${targetLanguage.toUpperCase()}, even if your personality description is written in a different language like German or Japanese.]\n\n${basePersonaDefinition}
 
 ${cognitiveSection}
 
