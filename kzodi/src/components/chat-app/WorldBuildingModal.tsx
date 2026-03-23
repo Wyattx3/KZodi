@@ -1,5 +1,5 @@
 "use client";
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useChatStore, type Conversation } from "@/lib/chatStore";
 import { Character } from "@/data/characters";
@@ -51,6 +51,8 @@ export default function WorldBuildingModal({ charMap, conversations, onClose, on
     const [groupName, setGroupName] = useState("");
     const [groupImage, setGroupImage] = useState("");
     const [searchQ, setSearchQ] = useState("");
+    const [resolvedChars, setResolvedChars] = useState<Record<string, Character>>({});
+    const [retryTick, setRetryTick] = useState(0);
     
     // World Data Fields
     const [lore, setLore] = useState("");
@@ -61,13 +63,138 @@ export default function WorldBuildingModal({ charMap, conversations, onClose, on
     const [extras, setExtras] = useState<{label: string, value: string}[]>([]);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const inFlightCharIdsRef = useRef<Set<string>>(new Set());
+    const permanentFailedCharIdsRef = useRef<Set<string>>(new Set());
+    const transientRetryStateRef = useRef<Map<string, { attempts: number; retryAfter: number }>>(new Map());
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const eligibleCharacterIds = useMemo(() => (
+        conversations
+            .filter(c => !c.isGroup && c.conversationType !== "story")
+            .map(c => c.characterId)
+    ), [conversations]);
+
+    const eligibleCharacterIdsKey = useMemo(() => (
+        [...eligibleCharacterIds].sort().join("|")
+    ), [eligibleCharacterIds]);
 
     const availableChars = useMemo(() => {
+        const enrichedCharMap = { ...charMap, ...resolvedChars };
         return conversations
             .filter(c => !c.isGroup && c.conversationType !== "story")
-            .map(c => charMap[c.characterId])
+            .map(c => enrichedCharMap[c.characterId])
             .filter(Boolean);
-    }, [conversations, charMap]);
+    }, [conversations, charMap, resolvedChars]);
+
+    useEffect(() => {
+        const activeIds = new Set(eligibleCharacterIds);
+
+        inFlightCharIdsRef.current.forEach(id => {
+            if (!activeIds.has(id)) inFlightCharIdsRef.current.delete(id);
+        });
+
+        permanentFailedCharIdsRef.current.forEach(id => {
+            if (!activeIds.has(id)) permanentFailedCharIdsRef.current.delete(id);
+        });
+
+        Array.from(transientRetryStateRef.current.keys()).forEach(id => {
+            if (!activeIds.has(id)) {
+                transientRetryStateRef.current.delete(id);
+            }
+        });
+
+        // Refresh transient failures when the eligible character set changes,
+        // so recoverable auth/network hiccups can be retried while the modal stays open.
+        eligibleCharacterIds.forEach(id => {
+            transientRetryStateRef.current.delete(id);
+        });
+    }, [eligibleCharacterIdsKey]);
+
+    useEffect(() => {
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
+
+        let earliestRetryAfter: number | null = null;
+        transientRetryStateRef.current.forEach((state, id) => {
+            if (!eligibleCharacterIds.includes(id)) return;
+            if (earliestRetryAfter === null || state.retryAfter < earliestRetryAfter) {
+                earliestRetryAfter = state.retryAfter;
+            }
+        });
+
+        if (earliestRetryAfter !== null) {
+            const delay = Math.max(earliestRetryAfter - Date.now(), 0);
+            retryTimerRef.current = setTimeout(() => {
+                retryTimerRef.current = null;
+                setRetryTick(t => t + 1);
+            }, delay);
+        }
+
+        return () => {
+            if (retryTimerRef.current) {
+                clearTimeout(retryTimerRef.current);
+                retryTimerRef.current = null;
+            }
+        };
+    }, [eligibleCharacterIdsKey, retryTick]);
+
+    useEffect(() => {
+        eligibleCharacterIds.forEach((characterId) => {
+            if (
+                charMap[characterId]
+                || resolvedChars[characterId]
+                || inFlightCharIdsRef.current.has(characterId)
+                || permanentFailedCharIdsRef.current.has(characterId)
+            ) {
+                return;
+            }
+
+            const retryState = transientRetryStateRef.current.get(characterId);
+            if (retryState && retryState.retryAfter > Date.now()) {
+                return;
+            }
+
+            inFlightCharIdsRef.current.add(characterId);
+            fetch(`/api/characters/${characterId}`)
+                .then(async (res) => {
+                    if (res.ok) return { kind: "success" as const, data: await res.json() };
+                    if (res.status === 403 || res.status === 404) return { kind: "permanent" as const, status: res.status };
+                    throw new Error(`HTTP ${res.status}`);
+                })
+                .then(result => {
+                    if (result.kind === "success" && result.data?.character) {
+                        transientRetryStateRef.current.delete(characterId);
+                        setRetryTick(t => t + 1);
+                        setResolvedChars(prev => ({ ...prev, [characterId]: result.data.character }));
+                        return;
+                    }
+
+                    if (result.kind === "permanent") {
+                        transientRetryStateRef.current.delete(characterId);
+                        permanentFailedCharIdsRef.current.add(characterId);
+                        setRetryTick(t => t + 1);
+                        return;
+                    }
+
+                    const attempts = (transientRetryStateRef.current.get(characterId)?.attempts || 0) + 1;
+                    const retryAfter = Date.now() + Math.min(1000 * Math.pow(2, attempts - 1), 15000);
+                    transientRetryStateRef.current.set(characterId, { attempts, retryAfter });
+                    setRetryTick(t => t + 1);
+                })
+                .catch(err => {
+                    const attempts = (transientRetryStateRef.current.get(characterId)?.attempts || 0) + 1;
+                    const retryAfter = Date.now() + Math.min(1000 * Math.pow(2, attempts - 1), 15000);
+                    transientRetryStateRef.current.set(characterId, { attempts, retryAfter });
+                    setRetryTick(t => t + 1);
+                    console.error("Failed to resolve world-building character", err);
+                })
+                .finally(() => {
+                    inFlightCharIdsRef.current.delete(characterId);
+                });
+        });
+    }, [eligibleCharacterIdsKey, charMap, resolvedChars, retryTick]);
 
     const filteredChars = useMemo(() => {
         if (!searchQ.trim()) return availableChars;

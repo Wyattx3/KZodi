@@ -14,6 +14,8 @@ import { getZodiacSign } from "@/lib/zodiac";
 import SpecialistSetup from "./SpecialistSetups";
 import VoiceRecorder from "./VoiceRecorder";
 
+const EMPTY_GROUP_MEMBER_IDS: string[] = [];
+
 // Inline Audio Player Component for Chat Bubbles
 const AudioPlayer = ({ src, duration: passedDuration, isUser = false }: { src: string, duration?: number, isUser?: boolean }) => {
     const audioRef = useRef<HTMLAudioElement>(null);
@@ -843,6 +845,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [isFetchingMessages, setIsFetchingMessages] = useState(true);
     const [typingMemberName, setTypingMemberName] = useState<string | null>(null);
     const [showCharInfo, setShowCharInfo] = useState(initialShowProfile);
+    const [profileCharacter, setProfileCharacter] = useState<Character>(character);
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -863,6 +866,15 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const pendingMessagesRef = useRef<{ text: string; repliedContent?: string; repliedId?: string }[]>([]);
     const [isVoiceRecording, setIsVoiceRecording] = useState(false);
     const [isPublishingStory, setIsPublishingStory] = useState(false);
+    const [resolvedGroupChars, setResolvedGroupChars] = useState<Record<string, Character>>({});
+    const [uiNotice, setUiNotice] = useState<string | null>(null);
+    const [groupMemberRetryTick, setGroupMemberRetryTick] = useState(0);
+    const groupMemberResolutionRef = useRef<Promise<Record<string, Character>> | null>(null);
+    const uiNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const groupMemberRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const inFlightGroupMemberIdsRef = useRef<Set<string>>(new Set());
+    const permanentFailedGroupMemberIdsRef = useRef<Set<string>>(new Set());
+    const transientGroupMemberRetryStateRef = useRef<Map<string, { attempts: number; retryAfter: number }>>(new Map());
 
     const ownerUserId = useChatStore(state => state.ownerUserId);
     const { sendMessage, addReply, markAsSeen, addGroupReply } = useChatStore.getState();
@@ -871,23 +883,247 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const isGroupChat = convoFromStore?.isGroup ?? character.id.startsWith("group-");
     const conversationType = convoFromStore?.conversationType || "personal";
     const worldData = convoFromStore?.worldData;
+    const groupMemberIds = convoFromStore?.groupMemberIds ?? useChatStore.getState().conversations[character.id]?.groupMemberIds ?? EMPTY_GROUP_MEMBER_IDS;
+    const groupMemberIdsKey = useMemo(() => [...groupMemberIds].sort().join("|"), [groupMemberIds]);
+    const enrichedCharMap = useMemo(() => ({ ...charMap, ...resolvedGroupChars }), [charMap, resolvedGroupChars]);
     const storyData = convoFromStore?.storyData ? {
         ...convoFromStore.storyData,
-        castNames: convoFromStore.storyData.castIds?.map(id => charMap[id]?.name || CHARACTERS.find(c => c.id === id)?.name).filter(Boolean) as string[]
+        castNames: convoFromStore.storyData.castIds?.map(id => enrichedCharMap[id]?.name || CHARACTERS.find(c => c.id === id)?.name).filter(Boolean) as string[]
     } : undefined;
-    const groupMemberChars = useMemo(() => {
-        if (!isGroupChat) return [];
-        const convo = useChatStore.getState().conversations[character.id];
-        if (!convo?.groupMemberIds) return [];
-        return convo.groupMemberIds
-            .map(id => charMap[id] || CHARACTERS.find(c => c.id === id))
+    const buildResolvedGroupMemberChars = useCallback((extraResolved: Record<string, Character> = {}) => {
+        if (!isGroupChat || groupMemberIds.length === 0) return [];
+        const runtimeCharMap = { ...enrichedCharMap, ...extraResolved };
+        return groupMemberIds
+            .map(id => runtimeCharMap[id] || CHARACTERS.find(c => c.id === id))
             .filter(Boolean) as Character[];
-    }, [character.id, isGroupChat, charMap]);
+    }, [enrichedCharMap, groupMemberIds, isGroupChat]);
+
+    const groupMemberChars = useMemo(() => {
+        return buildResolvedGroupMemberChars();
+    }, [buildResolvedGroupMemberChars]);
+
+    const resolveMissingGroupMembers = useCallback(async () => {
+        if (!isGroupChat || groupMemberIds.length === 0) {
+            return buildResolvedGroupMemberChars();
+        }
+
+        const accumulatedResolved: Record<string, Character> = {};
+
+        while (true) {
+            const now = Date.now();
+            const missingIds = groupMemberIds.filter((id) => {
+                if (charMap[id] || resolvedGroupChars[id] || accumulatedResolved[id]) return false;
+                if (permanentFailedGroupMemberIdsRef.current.has(id)) return false;
+                if (inFlightGroupMemberIdsRef.current.has(id)) return false;
+                const retryState = transientGroupMemberRetryStateRef.current.get(id);
+                if (retryState && retryState.retryAfter > now) return false;
+                return true;
+            });
+            if (missingIds.length === 0) {
+                const inFlightResolution = groupMemberResolutionRef.current;
+                if (inFlightResolution) {
+                    const newlyResolved = await inFlightResolution;
+                    Object.assign(accumulatedResolved, newlyResolved);
+                    continue;
+                }
+                return buildResolvedGroupMemberChars(accumulatedResolved);
+            }
+
+            if (!groupMemberResolutionRef.current) {
+                groupMemberResolutionRef.current = (async () => {
+                    const resolved: Record<string, Character> = {};
+                    await Promise.all(
+                        missingIds.map(async (id) => {
+                            inFlightGroupMemberIdsRef.current.add(id);
+                            try {
+                                const res = await fetch(`/api/characters/${id}`);
+                                if (!res.ok) {
+                                    if (res.status === 403 || res.status === 404) {
+                                        transientGroupMemberRetryStateRef.current.delete(id);
+                                        permanentFailedGroupMemberIdsRef.current.add(id);
+                                    } else {
+                                        const attempts = (transientGroupMemberRetryStateRef.current.get(id)?.attempts || 0) + 1;
+                                        const retryAfter = Date.now() + Math.min(1000 * Math.pow(2, attempts - 1), 15000);
+                                        transientGroupMemberRetryStateRef.current.set(id, { attempts, retryAfter });
+                                    }
+                                    setGroupMemberRetryTick(t => t + 1);
+                                    return;
+                                }
+                                const data = await res.json();
+                                if (data?.character) {
+                                    transientGroupMemberRetryStateRef.current.delete(id);
+                                    permanentFailedGroupMemberIdsRef.current.delete(id);
+                                    resolved[id] = data.character;
+                                    setGroupMemberRetryTick(t => t + 1);
+                                } else {
+                                    const attempts = (transientGroupMemberRetryStateRef.current.get(id)?.attempts || 0) + 1;
+                                    const retryAfter = Date.now() + Math.min(1000 * Math.pow(2, attempts - 1), 15000);
+                                    transientGroupMemberRetryStateRef.current.set(id, { attempts, retryAfter });
+                                    setGroupMemberRetryTick(t => t + 1);
+                                }
+                            } catch (err) {
+                                const attempts = (transientGroupMemberRetryStateRef.current.get(id)?.attempts || 0) + 1;
+                                const retryAfter = Date.now() + Math.min(1000 * Math.pow(2, attempts - 1), 15000);
+                                transientGroupMemberRetryStateRef.current.set(id, { attempts, retryAfter });
+                                setGroupMemberRetryTick(t => t + 1);
+                                console.error("Failed to resolve group member character", err);
+                            } finally {
+                                inFlightGroupMemberIdsRef.current.delete(id);
+                            }
+                        })
+                    );
+
+                    if (Object.keys(resolved).length > 0) {
+                        setResolvedGroupChars(prev => ({ ...prev, ...resolved }));
+                    }
+
+                    return resolved;
+                })().finally(() => {
+                    groupMemberResolutionRef.current = null;
+                });
+            }
+
+            const inFlightResolution = groupMemberResolutionRef.current;
+            if (!inFlightResolution) {
+                return buildResolvedGroupMemberChars(accumulatedResolved);
+            }
+
+            const newlyResolved = await inFlightResolution;
+            Object.assign(accumulatedResolved, newlyResolved);
+            if (Object.keys(newlyResolved).length === 0) {
+                return buildResolvedGroupMemberChars(accumulatedResolved);
+            }
+
+            const stillMissingIds = groupMemberIds.filter(id => !charMap[id] && !resolvedGroupChars[id] && !accumulatedResolved[id]);
+            if (stillMissingIds.length === 0) {
+                return buildResolvedGroupMemberChars(accumulatedResolved);
+            }
+        }
+    }, [buildResolvedGroupMemberChars, charMap, groupMemberIds, isGroupChat, resolvedGroupChars]);
+
+    useEffect(() => {
+        if (!isGroupChat || groupMemberIds.length === 0) return;
+        void resolveMissingGroupMembers();
+    }, [groupMemberIdsKey, groupMemberRetryTick, isGroupChat, resolveMissingGroupMembers]);
+
+    useEffect(() => {
+        const activeIds = new Set(groupMemberIds);
+
+        inFlightGroupMemberIdsRef.current.forEach(id => {
+            if (!activeIds.has(id)) inFlightGroupMemberIdsRef.current.delete(id);
+        });
+
+        permanentFailedGroupMemberIdsRef.current.forEach(id => {
+            if (!activeIds.has(id)) permanentFailedGroupMemberIdsRef.current.delete(id);
+        });
+
+        Array.from(transientGroupMemberRetryStateRef.current.keys()).forEach(id => {
+            if (!activeIds.has(id)) transientGroupMemberRetryStateRef.current.delete(id);
+        });
+    }, [groupMemberIdsKey]);
+
+    useEffect(() => {
+        if (groupMemberRetryTimerRef.current) {
+            clearTimeout(groupMemberRetryTimerRef.current);
+            groupMemberRetryTimerRef.current = null;
+        }
+
+        let earliestRetryAfter: number | null = null;
+        transientGroupMemberRetryStateRef.current.forEach((state, id) => {
+            if (!groupMemberIds.includes(id)) return;
+            if (earliestRetryAfter === null || state.retryAfter < earliestRetryAfter) {
+                earliestRetryAfter = state.retryAfter;
+            }
+        });
+
+        if (earliestRetryAfter !== null) {
+            const delay = Math.max(earliestRetryAfter - Date.now(), 0);
+            groupMemberRetryTimerRef.current = setTimeout(() => {
+                groupMemberRetryTimerRef.current = null;
+                setGroupMemberRetryTick(t => t + 1);
+            }, delay);
+        }
+
+        return () => {
+            if (groupMemberRetryTimerRef.current) {
+                clearTimeout(groupMemberRetryTimerRef.current);
+                groupMemberRetryTimerRef.current = null;
+            }
+        };
+    }, [groupMemberIdsKey, groupMemberRetryTick]);
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => {
         const convo = useChatStore.getState().conversations[character.id];
         return convo?.messages || [];
     });
+
+    const showTransientNotice = useCallback((text: string) => {
+        setUiNotice(text);
+        if (uiNoticeTimeoutRef.current) {
+            clearTimeout(uiNoticeTimeoutRef.current);
+        }
+        uiNoticeTimeoutRef.current = setTimeout(() => {
+            setUiNotice(null);
+            uiNoticeTimeoutRef.current = null;
+        }, 3200);
+    }, []);
+
+    const resolveProfileCharacter = useCallback(async (characterId: string) => {
+        const localCharacter = enrichedCharMap[characterId]
+            || CHARACTERS.find(c => c.id === characterId);
+        if (localCharacter) return localCharacter;
+
+        try {
+            const res = await fetch(`/api/characters/${characterId}`);
+            if (!res.ok) return null;
+            const data = await res.json();
+            if (data?.character) {
+                setResolvedGroupChars(prev => ({ ...prev, [characterId]: data.character }));
+                return data.character as Character;
+            }
+        } catch (err) {
+            console.error("Failed to resolve profile character", err);
+        }
+
+        return null;
+    }, [enrichedCharMap]);
+
+    const openCharacterProfile = useCallback(async (characterId?: string) => {
+        if (!isGroupChat || !characterId) {
+            setProfileCharacter(character);
+            setShowCharInfo(true);
+            return;
+        }
+
+        const resolvedCharacter = await resolveProfileCharacter(characterId);
+        if (!resolvedCharacter) {
+            showTransientNotice("Character profile is still loading. Please try again.");
+            return;
+        }
+
+        setProfileCharacter(resolvedCharacter);
+        setShowCharInfo(true);
+    }, [character, isGroupChat, resolveProfileCharacter, showTransientNotice]);
+
+    const openHeaderProfile = useCallback(async () => {
+        if (!isGroupChat) {
+            setProfileCharacter(character);
+            setShowCharInfo(true);
+            return;
+        }
+
+        const activeMembers = groupMemberChars.length > 0 ? groupMemberChars : await resolveMissingGroupMembers();
+        const lastSenderId = [...messages].reverse().find(m => m.senderId)?.senderId;
+        const targetCharacter = (lastSenderId ? activeMembers.find(member => member.id === lastSenderId) : null) || activeMembers[0];
+
+        if (!targetCharacter) {
+            showTransientNotice("No character profile is available for this group yet.");
+            return;
+        }
+
+        setProfileCharacter(targetCharacter);
+        setShowCharInfo(true);
+    }, [character, groupMemberChars, isGroupChat, messages, resolveMissingGroupMembers, showTransientNotice]);
 
     const isBlocked = useChatStore(state => state.conversations[character.id]?.isBlocked) || false;
     const conversationTheme = useChatStore(state => state.conversations[character.id]?.theme) || "theme-default";
@@ -910,6 +1146,14 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         window.addEventListener("click", handleClick);
         return () => window.removeEventListener("click", handleClick);
     }, [isTrueAstrologer]);
+
+    useEffect(() => {
+        return () => {
+            if (uiNoticeTimeoutRef.current) {
+                clearTimeout(uiNoticeTimeoutRef.current);
+            }
+        };
+    }, []);
 
     const [unreadMarkerId, setUnreadMarkerId] = useState<string | null>(() => {
         const convo = useChatStore.getState().conversations[character.id];
@@ -940,14 +1184,39 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             finalMessageText = `(Replying to your message: "${repliedMessageContent}")\n\n${userMessageText}`;
         }
 
+        let activeGroupMemberChars = groupMemberChars;
+        if (isGroupChat && conversationType !== "story" && groupMemberIds.length > activeGroupMemberChars.length) {
+            activeGroupMemberChars = await resolveMissingGroupMembers();
+        }
+
+        const resolvedGroupMemberIds = new Set(activeGroupMemberChars.map(member => member.id));
+        const unresolvedGroupMemberIds = groupMemberIds.filter(id => !resolvedGroupMemberIds.has(id));
+        const blockingGroupMemberIds = unresolvedGroupMemberIds.filter((id) => {
+            if (permanentFailedGroupMemberIdsRef.current.has(id)) return false;
+            const retryState = transientGroupMemberRetryStateRef.current.get(id);
+            if (retryState && retryState.retryAfter > Date.now()) return false;
+            return true;
+        });
+        const skippedGroupMemberIds = unresolvedGroupMemberIds.filter(id => !blockingGroupMemberIds.includes(id));
+
+        if (isGroupChat && activeGroupMemberChars.length > 0 && skippedGroupMemberIds.length > 0) {
+            showTransientNotice("Some group members are still unavailable. Continuing with available characters.");
+        }
+
+        if (isGroupChat && activeGroupMemberChars.length === 0 && blockingGroupMemberIds.length > 0) {
+            setIsTyping(false);
+            showTransientNotice("Group members are still loading. Please try again in a moment.");
+            return;
+        }
+
         // ─── GROUP CHAT: Each member responds individually ───
-        if (isGroupChat && groupMemberChars.length > 0) {
+        if (isGroupChat && activeGroupMemberChars.length > 0) {
             const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
             const lastGroupMsg = [...currentMessages].reverse().find(m => m.senderId && m.role === "assistant");
             const lastGroupMsgSenderId = lastGroupMsg ? lastGroupMsg.senderId : null;
 
-            const groupMemberNames = groupMemberChars.map((c: Character) => c.name);
-            const randomChar = groupMemberChars.filter((c: Character) => c.id !== lastGroupMsgSenderId);
+            const groupMemberNames = activeGroupMemberChars.map((c: Character) => c.name);
+            const randomChar = activeGroupMemberChars.filter((c: Character) => c.id !== lastGroupMsgSenderId);
 
             // Mark user's messages as "seen" BEFORE any AI starts typing
             markAsSeen(character.id, "user");
@@ -956,7 +1225,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             await new Promise((resolve) => setTimeout(resolve, 400 + Math.random() * 300));
 
             // Shuffle members so the order varies each time
-            const shuffled = [...groupMemberChars].sort(() => Math.random() - 0.5);
+            const shuffled = [...activeGroupMemberChars].sort(() => Math.random() - 0.5);
 
             // Snapshot language once for the entire turn to prevent mixed-language responses
             const responseLanguage = useChatStore.getState().responseLanguage;
@@ -1055,7 +1324,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         if (isGroupChat) {
             // Empty-member world/story group: generate a narrator response
             // instead of silently returning with no reply.
-            if ((conversationType === "world" || conversationType === "story") && groupMemberChars.length === 0) {
+            if ((conversationType === "story" || (conversationType === "world" && groupMemberIds.length === 0)) && activeGroupMemberChars.length === 0) {
                 markAsSeen(character.id, "user");
                 await new Promise((resolve) => setTimeout(resolve, 400 + Math.random() * 300));
                 setIsTyping(true);
@@ -1102,6 +1371,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 return;
             }
             setIsTyping(false);
+            showTransientNotice("Group members are unavailable right now. Please try again in a moment.");
             return;
         }
 
@@ -1364,7 +1634,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             if (pollTimer) clearInterval(pollTimer);
             unsub();
         };
-    }, [character.id]);
+    }, [character.id, groupMemberChars.length, isFetchingMessages, isGroupChat, resolveMissingGroupMembers]);
 
     // Mark incoming AI messages as seen after a short delay
     // React's effect cleanup ensures only one timer runs at a time
@@ -1408,17 +1678,28 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             if (isGroupChat) {
                 // Guard: only trigger once
                 if (groupIntroTriggered.current) return;
-                groupIntroTriggered.current = true;
+                let isIntroEffectActive = true;
 
                 // No welcome message — characters start interacting immediately like an anime group chat
-                const groupMemberNames = groupMemberChars.map((c: Character) => c.name);
-                const shuffled = [...groupMemberChars].sort(() => Math.random() - 0.5);
-
-                // Snapshot language once for the entire intro loop
-                const introResponseLanguage = useChatStore.getState().responseLanguage;
-
                 // Each character introduces themselves / reacts to being in the group
                 (async () => {
+                    const introMembers = groupMemberChars.length > 0
+                        ? groupMemberChars
+                        : await resolveMissingGroupMembers();
+
+                    if (!isIntroEffectActive || groupIntroTriggered.current || introMembers.length === 0) {
+                        return;
+                    }
+
+                    groupIntroTriggered.current = true;
+
+                    // No welcome message - characters start interacting immediately like an anime group chat
+                    const groupMemberNames = introMembers.map((c: Character) => c.name);
+                    const shuffled = [...introMembers].sort(() => Math.random() - 0.5);
+
+                    // Snapshot language once for the entire intro loop
+                    const introResponseLanguage = useChatStore.getState().responseLanguage;
+
                     for (let i = 0; i < shuffled.length; i++) {
                         const member = shuffled[i];
 
@@ -1487,6 +1768,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     setIsTyping(false);
                     setTypingMemberName(null);
                 })();
+                return () => {
+                    isIntroEffectActive = false;
+                };
             } else if (conversationType !== "story") {
                 addReply(character.id, character.greeting);
             }
@@ -1512,7 +1796,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [character.id]);
+    }, [character.id, groupMemberChars.length, isFetchingMessages, isGroupChat, resolveMissingGroupMembers]);
 
     const handleSetupComplete = (setupData: string) => {
         setHasCompletedSetup(true);
@@ -1973,7 +2257,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 </motion.button>
                 <div
                     className="chatroom-header-center"
-                    onClick={() => setShowCharInfo(true)}
+                    onClick={() => void openHeaderProfile()}
                     style={{ cursor: "pointer" }}
                 >
                     <div className="chatroom-header-avatar-wrap">
@@ -1994,7 +2278,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     <button
                         className="chatroom-action-btn"
                         aria-label="Character info"
-                        onClick={() => setShowCharInfo(true)}
+                        onClick={() => void openHeaderProfile()}
                     >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                             <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
@@ -2311,6 +2595,36 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
             {/* ── Messages Area / Setup Area ───────── */}
             <div className="chatroom-messages-area relative">
+                <AnimatePresence>
+                    {uiNotice && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                            transition={{ duration: 0.18 }}
+                            aria-live="polite"
+                            style={{
+                                position: "absolute",
+                                top: "12px",
+                                left: "50%",
+                                transform: "translateX(-50%)",
+                                zIndex: 30,
+                                background: "rgba(34, 34, 34, 0.92)",
+                                color: "#FFFDF5",
+                                padding: "10px 14px",
+                                borderRadius: "14px",
+                                fontSize: "13px",
+                                fontWeight: 600,
+                                boxShadow: "0 10px 24px rgba(0,0,0,0.16)",
+                                maxWidth: "calc(100% - 32px)",
+                                textAlign: "center",
+                                pointerEvents: "none"
+                            }}
+                        >
+                            {uiNotice}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {needsSpecialistSetup ? (
                     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-4 bg-[#FFFDF5]/80 backdrop-blur-sm overflow-y-auto">
@@ -2389,9 +2703,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                         <MessageBubble
                                             message={msg}
                                             character={character}
-                                            charMap={charMap}
+                                            charMap={enrichedCharMap}
                                             isFirst={i === 0 || prevMsg?.role !== msg.role || (prevMsg?.senderId || null) !== (msg.senderId || null) || Boolean(isNewConversation || isUnreadMarker)}
                                             isLast={isLastInGroup}
+                                            onOpenCharacterProfile={(characterId) => void openCharacterProfile(characterId)}
                                             onReply={(msg) => {
                                                 setReplyingTo(msg);
                                                 setTimeout(() => inputRef.current?.focus(), 50);
@@ -2605,7 +2920,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             <AnimatePresence>
                 {showCharInfo && (
                     <CharacterProfile
-                        character={character}
+                        character={profileCharacter}
                         onBack={() => setShowCharInfo(false)}
                         messageCount={messages.length}
                     />
@@ -3011,6 +3326,7 @@ function MessageBubble({
     charMap = {},
     isFirst,
     isLast,
+    onOpenCharacterProfile,
     onReply,
     replyMessage,
     onReaction,
@@ -3025,6 +3341,7 @@ function MessageBubble({
     charMap?: Record<string, Character>;
     isFirst: boolean;
     isLast: boolean;
+    onOpenCharacterProfile?: (characterId: string) => void;
     onReply?: (msg: ChatMessage) => void;
     replyMessage?: ChatMessage;
     onReaction?: (messageId: string, emoji: string) => void;
@@ -3057,6 +3374,7 @@ function MessageBubble({
     const MENU_WIDTH = 180;
     const REACTION_ROW_HEIGHT = 52;
     const REACTION_ROW_WIDTH = REACTION_ROW_WIDTH_COMPUTED;
+    const senderProfileClickable = !isUser && !!message.senderId && !!onOpenCharacterProfile;
 
     const openMenuWithPlacement = () => {
         // Guard: if ref is unavailable we cannot compute placement — do not open
@@ -3167,7 +3485,11 @@ function MessageBubble({
             }}
         >
             {!isUser && isLast && (
-                <div className="chatroom-msg-avatar">
+                <div
+                    className="chatroom-msg-avatar"
+                    onClick={senderProfileClickable ? () => onOpenCharacterProfile(message.senderId!) : undefined}
+                    style={senderProfileClickable ? { cursor: "pointer" } : undefined}
+                >
                     <img src={
                         message.senderId
                             ? (charMap[message.senderId]?.image || CHARACTERS.find(c => c.id === message.senderId)?.image || character.image)
@@ -3181,8 +3503,14 @@ function MessageBubble({
                     className={`chatroom-bubble ${isUser ? "chatroom-bubble-user" : "chatroom-bubble-ai"}`}
                     style={isTransparentBubble ? { background: "transparent", boxShadow: "none", padding: 0, border: "none" } : undefined}
                 >
-                    {!isUser && isFirst && !isTransparentBubble && character.id.startsWith("group-") && (
-                        <span className="chatroom-bubble-sender">{message.senderName || character.name}</span>
+                    {!isUser && isFirst && !isTransparentBubble && !!message.senderId && (
+                        <span
+                            className="chatroom-bubble-sender"
+                            onClick={senderProfileClickable ? () => onOpenCharacterProfile(message.senderId!) : undefined}
+                            style={senderProfileClickable ? { cursor: "pointer" } : undefined}
+                        >
+                            {message.senderName || character.name}
+                        </span>
                     )}
                     {replyMessage && (
                         <div style={{

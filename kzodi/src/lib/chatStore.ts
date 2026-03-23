@@ -138,6 +138,51 @@ function buildConversationMetadata(convo: Conversation | undefined) {
     };
 }
 
+const MAX_PERSISTED_MESSAGES = 20;
+const MAX_PERSISTED_TEXT_LENGTH = 600;
+const MAX_PERSISTED_URL_LENGTH = 1024;
+const MAX_PERSISTED_STRUCTURED_BYTES = 12_000;
+
+function slimAttachmentForPersistence(attachment?: ChatMessage["attachment"]) {
+    if (!attachment) return undefined;
+    const isDataUrl = attachment.url.startsWith("data:");
+    return {
+        type: attachment.type,
+        duration: attachment.duration,
+        // Base64 payloads are the fastest way to blow localStorage quota.
+        url: isDataUrl ? "" : attachment.url.slice(0, MAX_PERSISTED_URL_LENGTH),
+    };
+}
+
+function slimStructuredDataForPersistence<T>(value?: T): T | undefined {
+    if (!value) return undefined;
+    try {
+        const serialized = JSON.stringify(value);
+        if (serialized.length > MAX_PERSISTED_STRUCTURED_BYTES) {
+            return undefined;
+        }
+        return JSON.parse(serialized) as T;
+    } catch {
+        return undefined;
+    }
+}
+
+function slimConversationForPersistence(conv: Conversation): Conversation {
+    return {
+        ...conv,
+        groupImage: conv.groupImage?.startsWith("data:")
+            ? undefined
+            : conv.groupImage?.slice(0, MAX_PERSISTED_URL_LENGTH),
+        worldData: slimStructuredDataForPersistence(conv.worldData),
+        storyData: slimStructuredDataForPersistence(conv.storyData),
+        messages: (conv.messages || []).slice(-MAX_PERSISTED_MESSAGES).map((msg) => ({
+            ...msg,
+            content: msg.content.slice(0, MAX_PERSISTED_TEXT_LENGTH),
+            attachment: slimAttachmentForPersistence(msg.attachment),
+        })),
+    };
+}
+
 export const useChatStore = create<ChatStore>()(
     persist(
         (set, get) => ({
@@ -894,9 +939,9 @@ export const useChatStore = create<ChatStore>()(
         }),
         {
             name: "kakoei-chat-store",
-            // Keep all conversations but truncate messages to the last 50 
-            // so we don't blow up the 5MB localStorage limit, while preserving 
-            // unread notifications and the last message preview for the Chats tab.
+            // Keep all conversations but aggressively slim persisted payloads
+            // so data URLs, attachments, and large world/story blobs do not
+            // blow up the 5MB localStorage limit.
             // ownerUserId is also persisted so we can detect cross-account reuse on next load.
 
             // Compatibility backfill: legacy group conversations created before
@@ -920,13 +965,11 @@ export const useChatStore = create<ChatStore>()(
 
             partialize: (state) => ({
                 ownerUserId: state.ownerUserId,
+                responseLanguage: state.responseLanguage,
                 conversations: Object.fromEntries(
                     Object.entries(state.conversations).map(([key, conv]) => [
                         key,
-                        {
-                            ...conv,
-                            messages: (conv.messages || []).slice(-50)
-                        }
+                        slimConversationForPersistence(conv)
                     ])
                 ),
             }),
