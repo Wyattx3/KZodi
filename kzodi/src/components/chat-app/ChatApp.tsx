@@ -30,6 +30,7 @@ export default function ChatApp() {
     const [myCharacters, setMyCharacters] = useState<Character[]>([]);
     const [allCharacters, setAllCharacters] = useState<Character[]>([]);
     const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+    const [isCreateScreenActive, setIsCreateScreenActive] = useState(false);
     // `isLoadingChats` starts false (persisted fast-path) ONLY when:
     //   1. The store already has conversations, AND
     //   2. ownerUserId is stamped (i.e., the identity has been verified at least once).
@@ -694,6 +695,7 @@ export default function ChatApp() {
                                 onSelectCharacter={handleSelectCharacter}
                                 myCharacters={myCharacters}
                                 setMyCharacters={setMyCharacters}
+                                onCreateScreenChange={setIsCreateScreenActive}
                             />
                         </div>
                         <div style={{ width: "100%", height: "calc(100% - var(--nav-clearance))", display: activeTab === "profile" ? "flex" : "none", flexDirection: "column" }}>
@@ -702,8 +704,9 @@ export default function ChatApp() {
                     </div>
 
                     {/* Premium floating tab layout */}
-                    <LayoutGroup>
-                        <div className="chat-nav-wrapper">
+                    {!(activeTab === "create" && isCreateScreenActive) && (
+                        <LayoutGroup>
+                            <div className="chat-nav-wrapper">
                             {/* Left FAB: Explore */}
                             <motion.button
                                 className={`chat-nav-fab ${activeTab === "explore" ? "chat-nav-fab-active" : ""}`}
@@ -821,8 +824,9 @@ export default function ChatApp() {
                                     </svg>
                                 </motion.div>
                             </motion.button>
-                        </div>
-                    </LayoutGroup>
+                            </div>
+                        </LayoutGroup>
+                    )}
                 </div>
             )}
         </div>

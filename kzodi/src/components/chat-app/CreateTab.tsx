@@ -1,8 +1,10 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
 import CreateCharacterForm from "./CreateCharacterForm";
 import AutoSetupForm from "./AutoSetupForm";
+import StoryCreateModal from "./StoryCreateModal";
 import type { Character } from "@/data/characters";
 
 interface CreateTabProps {
@@ -10,14 +12,22 @@ interface CreateTabProps {
     onSelectCharacter?: (character: any) => void;
     myCharacters: Character[];
     setMyCharacters: (chars: Character[]) => void;
+    onCreateStory?: () => void;
+    onCreateScreenChange?: (isActive: boolean) => void;
 }
 
-export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters = [], setMyCharacters }: CreateTabProps) {
+export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters = [], setMyCharacters, onCreateStory, onCreateScreenChange }: CreateTabProps) {
+    const router = useRouter();
     const [view, setView] = useState<"library" | "setup" | "success">("library");
     const [setupMode, setSetupMode] = useState<"manual" | "auto">("manual");
     const [importedData, setImportedData] = useState<any>(null);
     // myCharacters state removed as it is now a prop
     const [createdChar, setCreatedChar] = useState<Character | null>(null);
+    const [showStoryModal, setShowStoryModal] = useState(false);
+
+    useEffect(() => {
+        onCreateScreenChange?.(view === "setup" || showStoryModal);
+    }, [onCreateScreenChange, showStoryModal, view]);
 
     const handleAutoSetupComplete = (data: any) => {
         // If we were editing a character (importedData has ID), we keep that ID to update it.
@@ -55,6 +65,10 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
                             setImportedData(null);
                             setView("setup");
                         }}
+                        onCreateStory={() => {
+                            setShowStoryModal(true);
+                            onCreateStory?.();
+                        }}
                         onEditClick={(char) => {
                             setImportedData(char);
                             setView("setup");
@@ -91,13 +105,25 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
                     />
                 )}
             </AnimatePresence>
+            <AnimatePresence>
+                {showStoryModal && (
+                    <StoryCreateModal
+                        onClose={() => setShowStoryModal(false)}
+                        onCreated={(storyId) => {
+                            setShowStoryModal(false);
+                            onNavigate?.("chats");
+                            router.push(`/story/${storyId}`);
+                        }}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 }
 
-// ─── Sub-Components ──────────────────────────────────────────────────────────
+// Sub-components
 
-const LibraryView = ({ onCreateClick, onEditClick, onChatClick, characters = [] }: { onCreateClick: () => void, onEditClick: (char: any) => void, onChatClick: (char: any) => void, characters: Character[] }) => {
+const LibraryView = ({ onCreateClick, onCreateStory, onEditClick, onChatClick, characters = [] }: { onCreateClick: () => void, onCreateStory?: () => void, onEditClick: (char: any) => void, onChatClick: (char: any) => void, characters: Character[] }) => {
     return (
         <motion.div>
             <div className="explore-hero" style={{ paddingBottom: '20px' }}>
@@ -107,23 +133,45 @@ const LibraryView = ({ onCreateClick, onEditClick, onChatClick, characters = [] 
                 </p>
             </div>
 
-            {/* Create New Button */}
+            {/* Create New Buttons */}
             <div style={{ padding: "0 4px", marginBottom: "30px" }}>
-                <button
-                    onClick={onCreateClick}
-                    className="create-card-btn"
-                >
-                    <div className="create-icon-circle">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                    </div>
-                    <div className="create-text">
-                        <span className="create-title">Create New Character</span>
-                        <span className="create-subtitle">Design from scratch or import</span>
-                    </div>
-                </button>
+                <h3 style={{ fontSize: "14px", fontWeight: "700", color: "#4A3728", marginBottom: "16px", paddingLeft: "4px" }}>
+                    What would you like to create?
+                </h3>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "14px" }}>
+                    <button
+                        onClick={onCreateClick}
+                        className="create-card-btn"
+                        style={{ flex: 1, minWidth: "220px" }}
+                    >
+                        <div className="create-icon-circle">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                        </div>
+                        <div className="create-text">
+                            <span className="create-title">Create Character</span>
+                            <span className="create-subtitle">Design from scratch or import</span>
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => onCreateStory?.()}
+                        className="create-card-btn"
+                        style={{ flex: 1, minWidth: "220px" }}
+                    >
+                        <div className="create-icon-circle" style={{ background: "#E8D5A3", boxShadow: "0 4px 12px rgba(232, 213, 163, 0.35)" }}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+                            </svg>
+                        </div>
+                        <div className="create-text">
+                            <span className="create-title">Create Story</span>
+                            <span className="create-subtitle">Build a playable narrative world</span>
+                        </div>
+                    </button>
+                </div>
             </div>
 
             {/* Library Grid */}
@@ -254,28 +302,71 @@ const SetupView = ({
     onBack: () => void
 }) => {
     return (
-        <motion.div>
-            <div style={{ display: "flex", alignItems: "center", marginBottom: "20px" }}>
-                <button
-                    onClick={onBack}
-                    style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: "8px",
-                        borderRadius: "50%",
-                        marginRight: "8px",
-                        color: "#4B5563"
-                    }}
-                >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M19 12H5M12 19l-7-7 7-7" />
-                    </svg>
-                </button>
-                <h2 style={{ fontSize: "18px", fontWeight: "700", color: "#1F2937" }}>
-                    {importedData?.id ? "Edit Character" : "Setup Character"}
-                </h2>
-            </div>
+        <motion.div
+            initial={{ y: "10vh", opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: "10vh", opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 1000,
+                background: "#FFFDF5",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                overflowY: "auto",
+            }}
+        >
+            <div
+                className="no-scrollbar"
+                style={{
+                    width: "100%",
+                    maxWidth: "600px",
+                    display: "flex",
+                    flexDirection: "column",
+                    background: "#FFFDF5",
+                    flex: 1,
+                }}
+            >
+                <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "20px 20px 14px",
+                    borderBottom: "1px solid rgba(74,55,40,0.08)",
+                    position: "sticky",
+                    top: 0,
+                    background: "#FFFDF5",
+                    zIndex: 10,
+                }}>
+                    <button
+                        onClick={onBack}
+                        style={{
+                            width: "38px",
+                            height: "38px",
+                            borderRadius: "50%",
+                            border: "1px solid rgba(74,55,40,0.12)",
+                            background: "#FFFFFF",
+                            color: "#4A3728",
+                            cursor: "pointer",
+                            flexShrink: 0,
+                            marginRight: "12px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                        }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                            <path d="M15 4L7 12L15 20" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </button>
+                    <div>
+                        <h2 style={{ fontSize: "21px", fontWeight: "800", color: "#4A3728", margin: 0 }}>
+                            {importedData?.id ? "Edit Character" : "Character Create"}
+                        </h2>
+                    </div>
+                </div>
+                <div style={{ padding: "20px", display: "flex", flexDirection: "column", flex: 1 }}>
 
             {/* Tab Switcher */}
             <div className="create-tab-switcher" style={{ display: 'flex', justifyContent: 'center', marginBottom: '30px' }}>
@@ -334,6 +425,8 @@ const SetupView = ({
                     <AutoSetupForm onComplete={onAutoComplete} />
                 )}
             </motion.div>
+            </div>
+            </div>
         </motion.div>
     );
 };
@@ -341,14 +434,21 @@ const SetupView = ({
 const SuccessView = ({ onLibrary, onChat, isUpdate }: { onLibrary: () => void, onChat: () => void, isUpdate?: boolean }) => {
     return (
         <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             style={{
-                height: "80vh",
+                position: "fixed",
+                inset: 0,
+                zIndex: 1000,
+                background: "#FFFDF5",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 textAlign: "center",
-                padding: "20px"
+                padding: "20px",
+                overflowY: "auto",
             }}
         >
             {/* Custom SVG Animation */}

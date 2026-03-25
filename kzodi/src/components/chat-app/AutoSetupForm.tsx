@@ -356,28 +356,28 @@ export default function AutoSetupForm({ onComplete }: AutoSetupFormProps) {
                 }
                 .input-field {
                     width: 100%;
-                    padding: 14px 16px;
-                    border-radius: 12px;
-                    border: 1.5px solid #F3F4F6;
-                    background: #fff;
-                    font-size: 14px;
-                    transition: all 0.2s;
+                    padding: 16px 20px;
+                    border-radius: 20px;
+                    border: none;
+                    background: rgba(74,55,40,0.04);
+                    font-size: 15px;
+                    transition: background 0.2s;
                     color: #4A3728;
+                    outline: none;
                 }
                 .input-field:focus {
-                    border-color: #FFE566;
-                    box-shadow: 0 0 0 3px rgba(255, 229, 102, 0.15);
+                    background: rgba(74,55,40,0.08);
                     outline: none;
                 }
                 .source-toggle-btn {
                     flex: 1;
                     padding: 16px;
-                    border-radius: 12px;
-                    border: 1.5px solid #F3F4F6;
-                    background: #fff;
+                    border-radius: 20px;
+                    border: none;
+                    background: rgba(74,55,40,0.04);
                     font-size: 14px;
                     font-weight: 600;
-                    color: #6B7280;
+                    color: #9CA3AF;
                     cursor: pointer;
                     transition: all 0.2s;
                     display: flex;
@@ -385,24 +385,23 @@ export default function AutoSetupForm({ onComplete }: AutoSetupFormProps) {
                     justify-content: center;
                 }
                 .source-toggle-btn.active {
-                    background: #FFF8D6;
-                    border-color: #FFE566;
-                    color: #4A3728;
+                    background: #4A3728;
+                    color: #fff;
                 }
                 .file-drop-zone {
                     width: 100%;
-                    height: 120px;
-                    border: 2px dashed #E5E7EB;
-                    border-radius: 12px;
-                    background: #FAFAFA;
+                    height: 130px;
+                    border: 2px dashed rgba(74,55,40,0.12);
+                    border-radius: 20px;
+                    background: rgba(74,55,40,0.02);
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     transition: all 0.2s;
                 }
                 .file-drop-zone:hover {
-                    border-color: #FFE566;
-                    background: #FFFDF5;
+                    border-color: rgba(74,55,40,0.3);
+                    background: rgba(74,55,40,0.04);
                 }
                 .btn-accent {
                     background: #FFE566;

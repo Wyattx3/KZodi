@@ -10,6 +10,24 @@ export interface WorldData {
     extras: { label: string; value: string }[];
 }
 
+export interface CastMember {
+    characterId: string;
+    name: string;
+    image: string;
+    description: string;
+    personality: string;
+    role: "main-npc" | "supporting" | "antagonist" | "mentor" | "love-interest" | "ally";
+    isCustom: boolean;
+}
+
+export interface CustomCastCharacter {
+    id: string;
+    name: string;
+    description: string;
+    image: string;
+    personality: string;
+}
+
 export interface StoryData {
     synopsis: string;
     genre: string;
@@ -17,6 +35,17 @@ export interface StoryData {
     playerCharacterName: string;
     playerCharacterDescription: string;
     castIds?: string[];
+    cast?: CastMember[];
+    creatorCustomCharacters?: CustomCastCharacter[];
+    worldRules?: {
+        timePeriod: string;
+        worldType: string;
+        specialRules: string;
+        forbiddenTopics: string;
+    };
+    tone?: string;
+    contentRating?: "all-ages" | "teen" | "mature";
+    allowUserCharacterCustomization?: boolean;
     currentScene?: string;
     themeColor?: string;
     backgroundImage?: string;
@@ -152,6 +181,60 @@ const MAX_PERSISTED_MESSAGES = 20;
 const MAX_PERSISTED_TEXT_LENGTH = 600;
 const MAX_PERSISTED_URL_LENGTH = 1024;
 const MAX_PERSISTED_STRUCTURED_BYTES = 12_000;
+const RECENT_STORY_DRAFT_SYNC_FAILURE_WINDOW_MS = 60 * 60 * 1000;
+
+function trimPersistedText(value: string | undefined, maxLength: number) {
+    if (!value) return value;
+    return value.slice(0, maxLength);
+}
+
+function slimOptionalImageForDraftPersistence(image?: string) {
+    if (!image) return image;
+    return image.startsWith("data:")
+        ? ""
+        : image.slice(0, MAX_PERSISTED_URL_LENGTH);
+}
+
+function buildRecoverableStoryDraftData(storyData?: StoryData): StoryData | undefined {
+    if (!storyData) return undefined;
+    return {
+        synopsis: trimPersistedText(storyData.synopsis, 4_000) || "",
+        genre: trimPersistedText(storyData.genre, 200) || "",
+        isPublished: storyData.isPublished,
+        playerCharacterName: trimPersistedText(storyData.playerCharacterName, 200) || "",
+        playerCharacterDescription: trimPersistedText(storyData.playerCharacterDescription, 4_000) || "",
+        castIds: storyData.castIds?.slice(0, 24),
+        cast: storyData.cast?.slice(0, 24).map((member) => ({
+            ...member,
+            name: trimPersistedText(member.name, 200) || "",
+            image: slimOptionalImageForDraftPersistence(member.image) || "",
+            description: trimPersistedText(member.description, 1_500) || "",
+            personality: trimPersistedText(member.personality, 1_000) || "",
+        })),
+        creatorCustomCharacters: storyData.creatorCustomCharacters?.slice(0, 24).map((character) => ({
+            ...character,
+            name: trimPersistedText(character.name, 200) || "",
+            description: trimPersistedText(character.description, 1_500) || "",
+            image: slimOptionalImageForDraftPersistence(character.image) || "",
+            personality: trimPersistedText(character.personality, 1_000) || "",
+        })),
+        worldRules: storyData.worldRules
+            ? {
+                timePeriod: trimPersistedText(storyData.worldRules.timePeriod, 300) || "",
+                worldType: trimPersistedText(storyData.worldRules.worldType, 200) || "",
+                specialRules: trimPersistedText(storyData.worldRules.specialRules, 2_500) || "",
+                forbiddenTopics: trimPersistedText(storyData.worldRules.forbiddenTopics, 1_500) || "",
+            }
+            : undefined,
+        tone: trimPersistedText(storyData.tone, 200),
+        contentRating: storyData.contentRating,
+        allowUserCharacterCustomization: storyData.allowUserCharacterCustomization,
+        currentScene: trimPersistedText(storyData.currentScene, 300),
+        themeColor: trimPersistedText(storyData.themeColor, 32),
+        // Preserve the background image for draft recovery, even when it is a data URL.
+        backgroundImage: storyData.backgroundImage,
+    };
+}
 
 function slimAttachmentForPersistence(attachment?: ChatMessage["attachment"]) {
     if (!attachment) return undefined;
@@ -164,12 +247,22 @@ function slimAttachmentForPersistence(attachment?: ChatMessage["attachment"]) {
     };
 }
 
-function slimStructuredDataForPersistence<T>(value?: T): T | undefined {
+function slimStructuredDataForPersistence<T>(
+    value?: T,
+    options?: { fallback?: (value: T) => T | undefined }
+): T | undefined {
     if (!value) return undefined;
     try {
         const serialized = JSON.stringify(value);
         if (serialized.length > MAX_PERSISTED_STRUCTURED_BYTES) {
-            return undefined;
+            if (!options?.fallback) {
+                return undefined;
+            }
+            const fallbackValue = options.fallback(value);
+            if (!fallbackValue) {
+                return undefined;
+            }
+            return JSON.parse(JSON.stringify(fallbackValue)) as T;
         }
         return JSON.parse(serialized) as T;
     } catch {
@@ -178,13 +271,26 @@ function slimStructuredDataForPersistence<T>(value?: T): T | undefined {
 }
 
 function slimConversationForPersistence(conv: Conversation): Conversation {
+    const hasRecentStorySyncFailure =
+        typeof conv._syncFailedAt === "number" &&
+        Date.now() - conv._syncFailedAt < RECENT_STORY_DRAFT_SYNC_FAILURE_WINDOW_MS;
+    const shouldPreserveStoryDraftMetadata =
+        conv.conversationType === "story" &&
+        (conv._pendingSync === true || hasRecentStorySyncFailure);
+
     return {
         ...conv,
-        groupImage: conv.groupImage?.startsWith("data:")
-            ? undefined
-            : conv.groupImage?.slice(0, MAX_PERSISTED_URL_LENGTH),
+        groupImage: shouldPreserveStoryDraftMetadata
+            ? conv.groupImage
+            : conv.groupImage?.startsWith("data:")
+                ? undefined
+                : conv.groupImage?.slice(0, MAX_PERSISTED_URL_LENGTH),
         worldData: slimStructuredDataForPersistence(conv.worldData),
-        storyData: slimStructuredDataForPersistence(conv.storyData),
+        storyData: shouldPreserveStoryDraftMetadata
+            ? slimStructuredDataForPersistence(conv.storyData, {
+                fallback: (storyData) => buildRecoverableStoryDraftData(storyData as StoryData) as typeof storyData,
+            })
+            : slimStructuredDataForPersistence(conv.storyData),
         messages: (conv.messages || []).slice(-MAX_PERSISTED_MESSAGES).map((msg) => ({
             ...msg,
             content: msg.content.slice(0, MAX_PERSISTED_TEXT_LENGTH),

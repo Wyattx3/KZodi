@@ -45,7 +45,10 @@ const CustomSelect = ({ options, value, onChange }: { options: string[], value: 
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     cursor: 'pointer',
-                    background: '#fff'
+                    background: 'rgba(74,55,40,0.04)',
+                    padding: '16px 20px',
+                    borderRadius: '20px',
+                    border: 'none',
                 }}
             >
                 <span style={{ fontSize: '13px', fontWeight: 500, color: '#4A3728' }}>{value}</span>
@@ -99,15 +102,15 @@ const CustomSelect = ({ options, value, onChange }: { options: string[], value: 
                                 style={{
                                     width: '100%',
                                     textAlign: 'left',
-                                    padding: '10px 12px',
-                                    fontSize: '13px',
-                                    borderRadius: '8px',
-                                    background: option === value ? '#FFF8D6' : 'transparent',
+                                    padding: '12px 16px',
+                                    fontSize: '14px',
+                                    borderRadius: '14px',
+                                    background: option === value ? 'rgba(74,55,40,0.08)' : 'transparent',
                                     color: option === value ? '#4A3728' : '#6B7280',
                                     border: 'none',
                                     cursor: 'pointer',
-                                    fontWeight: option === value ? 600 : 400,
-                                    marginBottom: '2px',
+                                    fontWeight: option === value ? 600 : 500,
+                                    marginBottom: '4px',
                                     transition: 'all 0.1s'
                                 }}
                             >
@@ -539,21 +542,20 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
                     flex-shrink: 0;
                 }
                 .chip-select-xs {
-                    padding: 6px 12px;
-                    font-size: 11px;
-                    border-radius: 8px;
-                    background: #fff;
-                    border: 1px solid #F3F4F6;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                    border-radius: 16px;
+                    background: rgba(74,55,40,0.04);
+                    border: none;
                     color: #9CA3AF;
                     transition: all 0.2s;
                     font-weight: 600;
                     flex-shrink: 0;
                 }
                 .chip-select-active {
-                    background: #FFE566;
-                    border-color: #FFE566;
-                    color: #4A3728;
-                    box-shadow: 0 4px 10px rgba(255, 229, 102, 0.3);
+                    background: #4A3728;
+                    color: #fff;
+                    box-shadow: 0 4px 10px rgba(74,55,40, 0.2);
                 }
                 .select-wrapper {
                     position: relative;
@@ -582,11 +584,19 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
                     justify-content: center;
                 }
                 .input-field {
-                   transition: all 0.2s ease;
+                   transition: background 0.2s ease, box-shadow 0.2s ease;
+                   width: 100%;
+                   padding: 16px 20px;
+                   border-radius: 20px;
+                   border: none;
+                   background: rgba(74,55,40,0.04);
+                   color: #4A3728;
+                   font-size: 15px;
+                   outline: none;
+                   resize: vertical;
                 }
                 .input-field:focus {
-                     border-color: #FFE566;
-                     box-shadow: 0 0 0 3px rgba(255, 229, 102, 0.15);
+                     background: rgba(74,55,40,0.08);
                      outline: none;
                 }
                 .advanced-section {
@@ -614,17 +624,16 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
                 }
                 .visibility-btn {
                     flex: 1;
-                    padding: 12px;
-                    border: 1.5px solid #F3F4F6;
-                    background: #fff;
-                    border-radius: 12px;
+                    padding: 16px;
+                    border: none;
+                    background: rgba(74,55,40,0.04);
+                    border-radius: 20px;
                     color: #9CA3AF;
-                    font-size: 13px;
+                    font-size: 14px;
                     font-weight: 600;
                     transition: all 0.2s;
                 }
                 .visibility-btn.active {
-                    border-color: #4A3728;
                     background: #4A3728;
                     color: #fff;
                 }

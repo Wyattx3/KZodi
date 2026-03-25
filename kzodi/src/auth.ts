@@ -27,7 +27,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 sameSite: "lax",
                 path: "/",
                 secure: process.env.NODE_ENV === "production",
-                maxAge: 90 * 24 * 60 * 60, // 90 days — persist across PWA restarts
+                maxAge: 90 * 24 * 60 * 60, // 90 days â€” persist across PWA restarts
             },
         },
     },
@@ -40,7 +40,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         async jwt({ token, account, profile }) {
             // Always resolve the user ID from the database by email.
             // This ensures the SAME user ID is used across all devices/sessions,
-            // even after database migrations (e.g. Neon → Aiven).
+            // even after database migrations (e.g. Neon â†’ Aiven).
             if (token.email) {
                 try {
                     const result = await pool.query(

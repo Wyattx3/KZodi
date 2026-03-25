@@ -4,7 +4,6 @@ import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useChatStore, type Conversation } from "@/lib/chatStore";
 import { CHARACTERS, type Character } from "@/data/characters";
 import WorldBuildingModal from "./WorldBuildingModal";
-import StoryCreateModal from "./StoryCreateModal";
 
 interface ChatsTabProps {
     onSelectCharacter: (character: Character, openProfile?: boolean) => void;
@@ -433,7 +432,6 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
     const [showNewMenu, setShowNewMenu] = React.useState(false);
     const [showGroupModal, setShowGroupModal] = React.useState(false);
     const [showWorldModal, setShowWorldModal] = React.useState(false);
-    const [showStoryModal, setShowStoryModal] = React.useState(false);
     const [activeFilter, setActiveFilter] = React.useState<"all" | "personal" | "group" | "story">("all");
     // resolvedChars: on-demand fetched characters not yet in allCharacters/myCharacters
     const [resolvedChars, setResolvedChars] = React.useState<Record<string, Character>>({});
@@ -628,27 +626,6 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="currentColor" strokeWidth="1.5" />
                                         </svg>
                                         New World
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setShowNewMenu(false);
-                                            setShowStoryModal(true);
-                                        }}
-                                        style={{
-                                            display: "flex", alignItems: "center", gap: "10px",
-                                            background: "transparent", border: "none",
-                                            padding: "12px 14px", borderRadius: "12px",
-                                            cursor: "pointer", color: "#4A3728",
-                                            fontSize: "14px", fontWeight: 500, width: "100%",
-                                            transition: "background 0.15s"
-                                        }}
-                                        onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.04)"}
-                                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                                    >
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                                            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                        New Story
                                     </button>
                                 </motion.div>
                             )}
@@ -1242,17 +1219,6 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         onCreated={(groupId) => {
                             setShowWorldModal(false);
                             onSelectGroup?.(groupId);
-                        }}
-                    />
-                )}
-                {showStoryModal && (
-                    <StoryCreateModal
-                        charMap={charMap}
-                        conversations={conversations}
-                        onClose={() => setShowStoryModal(false)}
-                        onCreated={(storyId) => {
-                            setShowStoryModal(false);
-                            onSelectGroup?.(storyId);
                         }}
                     />
                 )}

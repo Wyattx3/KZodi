@@ -2,8 +2,9 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useChatStore, type ChatMessage } from "@/lib/chatStore";
+import { useChatStore, type CastMember, type ChatMessage, type StoryData } from "@/lib/chatStore";
 import { motion, AnimatePresence } from "framer-motion";
+import type { Character } from "@/data/characters";
 
 interface StoryRoomProps {
     storyId: string;
@@ -13,11 +14,31 @@ interface ParsedStoryContent {
     cleanedText: string;
     scene: string | null;
     actions: string[];
+    fragments: StoryFragment[];
 }
 
-interface AssistantFragment {
-    type: "dialogue" | "prose";
+interface StoryFragment {
+    type: "narrator" | "dialogue" | "action" | "thinking" | "world";
+    characterName?: string;
     text: string;
+}
+
+const DEFAULT_QUICK_ACTIONS = ["Continue", "Ask a question", "Look around"];
+
+function normalizeCharacterName(name: string) {
+    return name.trim().toLowerCase();
+}
+
+function pushNarratorFragment(text: string, fragments: StoryFragment[]) {
+    const normalized = text.replace(/\n{3,}/g, "\n\n").trim();
+    if (!normalized) {
+        return;
+    }
+
+    fragments.push({
+        type: "narrator",
+        text: normalized,
+    });
 }
 
 function parseStoryContent(content: string): ParsedStoryContent {
@@ -29,6 +50,44 @@ function parseStoryContent(content: string): ParsedStoryContent {
         .replace(/\[\[\s*ACTIONS\s*:\s*[\s\S]*?\]\]\s*/gi, "")
         .trim();
 
+    const fragments: StoryFragment[] = [];
+    const tagRegex = /\[CHAR:([^\]]+)\]([\s\S]*?)\[\/CHAR\]|\[ACTION:([^\]]+)\]([\s\S]*?)\[\/ACTION\]|\[THINK:([^\]]+)\]([\s\S]*?)\[\/THINK\]|\[WORLD\]([\s\S]*?)\[\/WORLD\]/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = tagRegex.exec(cleanedText)) !== null) {
+        pushNarratorFragment(cleanedText.slice(lastIndex, match.index), fragments);
+
+        if (match[1]) {
+            fragments.push({
+                type: "dialogue",
+                characterName: match[1].trim(),
+                text: match[2].trim(),
+            });
+        } else if (match[3]) {
+            fragments.push({
+                type: "action",
+                characterName: match[3].trim(),
+                text: match[4].trim(),
+            });
+        } else if (match[5]) {
+            fragments.push({
+                type: "thinking",
+                characterName: match[5].trim(),
+                text: match[6].trim(),
+            });
+        } else if (match[7]) {
+            fragments.push({
+                type: "world",
+                text: match[7].trim(),
+            });
+        }
+
+        lastIndex = tagRegex.lastIndex;
+    }
+
+    pushNarratorFragment(cleanedText.slice(lastIndex), fragments);
+
     return {
         cleanedText,
         scene: sceneMatch?.[1]?.trim() || null,
@@ -39,6 +98,9 @@ function parseStoryContent(content: string): ParsedStoryContent {
                 .filter(Boolean)
                 .slice(0, 3)
             : [],
+        fragments: fragments.length > 0
+            ? fragments
+            : (cleanedText ? [{ type: "narrator", text: cleanedText }] : []),
     };
 }
 
@@ -50,64 +112,388 @@ function renderMessageContent(message: ChatMessage) {
     return parsed.cleanedText || (message.role === "assistant" ? "..." : "");
 }
 
-function isDialogueFragment(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed) {
-        return false;
-    }
-
-    if (/^[A-Z][\w' -]{1,40}:\s+/.test(trimmed)) {
-        return true;
-    }
-
-    if (/^["'\u201C\u2018]/.test(trimmed)) {
-        return true;
-    }
-
-    return /["'\u201C\u2018][^"'\u201D\u2019]+["'\u201D\u2019]\s*(?:,?\s*(?:[A-Z][\w'-]+(?:\s+[A-Z][\w'-]+){0,2}\s+)?)?(?:said|asked|whispered|murmured|replied|called|shouted|hissed|growled|answered|snapped|muttered)\b/i.test(trimmed);
+interface CharacterSelectionScreenProps {
+    storyId: string;
+    title: string;
+    coverImage?: string;
+    genre?: string;
+    creatorLabel?: string;
+    storyData: StoryData;
+    onConfirmed: () => void;
 }
 
-function formatAssistantMessage(content: string): AssistantFragment[] {
-    const fragments: AssistantFragment[] = [];
-    const proseBuffer: string[] = [];
+function CharacterSelectionScreen({
+    storyId,
+    title,
+    coverImage,
+    genre,
+    creatorLabel,
+    storyData,
+    onConfirmed,
+}: CharacterSelectionScreenProps) {
+    const [selectionMode, setSelectionMode] = useState<"custom" | "creator" | "kakoei">("custom");
+    const [customName, setCustomName] = useState("");
+    const [customDescription, setCustomDescription] = useState("");
+    const [customImage, setCustomImage] = useState("");
+    const [kakoeiSearch, setKakoeiSearch] = useState("");
+    const [availableCharacters, setAvailableCharacters] = useState<Character[]>([]);
+    const [loadingCharacters, setLoadingCharacters] = useState(false);
+    const [selectedCreatorCharacterId, setSelectedCreatorCharacterId] = useState<string | null>(null);
+    const [selectedKakoeiCharacterId, setSelectedKakoeiCharacterId] = useState<string | null>(null);
+    const customImageInputRef = useRef<HTMLInputElement>(null);
 
-    const flushProse = () => {
-        if (proseBuffer.length === 0) {
+    useEffect(() => {
+        let isCancelled = false;
+        const controller = new AbortController();
+
+        const loadCharacters = async () => {
+            setLoadingCharacters(true);
+            try {
+                const params = new URLSearchParams({ limit: "18" });
+                if (kakoeiSearch.trim()) {
+                    params.set("search", kakoeiSearch.trim());
+                }
+
+                const response = await fetch(`/api/characters?${params.toString()}`, {
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Character fetch failed with ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!isCancelled) {
+                    setAvailableCharacters(Array.isArray(data?.characters) ? data.characters : []);
+                }
+            } catch (error) {
+                if (!controller.signal.aborted) {
+                    console.error("Failed to load character selection options", error);
+                    if (!isCancelled) {
+                        setAvailableCharacters([]);
+                    }
+                }
+            } finally {
+                if (!isCancelled) {
+                    setLoadingCharacters(false);
+                }
+            }
+        };
+
+        void loadCharacters();
+
+        return () => {
+            isCancelled = true;
+            controller.abort();
+        };
+    }, [kakoeiSearch]);
+
+    const creatorCharacters = storyData.creatorCustomCharacters || [];
+    const selectedCreatorCharacter = creatorCharacters.find((character) => character.id === selectedCreatorCharacterId);
+    const selectedKakoeiCharacter = availableCharacters.find((character) => character.id === selectedKakoeiCharacterId) || null;
+    const canBegin = selectionMode === "custom"
+        ? Boolean(customName.trim())
+        : selectionMode === "creator"
+            ? Boolean(selectedCreatorCharacter)
+            : Boolean(selectedKakoeiCharacter);
+
+    const persistSelection = () => {
+        let playerCharacterName = "";
+        let playerCharacterDescription = "";
+
+        if (selectionMode === "custom") {
+            playerCharacterName = customName.trim();
+            playerCharacterDescription = customDescription.trim();
+        } else if (selectionMode === "creator" && selectedCreatorCharacter) {
+            playerCharacterName = selectedCreatorCharacter.name;
+            playerCharacterDescription = selectedCreatorCharacter.description;
+        } else if (selectionMode === "kakoei" && selectedKakoeiCharacter) {
+            playerCharacterName = selectedKakoeiCharacter.name;
+            playerCharacterDescription = selectedKakoeiCharacter.description;
+        }
+
+        if (!playerCharacterName) {
             return;
         }
 
-        fragments.push({
-            type: "prose",
-            text: proseBuffer.join("\n").trim(),
+        useChatStore.getState().upsertConversation(storyId, {
+            storyData: {
+                ...storyData,
+                playerCharacterName,
+                playerCharacterDescription,
+            },
         });
-        proseBuffer.length = 0;
+        onConfirmed();
     };
 
-    for (const line of content.split("\n")) {
-        const trimmedLine = line.trim();
+    return (
+        <div
+            className="min-h-[100dvh] px-5 py-6 md:px-8"
+            style={{
+                backgroundColor: "#0E0C0A",
+                color: "#F7E7C1",
+            }}
+        >
+            <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6">
+                <div
+                    className="overflow-hidden rounded-[28px] border"
+                    style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
+                >
+                    <div className="grid gap-0 md:grid-cols-[180px_1fr]">
+                        <div
+                            style={{
+                                minHeight: "220px",
+                                background: coverImage
+                                    ? `center / cover no-repeat url(${coverImage})`
+                                    : "linear-gradient(135deg, #2A1E13, #8B6B44)",
+                            }}
+                        />
+                        <div className="flex flex-col gap-3 p-6">
+                            <div className="text-[12px] font-semibold uppercase tracking-[0.2em]" style={{ color: "#E8D5A3", opacity: 0.72 }}>
+                                Story Preview
+                            </div>
+                            <h1 className="m-0 font-serif text-[32px] leading-tight">{title}</h1>
+                            <div className="text-[14px]" style={{ color: "rgba(247,231,193,0.72)" }}>
+                                {`${genre || "Story"} | ${creatorLabel || "Creator"}`}
+                            </div>
+                            <p className="m-0 max-w-[440px] text-[15px] leading-7" style={{ color: "rgba(247,231,193,0.82)" }}>
+                                Choose how you want to step into this world before the first scene begins.
+                            </p>
+                        </div>
+                    </div>
+                </div>
 
-        if (!trimmedLine) {
-            flushProse();
-            continue;
-        }
+                <div className="grid gap-4 md:grid-cols-3">
+                    {[
+                        { id: "custom" as const, title: "\u270F\uFE0F Create My Own Character", subtitle: "Write a custom protagonist" },
+                        { id: "creator" as const, title: "\u{1F3AD} Use Creator's Characters", subtitle: "Pick from the story creator's cast" },
+                        { id: "kakoei" as const, title: "\u{1F310} Pick from Kakoei", subtitle: "Search the wider character library" },
+                    ].map((option) => (
+                        <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setSelectionMode(option.id)}
+                            className="rounded-[24px] border p-5 text-left transition-colors"
+                            style={{
+                                borderColor: selectionMode === option.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
+                                background: selectionMode === option.id ? "rgba(232,213,163,0.12)" : "rgba(20,16,12,0.9)",
+                                color: "#F7E7C1",
+                            }}
+                        >
+                            <div className="text-[15px] font-semibold">{option.title}</div>
+                            <div className="mt-2 text-[13px]" style={{ color: "rgba(247,231,193,0.64)" }}>
+                                {option.subtitle}
+                            </div>
+                        </button>
+                    ))}
+                </div>
 
-        if (isDialogueFragment(trimmedLine)) {
-            flushProse();
-            fragments.push({
-                type: "dialogue",
-                text: trimmedLine,
-            });
-            continue;
-        }
+                {selectionMode === "custom" && (
+                    <div
+                        className="flex flex-col gap-4 rounded-[28px] border p-6"
+                        style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
+                    >
+                        <div className="grid gap-4 md:grid-cols-[120px_1fr]">
+                            <input
+                                ref={customImageInputRef}
+                                type="file"
+                                accept="image/*"
+                                style={{ display: "none" }}
+                                onChange={(event) => {
+                                    const file = event.target.files?.[0];
+                                    if (!file) {
+                                        return;
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = (loadEvent) => {
+                                        const result = loadEvent.target?.result;
+                                        if (typeof result === "string") {
+                                            setCustomImage(result);
+                                        }
+                                    };
+                                    reader.readAsDataURL(file);
+                                    event.target.value = "";
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => customImageInputRef.current?.click()}
+                                className="rounded-[20px] border"
+                                style={{
+                                    height: "148px",
+                                    borderColor: "rgba(232,213,163,0.18)",
+                                    background: customImage
+                                        ? `center / cover no-repeat url(${customImage})`
+                                        : "linear-gradient(135deg, #1E160F, #5C4326)",
+                                    color: "#F7E7C1",
+                                }}
+                            >
+                                {!customImage && "Upload image"}
+                            </button>
+                            <div className="flex flex-col gap-4">
+                                <input
+                                    type="text"
+                                    value={customName}
+                                    onChange={(event) => setCustomName(event.target.value)}
+                                    placeholder="Character name"
+                                    className="rounded-[18px] border px-4 py-4 text-[15px] outline-none"
+                                    style={{
+                                        borderColor: "rgba(232,213,163,0.16)",
+                                        background: "rgba(12,10,8,0.9)",
+                                        color: "#F7E7C1",
+                                    }}
+                                />
+                                <textarea
+                                    value={customDescription}
+                                    onChange={(event) => setCustomDescription(event.target.value)}
+                                    placeholder="Appearance, backstory, and what drives this character"
+                                    className="min-h-[110px] rounded-[18px] border px-4 py-4 text-[15px] outline-none"
+                                    style={{
+                                        borderColor: "rgba(232,213,163,0.16)",
+                                        background: "rgba(12,10,8,0.9)",
+                                        color: "#F7E7C1",
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
 
-        proseBuffer.push(trimmedLine);
-    }
+                {selectionMode === "creator" && (
+                    <div
+                        className="flex flex-col gap-4 rounded-[28px] border p-6"
+                        style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
+                    >
+                        {creatorCharacters.length === 0 ? (
+                            <div className="rounded-[20px] border px-5 py-6 text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
+                                No characters available.
+                            </div>
+                        ) : (
+                            <div className="grid gap-4 md:grid-cols-2">
+                                {creatorCharacters.map((character) => (
+                                    <button
+                                        key={character.id}
+                                        type="button"
+                                        onClick={() => setSelectedCreatorCharacterId(character.id)}
+                                        className="flex gap-4 rounded-[22px] border p-4 text-left"
+                                        style={{
+                                            borderColor: selectedCreatorCharacterId === character.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
+                                            background: selectedCreatorCharacterId === character.id ? "rgba(232,213,163,0.1)" : "rgba(12,10,8,0.9)",
+                                            color: "#F7E7C1",
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                width: "74px",
+                                                height: "94px",
+                                                borderRadius: "18px",
+                                                flexShrink: 0,
+                                                background: character.image
+                                                    ? `center / cover no-repeat url(${character.image})`
+                                                    : "linear-gradient(135deg, #1E160F, #5C4326)",
+                                            }}
+                                        />
+                                        <div className="flex min-w-0 flex-1 flex-col gap-2">
+                                            <div className="text-[16px] font-semibold">{character.name}</div>
+                                            <div className="text-[13px]" style={{ color: "rgba(247,231,193,0.72)" }}>
+                                                {character.personality}
+                                            </div>
+                                            <div className="text-[13px] leading-6" style={{ color: "rgba(247,231,193,0.62)" }}>
+                                                {character.description}
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
 
-    flushProse();
+                {selectionMode === "kakoei" && (
+                    <div
+                        className="flex flex-col gap-4 rounded-[28px] border p-6"
+                        style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
+                    >
+                        <input
+                            type="text"
+                            value={kakoeiSearch}
+                            onChange={(event) => setKakoeiSearch(event.target.value)}
+                            placeholder="Search Kakoei characters..."
+                            className="rounded-[18px] border px-4 py-4 text-[15px] outline-none"
+                            style={{
+                                borderColor: "rgba(232,213,163,0.16)",
+                                background: "rgba(12,10,8,0.9)",
+                                color: "#F7E7C1",
+                            }}
+                        />
 
-    return fragments.length > 0
-        ? fragments
-        : [{ type: "prose", text: content.trim() || "..." }];
+                        {loadingCharacters && (
+                            <div className="rounded-[20px] border px-5 py-6 text-center text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
+                                Loading characters...
+                            </div>
+                        )}
+
+                        {!loadingCharacters && availableCharacters.length === 0 && (
+                            <div className="rounded-[20px] border px-5 py-6 text-center text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
+                                No characters available.
+                            </div>
+                        )}
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {availableCharacters.map((character) => (
+                                <button
+                                    key={character.id}
+                                    type="button"
+                                    onClick={() => setSelectedKakoeiCharacterId(character.id)}
+                                    className="flex items-center gap-4 rounded-[22px] border p-4 text-left"
+                                    style={{
+                                        borderColor: selectedKakoeiCharacterId === character.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
+                                        background: selectedKakoeiCharacterId === character.id ? "rgba(232,213,163,0.1)" : "rgba(12,10,8,0.9)",
+                                        color: "#F7E7C1",
+                                    }}
+                                >
+                                    <img
+                                        src={character.image}
+                                        alt={character.name}
+                                        style={{
+                                            width: "56px",
+                                            height: "56px",
+                                            borderRadius: "50%",
+                                            objectFit: "cover",
+                                            flexShrink: 0,
+                                        }}
+                                    />
+                                    <div className="min-w-0">
+                                        <div className="text-[15px] font-semibold">{character.name}</div>
+                                        <div className="text-[13px]" style={{ color: "rgba(247,231,193,0.72)" }}>
+                                            {character.tag}
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex justify-end">
+                    <button
+                        type="button"
+                        onClick={persistSelection}
+                        disabled={!canBegin}
+                        className="rounded-full px-6 py-3 text-[15px] font-semibold transition-opacity"
+                        style={{
+                            background: canBegin ? "#E8D5A3" : "rgba(232,213,163,0.24)",
+                            color: "#0E0C0A",
+                            cursor: canBegin ? "pointer" : "not-allowed",
+                            opacity: canBegin ? 1 : 0.7,
+                        }}
+                    >
+                        Begin Story -&gt;
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export default function StoryRoom({ storyId }: StoryRoomProps) {
@@ -146,6 +532,10 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [quickActions, setQuickActions] = useState<string[]>([]);
     const [showSettings, setShowSettings] = useState(false);
+    const [playerCharSelected, setPlayerCharSelected] = useState(() => (
+        conversation?.storyData?.allowUserCharacterCustomization !== true ||
+        Boolean(conversation?.storyData?.playerCharacterName)
+    ));
     const storyLogRef = useRef<HTMLDivElement>(null);
 
     const parsedMessages = useMemo(() => {
@@ -155,11 +545,29 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
         }));
     }, [conversation?.messages]);
 
+    const castMap = useMemo(() => {
+        const map: Record<string, CastMember> = {};
+        (conversation?.storyData?.cast || []).forEach((member) => {
+            if (!member.name) {
+                return;
+            }
+            map[normalizeCharacterName(member.name)] = member;
+        });
+        return map;
+    }, [conversation?.storyData?.cast]);
+
     useEffect(() => {
         if (!conversation || conversation.conversationType !== "story") {
             router.replace("/chat?tab=chats");
         }
     }, [conversation, router]);
+
+    useEffect(() => {
+        setPlayerCharSelected(
+            conversation?.storyData?.allowUserCharacterCustomization !== true ||
+            Boolean(conversation?.storyData?.playerCharacterName)
+        );
+    }, [conversation?.storyData?.allowUserCharacterCustomization, conversation?.storyData?.playerCharacterName]);
 
     useEffect(() => {
         const latestMessage = parsedMessages[parsedMessages.length - 1];
@@ -185,9 +593,12 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
             updateStoryScene(storyId, latestMessage.parsed.scene);
         }
 
-        if (hasTaggedActions) {
+        if (hasTaggedActions && latestMessage.parsed.actions.length > 0) {
             setQuickActions(latestMessage.parsed.actions);
+            return;
         }
+
+        setQuickActions(DEFAULT_QUICK_ACTIONS);
     }, [conversation?.messages.length, conversation?.storyData?.currentScene, parsedMessages, storyId, updateStoryScene]);
 
     useEffect(() => {
@@ -199,8 +610,8 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
         return null;
     }
 
-    const handleAct = async () => {
-        const playerInput = inputText.trim();
+    const handleAct = async (overrideInput?: string) => {
+        const playerInput = (overrideInput ?? inputText).trim();
         const requestMessage = playerInput || "[CONTINUE]";
         const isContinueTurn = requestMessage === "[CONTINUE]";
         if (isLoading) return;
@@ -249,7 +660,7 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                 addReply(storyId, parsedReply.cleanedText);
             }
 
-            setQuickActions(parsedReply.actions);
+            setQuickActions(parsedReply.actions.length > 0 ? parsedReply.actions : DEFAULT_QUICK_ACTIONS);
         } catch (error) {
             console.error("Failed to continue story", error);
         } finally {
@@ -283,12 +694,12 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
     const genreLine = `${conversation.storyData?.genre || "Story"}  |  ${
         conversation.storyData?.playerCharacterName || "Unknown Player"
     }`;
-    const themeColor = conversation.theme || conversation.storyData?.themeColor || "#E8E1D5";
     const backgroundImage = !conversation.hideStoryBackground ? conversation.storyData?.backgroundImage : undefined;
     const bgColor = conversation.storyBgColor || "#0E0C0A";
     const textColor = conversation.storyTextColor || "#E8E1D5";
     const trimmedInput = inputText.trim();
     const submitLabel = trimmedInput ? "Act" : "Continue";
+
     // Determine if background is light for contrast adjustments
     const isLightBg = (() => {
         const hex = bgColor.replace('#', '');
@@ -297,8 +708,37 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
         const b = parseInt(hex.substring(4, 6), 16);
         return (r * 299 + g * 587 + b * 114) / 1000 > 128;
     })();
+
+    const themeColor = conversation.theme || conversation.storyData?.themeColor || (isLightBg ? "#5A544C" : "#E8E1D5");
+    // Determine if accent/theme color is light for button text contrast
+    const isLightAccent = (() => {
+        const hex = themeColor.replace('#', '');
+        if (hex.length < 6) return true;
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+    })();
+    const accentButtonText = isLightAccent ? '#0E0C0A' : '#F7F5F0';
     const surfaceBorder = isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.08)';
+    const inputBg = isLightBg ? 'rgba(0,0,0,0.06)' : 'rgba(22,20,17,0.85)';
+    const inputFocusBg = isLightBg ? 'rgba(0,0,0,0.09)' : 'rgba(30,28,26,0.95)';
+    const placeholderColor = isLightBg ? 'rgba(0,0,0,0.35)' : '#5A544C';
     const mutedText = isLightBg ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)';
+
+    if (conversation.storyData?.allowUserCharacterCustomization && !playerCharSelected) {
+        return (
+            <CharacterSelectionScreen
+                storyId={storyId}
+                title={title}
+                coverImage={conversation.groupImage}
+                genre={conversation.storyData?.genre}
+                creatorLabel={conversation.creatorId || "Creator"}
+                storyData={conversation.storyData}
+                onConfirmed={() => setPlayerCharSelected(true)}
+            />
+        );
+    }
 
     return (
         <div 
@@ -312,6 +752,7 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                     backgroundPosition: "center",
                 } : {}),
                 "--story-theme": themeColor,
+                "--story-placeholder": placeholderColor,
             } as React.CSSProperties}
         >
             {/* Dark Overlay for readability when using custom background */}
@@ -374,7 +815,7 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                                     <div className="flex gap-2 flex-wrap justify-center">
                                         {THEME_PRESETS.map((t, idx) => {
                                             const isActive = conversation.theme === t.color || (t.color === undefined && !conversation.theme);
-                                            const presetBg = t.color || conversation.storyData?.themeColor || "#E8E1D5";
+                                            const presetBg = t.color || conversation.storyData?.themeColor || (isLightBg ? "#5A544C" : "#E8E1D5");
                                             return (
                                                 <button
                                                     key={idx}
@@ -465,7 +906,8 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
             {/* Scrollable Story Format */}
             <div
                 ref={storyLogRef}
-                className="flex-1 overflow-y-auto w-full flex flex-col items-center scroll-smooth px-5 md:px-8 pt-4 pb-48 [&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar-thumb]:bg-[#2A2622] [&::-webkit-scrollbar-thumb]:rounded-full z-10"
+                className="flex-1 overflow-y-auto w-full flex flex-col items-center scroll-smooth px-5 md:px-8 pt-4 pb-48 [&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar-thumb]:rounded-full z-10"
+                style={{ scrollbarColor: `${isLightBg ? 'rgba(0,0,0,0.15)' : '#2A2622'} transparent` }}
             >
                 <div className="w-full max-w-[680px] flex flex-col gap-10">
                     
@@ -484,7 +926,7 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                     </motion.div>
 
                     {parsedMessages.length === 0 && (
-                        <div className="text-center text-[#6B655C] text-[16px] italic mt-8 font-serif">
+                        <div className="text-center text-[16px] italic mt-8 font-serif" style={{ color: mutedText }}>
                             The space is quiet. Awaiting your first move...
                         </div>
                     )}
@@ -524,25 +966,117 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                                     className="w-full"
                                 >
                                     <div className="flex flex-col gap-4">
-                                        {formatAssistantMessage(displayedText).map((fragment, index) => (
-                                            fragment.type === "dialogue" ? (
-                                                <div
-                                                    key={`${message.id}-dialogue-${index}`}
-                                                    className="border-l-2 pl-4 md:pl-5 text-[18px] md:text-[20px] leading-[1.8] font-serif italic"
-                                                    style={{ color: textColor, borderColor: `${themeColor}55` }}
-                                                >
-                                                    {fragment.text}
-                                                </div>
-                                            ) : (
+                                        {(message.parsed.fragments.length > 0 ? message.parsed.fragments : [{ type: "narrator", text: displayedText } as StoryFragment]).map((fragment, index) => {
+                                            const castMember = fragment.characterName
+                                                ? castMap[normalizeCharacterName(fragment.characterName)]
+                                                : undefined;
+
+                                            if (fragment.type === "dialogue") {
+                                                return (
+                                                    <div
+                                                        key={`${message.id}-dialogue-${index}`}
+                                                        className="flex items-start gap-3"
+                                                    >
+                                                        {castMember?.image ? (
+                                                            <img
+                                                                src={castMember.image}
+                                                                alt={fragment.characterName || "Character"}
+                                                                style={{
+                                                                    width: "40px",
+                                                                    height: "40px",
+                                                                    borderRadius: "50%",
+                                                                    objectFit: "cover",
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <div
+                                                                style={{
+                                                                    width: "40px",
+                                                                    height: "40px",
+                                                                    borderRadius: "50%",
+                                                                    background: `${themeColor}22`,
+                                                                    color: themeColor,
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    justifyContent: "center",
+                                                                    fontSize: "14px",
+                                                                    fontWeight: 700,
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            >
+                                                                {(fragment.characterName || "?").slice(0, 1).toUpperCase()}
+                                                            </div>
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="mb-2 text-[13px] font-semibold uppercase tracking-[0.14em]" style={{ color: themeColor }}>
+                                                                {fragment.characterName}
+                                                            </div>
+                                                            <div
+                                                                className="rounded-[22px] border-l-[3px] px-4 py-3 text-[17px] leading-8"
+                                                                style={{
+                                                                    background: isLightBg ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.04)",
+                                                                    borderColor: isLightBg ? themeColor : `${themeColor}88`,
+                                                                    color: textColor,
+                                                                }}
+                                                            >
+                                                                {fragment.text}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (fragment.type === "action") {
+                                                return (
+                                                    <div
+                                                        key={`${message.id}-action-${index}`}
+                                                        className="text-[14px] leading-7 whitespace-pre-wrap font-sans"
+                                                        style={{ color: textColor, opacity: 0.5 }}
+                                                    >
+                                                        {`*${fragment.text}*`}
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (fragment.type === "thinking") {
+                                                return (
+                                                    <div
+                                                        key={`${message.id}-thinking-${index}`}
+                                                        className="text-[15px] leading-7 whitespace-pre-wrap font-serif italic"
+                                                        style={{ color: textColor, opacity: 0.4 }}
+                                                    >
+                                                        {`\u{1F4AD} ${fragment.text}`}
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (fragment.type === "world") {
+                                                return (
+                                                    <div
+                                                        key={`${message.id}-world-${index}`}
+                                                        className="rounded-[20px] border-l-[3px] px-4 py-3 text-[15px] leading-7 whitespace-pre-wrap"
+                                                        style={{
+                                                            background: isLightBg ? `${themeColor}18` : `${themeColor}14`,
+                                                            borderColor: isLightBg ? themeColor : `${themeColor}88`,
+                                                            color: textColor,
+                                                        }}
+                                                    >
+                                                        {`\u{1F30D} ${fragment.text}`}
+                                                    </div>
+                                                );
+                                            }
+
+                                            return (
                                                 <p
-                                                    key={`${message.id}-prose-${index}`}
-                                                    className="text-[19px] md:text-[21px] leading-[1.85] font-serif whitespace-pre-wrap drop-shadow-sm m-0"
-                                                    style={{ color: textColor }}
+                                                    key={`${message.id}-narrator-${index}`}
+                                                    className="m-0 whitespace-pre-wrap font-serif text-[19px] md:text-[21px] leading-[1.85] italic"
+                                                    style={{ color: textColor, opacity: 0.75 }}
                                                 >
                                                     {fragment.text}
                                                 </p>
-                                            )
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </motion.div>
                             );
@@ -577,9 +1111,9 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                                     <button
                                         key={action}
                                         type="button"
-                                        onClick={() => setInputText(action)}
-                                        className="shrink-0 px-5 py-2.5 rounded-full bg-[#14120F]/90 backdrop-blur-md text-[14px] font-sans hover:bg-[#1E1C1A] transition-all active:scale-95 whitespace-nowrap outline-none"
-                                        style={{ borderWidth: '1px', borderStyle: 'solid', borderColor: `${themeColor}33`, color: `${themeColor}cc` }}
+                                        onClick={() => void handleAct(action)}
+                                        className="shrink-0 px-5 py-2.5 rounded-full backdrop-blur-md text-[14px] font-sans transition-all active:scale-95 whitespace-nowrap outline-none"
+                                        style={{ backgroundColor: isLightBg ? 'rgba(0,0,0,0.07)' : 'rgba(20,18,15,0.9)', borderWidth: '1px', borderStyle: 'solid', borderColor: isLightBg ? `${themeColor}aa` : `${themeColor}33`, color: isLightBg ? textColor : `${themeColor}cc` }}
                                     >
                                         {action}
                                     </button>
@@ -587,7 +1121,7 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                             </motion.div>
                         )}
 
-                        <div className="relative w-full rounded-[30px] shadow-[0_-10px_40px_rgba(0,0,0,0.6)]">
+                        <div className="relative w-full rounded-[30px]" style={{ boxShadow: isLightBg ? '0 -6px 30px rgba(0,0,0,0.08)' : '0 -10px 40px rgba(0,0,0,0.6)' }}>
                             <textarea
                                 value={inputText}
                                 onChange={(event) => handleInputChange(event.target.value)}
@@ -599,20 +1133,30 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                                 }}
                                 placeholder="Say or do something..."
                                 rows={1}
-                                className="w-full resize-none rounded-[30px] bg-[#161411]/85 backdrop-blur-2xl focus:bg-[#1E1C1A]/95 transition-all text-[#E8E1D5] pl-6 pr-[148px] py-[20px] text-[16px] outline-none min-h-[64px] max-h-[140px] placeholder:text-[#5A544C] font-sans block pt-[20px]"
-                                style={{ borderWidth: '1px', borderStyle: 'solid', borderColor: `${themeColor}40` }}
+                                className="w-full resize-none rounded-[30px] backdrop-blur-2xl transition-all pl-6 pr-[148px] py-[20px] text-[16px] outline-none min-h-[64px] max-h-[140px] font-sans block pt-[20px] placeholder:text-[var(--story-placeholder)]"
+                                style={{
+                                    backgroundColor: inputBg,
+                                    color: textColor,
+                                    borderWidth: '1px',
+                                    borderStyle: 'solid',
+                                    borderColor: isLightBg ? `${themeColor}99` : `${themeColor}40`,
+                                    ['--tw-placeholder-opacity' as string]: 1,
+                                }}
+                                onFocus={(e) => { e.currentTarget.style.backgroundColor = inputFocusBg; }}
+                                onBlur={(e) => { e.currentTarget.style.backgroundColor = inputBg; }}
                             />
                             <button
                                 type="button"
                                 onClick={() => void handleAct()}
                                 disabled={isLoading}
                                 aria-label={submitLabel}
-                                className="absolute right-3 bottom-3 h-[40px] min-w-[110px] px-5 rounded-full bg-[var(--story-theme)] text-[#0E0C0A] flex items-center justify-center cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70 disabled:cursor-wait outline-none shadow-md overflow-hidden text-[14px] font-semibold tracking-[0.02em]"
+                                className="absolute right-3 bottom-3 h-[40px] min-w-[110px] px-5 rounded-full bg-[var(--story-theme)] flex items-center justify-center cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70 disabled:cursor-wait outline-none shadow-md overflow-hidden text-[14px] font-semibold tracking-[0.02em]"
+                                style={{ color: accentButtonText }}
                             >
                                 <AnimatePresence mode="wait">
                                     {isLoading ? (
                                         <motion.div key="loading" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }}>
-                                            <svg className="animate-spin h-5 w-5 text-[#0E0C0A]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <svg className="animate-spin h-5 w-5" style={{ color: accentButtonText }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                 <path className="opacity-100" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                             </svg>
