@@ -4,7 +4,9 @@ import { Pinecone } from '@pinecone-database/pinecone';
 import { generateEmbeddings } from "@/lib/ai-setup";
 import { auth } from "@/auth";
 import { processMessage, type EngineInput } from "@/lib/ai-engine";
+import { buildStoryPrompt } from "@/lib/ai-engine/story-engine";
 import { getLatestReadingForUser } from "@/lib/db";
+import { groq, MODELS } from "@/lib/groq";
 import { callGroqCompound, shouldUseCompoundTools } from "@/lib/groq-compound";
 import { applyBehaviorCooldowns } from "@/lib/ai-engine/cooldown";
 
@@ -610,6 +612,65 @@ IMPORTANT RULES:
                     ? engineInput.userReadingContext + "\n\n"
                     : ""
             ) + `[COMPOUND WEB DATA — Use this factual info to answer the user's question accurately, staying in character as ${characterName}]:\n${compoundContent}\n[END COMPOUND DATA]`;
+        }
+
+        if (conversationType === "story") {
+            const storyPlayerMessage = message;
+            const storyPrompt = buildStoryPrompt({
+                storyData: storyData || {
+                    synopsis: "",
+                    genre: "",
+                    isPublished: false,
+                    playerCharacterName: "",
+                    playerCharacterDescription: "",
+                },
+                history: history.map((entry) => ({
+                    role: entry.role,
+                    content: entry.content || "",
+                })),
+                responseLanguage,
+                playerMessage: storyPlayerMessage,
+            });
+
+            const isBurmeseStory = responseLanguage === "Burmese (Unicode)" ||
+                responseLanguage === "Burmese (Zawgyi)" ||
+                responseLanguage === "Mix (Burmese + English)";
+
+            const storyResult = await groq.chat(
+                {
+                    messages: [
+                        { role: "system", content: storyPrompt },
+                        ...history.slice(-20).map((entry) => ({
+                            role: entry.role as "user" | "assistant",
+                            content: entry.content || " ",
+                        })),
+                        ...(storyPlayerMessage ? [{ role: "user" as const, content: storyPlayerMessage }] : []),
+                    ],
+                    model: isBurmeseStory ? MODELS.GEMINI : MODELS.CHAT,
+                    fallbackModel: isBurmeseStory ? "grok-4-1-fast-reasoning" : undefined,
+                    temperature: 0.9,
+                    max_tokens: 1200,
+                },
+                {
+                    cachePrefix: "story-roleplay",
+                    useCache: false,
+                    maxRetries: 3,
+                }
+            );
+
+            const content = cleanResponseText(storyResult.content || "", characterName);
+
+            return NextResponse.json({
+                reply: content,
+                action: "reply",
+                detectedEmotion: null,
+                needsComfort: false,
+                delayFactor: 1,
+                aiSentiment: 0,
+                seenDelay: 0,
+                readDelay: 0,
+                replyToId: null,
+            });
         }
 
         const engineOutput = await processMessage(engineInput);

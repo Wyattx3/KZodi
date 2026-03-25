@@ -13,11 +13,18 @@ import { App } from '@capacitor/app';
 
 type Tab = "explore" | "chats" | "create" | "profile";
 
+function getTabFromSearchParam(value: string | null): Tab | null {
+    if (value === "explore" || value === "chats" || value === "create" || value === "profile") {
+        return value;
+    }
+    return null;
+}
+
 export default function ChatApp() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [mounted, setMounted] = useState(false);
-    const [activeTab, setActiveTab] = useState<Tab>("explore");
+    const [activeTab, setActiveTab] = useState<Tab>(() => getTabFromSearchParam(searchParams.get("tab")) || "explore");
     const [activeCharacter, setActiveCharacter] = useState<Character | null>(null);
     const [showProfileOnLoad, setShowProfileOnLoad] = useState<boolean>(false);
     const [myCharacters, setMyCharacters] = useState<Character[]>([]);
@@ -43,6 +50,13 @@ export default function ChatApp() {
             return sum + convo.messages.filter((m) => m.role === "assistant" && m.status !== "seen").length;
         }, 0);
     }, [conversations]);
+
+    useEffect(() => {
+        const requestedTab = getTabFromSearchParam(searchParams.get("tab"));
+        if (requestedTab) {
+            setActiveTab(requestedTab);
+        }
+    }, [searchParams]);
 
     // Proactive Messaging Hook (Background — when user is NOT in a chat)
     useEffect(() => {
@@ -608,6 +622,12 @@ export default function ChatApp() {
     };
 
     const handleSelectGroup = (groupId: string) => {
+        const convo = useChatStore.getState().conversations[groupId];
+        if (convo?.conversationType === "story") {
+            router.push(`/story/${groupId}`);
+            return;
+        }
+
         setActiveGroupId(groupId);
     };
 

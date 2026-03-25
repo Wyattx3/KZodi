@@ -19,6 +19,8 @@ export default function StoryCreateModal({ charMap, conversations, onClose, onCr
     const [genre, setGenre] = useState("");
     const [synopsis, setSynopsis] = useState("");
     const [coverImage, setCoverImage] = useState("");
+    const [backgroundImage, setBackgroundImage] = useState("");
+    const [themeColor, setThemeColor] = useState("#E8E1D5"); // Default Ivory/Gold
     
     // Step 2: Player Character
     const [playerCharacterName, setPlayerCharacterName] = useState("");
@@ -52,18 +54,24 @@ export default function StoryCreateModal({ charMap, conversations, onClose, onCr
             playerCharacterName,
             playerCharacterDescription,
             castIds: selectedCastIds,
+            themeColor,
+            backgroundImage,
         };
 
         const storyId = useChatStore.getState().createStory(title, coverImage, storyData);
         onCreated(storyId);
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isCover: boolean) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
-            setCoverImage(ev.target?.result as string);
+            if (isCover) {
+                setCoverImage(ev.target?.result as string);
+            } else {
+                setBackgroundImage(ev.target?.result as string);
+            }
         };
         reader.readAsDataURL(file);
     };
@@ -146,10 +154,35 @@ export default function StoryCreateModal({ charMap, conversations, onClose, onCr
 
                 {step === "info" && (
                     <div style={{ flex: 1, padding: "24px 20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "20px" }}>
-                        <div style={{ display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center", gap: "12px" }}>
-                            <input type="file" accept="image/*" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} />
-                            <div onClick={() => fileInputRef.current?.click()} style={{ width: "90px", height: "120px", borderRadius: "12px", background: coverImage ? `url(${coverImage}) center/cover` : "linear-gradient(135deg, #eee, #ddd)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "2px dashed #bbb" }}>
-                                {!coverImage && "Cover"}
+                        <div style={{ display: "flex", justifyContent: "center", gap: "20px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                                <label style={{ fontSize: "12px", fontWeight: 600, color: "#8B8680" }}>COVER IMAGE</label>
+                                <input type="file" accept="image/*" ref={fileInputRef} style={{ display: "none" }} onChange={(e) => handleFileChange(e, true)} />
+                                <div onClick={() => fileInputRef.current?.click()} style={{ width: "80px", height: "110px", borderRadius: "10px", background: coverImage ? `url(${coverImage}) center/cover` : "linear-gradient(135deg, #eee, #ddd)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "2px dashed #bbb" }}>
+                                    {!coverImage && "Cover"}
+                                </div>
+                            </div>
+                            
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                                <label style={{ fontSize: "12px", fontWeight: 600, color: "#8B8680" }}>CHAT BACKGROUND (OPTIONAL)</label>
+                                <input type="file" accept="image/*" id="bg-upload" style={{ display: "none" }} onChange={(e) => handleFileChange(e, false)} />
+                                <div onClick={() => document.getElementById('bg-upload')?.click()} style={{ width: "80px", height: "110px", borderRadius: "10px", background: backgroundImage ? `url(${backgroundImage}) center/cover` : "linear-gradient(135deg, #eee, #ddd)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "2px dashed #bbb" }}>
+                                    {!backgroundImage && "BG"}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label style={{ fontSize: "13px", fontWeight: 600, color: "#8B8680", marginBottom: "8px", display: "block" }}>THEME COLOR</label>
+                            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                                {["#E8E1D5", "#E69A8D", "#8DA8E6", "#8DE6A8", "#E6D88D"].map(color => (
+                                    <button 
+                                        key={color} 
+                                        onClick={() => setThemeColor(color)}
+                                        style={{ width: "32px", height: "32px", borderRadius: "50%", background: color, border: themeColor === color ? "3px solid #4A3728" : "2px solid #ddd", cursor: "pointer" }}
+                                    />
+                                ))}
+                                <input type="color" value={themeColor} onChange={e => setThemeColor(e.target.value)} style={{ width: "32px", height: "32px", border: "none", padding: 0, cursor: "pointer", borderRadius: "8px" }} title="Custom Color" />
                             </div>
                         </div>
 

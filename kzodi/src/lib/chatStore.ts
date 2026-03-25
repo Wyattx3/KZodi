@@ -17,6 +17,9 @@ export interface StoryData {
     playerCharacterName: string;
     playerCharacterDescription: string;
     castIds?: string[];
+    currentScene?: string;
+    themeColor?: string;
+    backgroundImage?: string;
 }
 
 export interface ChatMessage {
@@ -62,6 +65,9 @@ export interface Conversation {
      */
     _pendingSync?: boolean;
     _syncFailedAt?: number;
+    hideStoryBackground?: boolean;
+    storyBgColor?: string;
+    storyTextColor?: string;
 }
 
 interface ChatStore {
@@ -89,6 +95,10 @@ interface ChatStore {
     getConversation: (characterId: string) => Conversation | undefined;
     getConversationList: () => Conversation[];
     setTheme: (characterId: string, theme: string) => void;
+    setHideStoryBackground: (characterId: string, hide: boolean) => void;
+    setStoryBgColor: (characterId: string, color: string) => void;
+    setStoryTextColor: (characterId: string, color: string) => void;
+    updateStoryScene: (characterId: string, scene: string) => void;
     setCustomName: (characterId: string, customName: string) => void;
     /** Stamp the current signed-in user as the store owner. */
     setOwnerUserId: (id: string | null) => void;
@@ -405,6 +415,91 @@ export const useChatStore = create<ChatStore>()(
                         }
                     };
                 });
+            },
+
+            setHideStoryBackground: (characterId, hide) => {
+                set((state) => {
+                    const existing = state.conversations[characterId];
+                    if (!existing) return state;
+
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: {
+                                ...existing,
+                                hideStoryBackground: hide,
+                            }
+                        }
+                    };
+                });
+            },
+
+            setStoryBgColor: (characterId, color) => {
+                set((state) => {
+                    const existing = state.conversations[characterId];
+                    if (!existing) return state;
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: { ...existing, storyBgColor: color },
+                        },
+                    };
+                });
+            },
+
+            setStoryTextColor: (characterId, color) => {
+                set((state) => {
+                    const existing = state.conversations[characterId];
+                    if (!existing) return state;
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: { ...existing, storyTextColor: color },
+                        },
+                    };
+                });
+            },
+
+            updateStoryScene: (characterId, scene) => {
+                set((state) => {
+                    const existing = state.conversations[characterId];
+                    if (!existing) return state;
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: {
+                                ...existing,
+                                storyData: {
+                                    ...(existing.storyData || {
+                                        synopsis: "",
+                                        genre: "",
+                                        isPublished: false,
+                                        playerCharacterName: "",
+                                        playerCharacterDescription: "",
+                                    }),
+                                    currentScene: scene,
+                                },
+                            },
+                        },
+                    };
+                });
+
+                const convo = get().conversations[characterId];
+                fetch("/api/messages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        conversationId: characterId,
+                        conversationType: convo?.conversationType || "story",
+                        conversationMetadata: buildConversationMetadata(convo),
+                    }),
+                })
+                .then((res) => {
+                    if (res.ok) {
+                        get().upsertConversation(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
+                    }
+                })
+                .catch((err) => console.error("Failed to sync story scene", err));
             },
 
             setCustomName: (characterId, customName) => {

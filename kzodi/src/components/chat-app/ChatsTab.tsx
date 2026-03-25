@@ -790,6 +790,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         };
                         // ── Group Chat Row ────────────────────────
                         if (convo.isGroup || convo.conversationType === "story") {
+                            const isStory = convo.conversationType === "story";
                             const memberChars = (convo.groupMemberIds || []).map(id => charMap[id]).filter(Boolean);
                             const msgToDisplay = matchedMsg || convo.messages[convo.messages.length - 1];
                             const displayContent = matchedMsg ? matchedMsg.content : convo.lastMessage;
@@ -861,7 +862,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                         {/* Group avatar: stacked */}
                                         <div className="chats-item-avatar" style={{ position: "relative" }}>
                                             {convo.groupImage ? (
-                                                <img src={convo.groupImage} alt={convo.groupName || (convo.conversationType === "story" ? "Story" : "Group")} style={{
+                                                <img src={convo.groupImage} alt={convo.groupName || (isStory ? "Story" : "Group")} style={{
                                                     width: "48px", height: "48px",
                                                     borderRadius: "50%",
                                                     objectFit: "cover"
@@ -884,17 +885,59 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                                     ))}
                                                 </div>
                                             )}
+                                            {isStory && (
+                                                <span
+                                                    style={{
+                                                        position: "absolute",
+                                                        right: "-2px",
+                                                        bottom: "-2px",
+                                                        width: "18px",
+                                                        height: "18px",
+                                                        borderRadius: "50%",
+                                                        background: "#c4a96a",
+                                                        color: "#1a1612",
+                                                        border: "2px solid #FFFDF5",
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        fontSize: "10px",
+                                                        lineHeight: 1,
+                                                        boxShadow: "0 3px 8px rgba(0,0,0,0.14)",
+                                                    }}
+                                                >
+                                                    📖
+                                                </span>
+                                            )}
                                             <span className="chats-item-online-dot" />
                                         </div>
                                         <div className="chats-item-info">
                                             <div className="chats-item-top">
-                                                <span className="chats-item-name">
-                                                    {convo.groupName || (convo.conversationType === "story" ? "Story" : "Group")}
-                                                </span>
+                                                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                                                    <span className="chats-item-name">
+                                                        {convo.groupName || (isStory ? "Story" : "Group")}
+                                                    </span>
+                                                    {isStory && (
+                                                        <span
+                                                            style={{
+                                                                padding: "3px 8px",
+                                                                borderRadius: "999px",
+                                                                fontSize: "10px",
+                                                                fontWeight: 700,
+                                                                letterSpacing: "0.08em",
+                                                                color: "#b89340",
+                                                                background: "rgba(196,169,106,0.12)",
+                                                                border: "1px solid rgba(196,169,106,0.18)",
+                                                                flexShrink: 0,
+                                                            }}
+                                                        >
+                                                            STORY
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <span className="chats-item-time">{formatTime(convo.lastTimestamp)}</span>
                                             </div>
                                             <div className="chats-item-bottom">
-                                                <p className="chats-item-preview">
+                                                <p className="chats-item-preview" style={isStory ? { fontStyle: "italic" } : undefined}>
                                                     {displayContent && formatPreview(displayContent).length > 45
                                                         ? formatPreview(displayContent).slice(0, 45) + "..."
                                                         : formatPreview(displayContent) || "No messages yet"}
