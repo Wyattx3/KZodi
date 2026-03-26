@@ -142,7 +142,9 @@ function CharacterSelectionScreen({
     const [loadingCharacters, setLoadingCharacters] = useState(false);
     const [selectedCreatorCharacterId, setSelectedCreatorCharacterId] = useState<string | null>(null);
     const [selectedKakoeiCharacterId, setSelectedKakoeiCharacterId] = useState<string | null>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const customImageInputRef = useRef<HTMLInputElement>(null);
+    const hasRenderedSelectionRef = useRef(false);
 
     useEffect(() => {
         if (selectionMode !== "kakoei") {
@@ -196,9 +198,9 @@ function CharacterSelectionScreen({
 
     const creatorCharacters = storyData.creatorCustomCharacters || [];
     const selectionOptions = [
-        { id: "custom" as const, title: "\u270F\uFE0F Create My Own Character", subtitle: "Write a custom protagonist" },
-        { id: "creator" as const, title: "\u{1F3AD} Use Creator's Characters", subtitle: "Pick from the story creator's cast" },
-        { id: "kakoei" as const, title: "\u{1F310} Pick from Kakoei", subtitle: "Search the wider character library" },
+        { id: "custom" as const, kicker: "01", title: "Create My Own Character", subtitle: "Write a custom protagonist" },
+        { id: "creator" as const, kicker: "02", title: "Use Creator's Characters", subtitle: "Pick from the story creator's cast" },
+        { id: "kakoei" as const, kicker: "03", title: "Pick from Kakoei", subtitle: "Search the wider character library" },
     ];
     const activeSelectionOption = selectionOptions.find((option) => option.id === selectionMode) || null;
     const isOverviewScreen = selectionMode === null;
@@ -208,9 +210,18 @@ function CharacterSelectionScreen({
         ? Boolean(customName.trim())
         : selectionMode === "creator"
             ? Boolean(selectedCreatorCharacter)
-            : selectionMode === "kakoei"
-                ? Boolean(selectedKakoeiCharacter)
-                : false;
+                : selectionMode === "kakoei"
+                    ? Boolean(selectedKakoeiCharacter)
+                    : false;
+
+    useEffect(() => {
+        if (!hasRenderedSelectionRef.current) {
+            hasRenderedSelectionRef.current = true;
+            return;
+        }
+
+        containerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    }, [selectionMode]);
 
     const persistSelection = () => {
         let playerCharacterName = "";
@@ -252,299 +263,394 @@ function CharacterSelectionScreen({
 
     return (
         <div
-            className="min-h-[100dvh] h-[100dvh] overflow-y-auto px-5 py-6 md:px-8"
+            className="min-h-[100dvh] h-[100dvh] overflow-hidden px-4 py-4 sm:px-5 sm:py-6 md:px-8"
             style={{
                 backgroundColor: "#0E0C0A",
                 color: "#F7E7C1",
             }}
         >
-            <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6">
-                <div
-                    className="sticky top-0 z-10 -mx-5 -mt-6 flex items-center gap-4 px-5 py-4 md:-mx-8 md:px-8"
-                    style={{
-                        backgroundColor: "#0E0C0A",
-                        borderBottom: "1px solid rgba(232,213,163,0.12)",
-                    }}
-                >
-                    <button
-                        type="button"
-                        onClick={onBack}
-                        className="flex h-[42px] w-[42px] items-center justify-center rounded-full border"
+            <div className="mx-auto flex h-full w-full max-w-[760px] flex-col gap-4 sm:gap-6">
+                <div className="relative z-20">
+                    <div
+                        className="flex items-center gap-3 rounded-[18px] border px-3 py-3 sm:gap-4 sm:rounded-[22px] sm:px-4 sm:py-4"
                         style={{
-                            borderColor: "rgba(232,213,163,0.16)",
-                            background: "rgba(20,16,12,0.92)",
-                            color: "#F7E7C1",
-                            flexShrink: 0,
+                            borderColor: "rgba(232,213,163,0.12)",
+                            background: "rgba(14,12,10,0.9)",
+                            backdropFilter: "blur(16px)",
+                            WebkitBackdropFilter: "blur(16px)",
                         }}
-                        aria-label="Back to chats"
                     >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                            <path d="M15 4L7 12L15 20" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </button>
-                    <div className="min-w-0">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: "rgba(232,213,163,0.68)" }}>
-                            Story Setup
+                        <button
+                            type="button"
+                            onClick={handleSelectionBack}
+                            className="flex h-[38px] w-[38px] items-center justify-center rounded-full border sm:h-[42px] sm:w-[42px]"
+                            style={{
+                                borderColor: "rgba(232,213,163,0.16)",
+                                background: "rgba(20,16,12,0.92)",
+                                color: "#F7E7C1",
+                                flexShrink: 0,
+                            }}
+                            aria-label={isOverviewScreen ? "Back to chats" : "Back to selection methods"}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M15 4L7 12L15 20" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                        </button>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] sm:text-[11px] sm:tracking-[0.2em]" style={{ color: "rgba(232,213,163,0.68)" }}>
+                                {isOverviewScreen ? "Story Setup" : "Character Setup"}
+                            </div>
+                            <div className="truncate font-serif text-[20px] leading-tight sm:text-[24px]">
+                                {isOverviewScreen ? title : activeSelectionOption?.title}
+                            </div>
                         </div>
-                        <div className="truncate font-serif text-[24px] leading-tight">{title}</div>
                     </div>
                 </div>
 
+                <div ref={containerRef} className="no-scrollbar min-h-0 flex-1 overflow-y-auto pb-4 sm:pb-6">
+                    <div className="flex flex-col gap-4 sm:gap-5">
                 <div
-                    className="overflow-hidden rounded-[28px] border"
+                    className="overflow-hidden rounded-[24px] border sm:rounded-[28px]"
                     style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
                 >
                     <div className="grid gap-0 md:grid-cols-[180px_1fr]">
                         <div
+                            className="h-[156px] md:h-auto md:min-h-[220px]"
                             style={{
-                                minHeight: "220px",
                                 background: coverImage
                                     ? `center / cover no-repeat url(${coverImage})`
                                     : "linear-gradient(135deg, #2A1E13, #8B6B44)",
                             }}
                         />
-                        <div className="flex flex-col gap-3 p-6">
-                            <div className="text-[12px] font-semibold uppercase tracking-[0.2em]" style={{ color: "#E8D5A3", opacity: 0.72 }}>
+                        <div className="flex flex-col gap-2.5 p-4 sm:gap-3 sm:p-6">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] sm:text-[12px] sm:tracking-[0.2em]" style={{ color: "#E8D5A3", opacity: 0.72 }}>
                                 Story Preview
                             </div>
-                            <h1 className="m-0 font-serif text-[32px] leading-tight">{title}</h1>
-                            <div className="text-[14px]" style={{ color: "rgba(247,231,193,0.72)" }}>
+                            <h1 className="m-0 font-serif text-[26px] leading-tight sm:text-[32px]">{title}</h1>
+                            <div className="text-[13px] sm:text-[14px]" style={{ color: "rgba(247,231,193,0.72)" }}>
                                 {`${genre || "Story"} | ${creatorLabel || "Creator"}`}
                             </div>
-                            <p className="m-0 max-w-[440px] text-[15px] leading-7" style={{ color: "rgba(247,231,193,0.82)" }}>
-                                Choose how you want to step into this world before the first scene begins.
+                            <p className="m-0 max-w-[440px] text-[14px] leading-6 sm:text-[15px] sm:leading-7" style={{ color: "rgba(247,231,193,0.82)" }}>
+                                {isOverviewScreen
+                                    ? "Choose how you want to step into this world before the first scene begins."
+                                    : "You are now on a dedicated character setup screen. Finish this path, then begin the story."}
                             </p>
+                            {!isOverviewScreen && activeSelectionOption && (
+                                <div
+                                    className="mt-1 inline-flex w-fit items-center rounded-full border px-3.5 py-1.5 text-[11px] font-semibold sm:mt-2 sm:px-4 sm:py-2 sm:text-[12px]"
+                                    style={{
+                                        borderColor: "rgba(232,213,163,0.18)",
+                                        background: "rgba(232,213,163,0.08)",
+                                        color: "#E8D5A3",
+                                    }}
+                                >
+                                    {activeSelectionOption.subtitle}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-3">
-                    {[
-                        { id: "custom" as const, title: "\u270F\uFE0F Create My Own Character", subtitle: "Write a custom protagonist" },
-                        { id: "creator" as const, title: "\u{1F3AD} Use Creator's Characters", subtitle: "Pick from the story creator's cast" },
-                        { id: "kakoei" as const, title: "\u{1F310} Pick from Kakoei", subtitle: "Search the wider character library" },
-                    ].map((option) => (
-                        <button
-                            key={option.id}
-                            type="button"
-                            onClick={() => setSelectionMode(option.id)}
-                            className="rounded-[24px] border p-5 text-left transition-colors"
-                            style={{
-                                borderColor: selectionMode === option.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
-                                background: selectionMode === option.id ? "rgba(232,213,163,0.12)" : "rgba(20,16,12,0.9)",
-                                color: "#F7E7C1",
-                            }}
+                <AnimatePresence mode="wait" initial={false}>
+                    {isOverviewScreen ? (
+                        <motion.div
+                            key="selection-overview"
+                            initial={{ opacity: 0, x: -24 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -24 }}
+                            transition={{ duration: 0.22, ease: "easeOut" }}
+                            className="flex flex-col gap-4 sm:gap-5"
                         >
-                            <div className="text-[15px] font-semibold">{option.title}</div>
-                            <div className="mt-2 text-[13px]" style={{ color: "rgba(247,231,193,0.64)" }}>
-                                {option.subtitle}
-                            </div>
-                        </button>
-                    ))}
-                </div>
-
-                {selectionMode === "custom" && (
-                    <div
-                        className="flex flex-col gap-4 rounded-[28px] border p-6"
-                        style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
-                    >
-                        <div className="grid gap-4 md:grid-cols-[120px_1fr]">
-                            <input
-                                ref={customImageInputRef}
-                                type="file"
-                                accept="image/*"
-                                style={{ display: "none" }}
-                                onChange={(event) => {
-                                    const file = event.target.files?.[0];
-                                    if (!file) {
-                                        return;
-                                    }
-                                    const reader = new FileReader();
-                                    reader.onload = (loadEvent) => {
-                                        const result = loadEvent.target?.result;
-                                        if (typeof result === "string") {
-                                            setCustomImage(result);
-                                        }
-                                    };
-                                    reader.readAsDataURL(file);
-                                    event.target.value = "";
-                                }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => customImageInputRef.current?.click()}
-                                className="rounded-[20px] border"
-                                style={{
-                                    height: "148px",
-                                    borderColor: "rgba(232,213,163,0.18)",
-                                    background: customImage
-                                        ? `center / cover no-repeat url(${customImage})`
-                                        : "linear-gradient(135deg, #1E160F, #5C4326)",
-                                    color: "#F7E7C1",
-                                }}
-                            >
-                                {!customImage && "Upload image"}
-                            </button>
-                            <div className="flex flex-col gap-4">
-                                <input
-                                    type="text"
-                                    value={customName}
-                                    onChange={(event) => setCustomName(event.target.value)}
-                                    placeholder="Character name"
-                                    className="rounded-[18px] border px-4 py-4 text-[15px] outline-none"
-                                    style={{
-                                        borderColor: "rgba(232,213,163,0.16)",
-                                        background: "rgba(12,10,8,0.9)",
-                                        color: "#F7E7C1",
-                                    }}
-                                />
-                                <textarea
-                                    value={customDescription}
-                                    onChange={(event) => setCustomDescription(event.target.value)}
-                                    placeholder="Appearance, backstory, and what drives this character"
-                                    className="min-h-[110px] rounded-[18px] border px-4 py-4 text-[15px] outline-none"
-                                    style={{
-                                        borderColor: "rgba(232,213,163,0.16)",
-                                        background: "rgba(12,10,8,0.9)",
-                                        color: "#F7E7C1",
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {selectionMode === "creator" && (
-                    <div
-                        className="flex flex-col gap-4 rounded-[28px] border p-6"
-                        style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
-                    >
-                        {creatorCharacters.length === 0 ? (
-                            <div className="rounded-[20px] border px-5 py-6 text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
-                                No characters available.
-                            </div>
-                        ) : (
-                            <div className="grid gap-4 md:grid-cols-2">
-                                {creatorCharacters.map((character) => (
+                            <div className="grid gap-3 sm:gap-4 md:grid-cols-3">
+                                {selectionOptions.map((option) => (
                                     <button
-                                        key={character.id}
+                                        key={option.id}
                                         type="button"
-                                        onClick={() => setSelectedCreatorCharacterId(character.id)}
-                                        className="flex gap-4 rounded-[22px] border p-4 text-left"
+                                        onClick={() => setSelectionMode(option.id)}
+                                        className="rounded-[20px] border p-4 text-left transition-colors sm:rounded-[24px] sm:p-5"
                                         style={{
-                                            borderColor: selectedCreatorCharacterId === character.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
-                                            background: selectedCreatorCharacterId === character.id ? "rgba(232,213,163,0.1)" : "rgba(12,10,8,0.9)",
+                                            borderColor: "rgba(232,213,163,0.14)",
+                                            background: "rgba(20,16,12,0.9)",
                                             color: "#F7E7C1",
                                         }}
                                     >
                                         <div
+                                            className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-[0.18em]"
                                             style={{
-                                                width: "74px",
-                                                height: "94px",
-                                                borderRadius: "18px",
-                                                flexShrink: 0,
-                                                background: character.image
-                                                    ? `center / cover no-repeat url(${character.image})`
-                                                    : "linear-gradient(135deg, #1E160F, #5C4326)",
+                                                borderColor: "rgba(232,213,163,0.18)",
+                                                background: "rgba(232,213,163,0.08)",
+                                                color: "#E8D5A3",
                                             }}
-                                        />
-                                        <div className="flex min-w-0 flex-1 flex-col gap-2">
-                                            <div className="text-[16px] font-semibold">{character.name}</div>
-                                            <div className="text-[13px]" style={{ color: "rgba(247,231,193,0.72)" }}>
-                                                {character.personality}
-                                            </div>
-                                            <div className="text-[13px] leading-6" style={{ color: "rgba(247,231,193,0.62)" }}>
-                                                {character.description}
-                                            </div>
+                                        >
+                                            {option.kicker}
+                                        </div>
+                                        <div className="mt-3 text-[15px] font-semibold sm:text-[16px]">{option.title}</div>
+                                        <div className="mt-1.5 text-[13px] leading-6" style={{ color: "rgba(247,231,193,0.64)" }}>
+                                            {option.subtitle}
+                                        </div>
+                                        <div className="mt-4 flex items-center gap-2 text-[11px] font-semibold sm:mt-5 sm:text-[12px]" style={{ color: "#E8D5A3" }}>
+                                            Continue to setup
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                                <path d="M9 5L16 12L9 19" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
                                         </div>
                                     </button>
                                 ))}
                             </div>
-                        )}
-                    </div>
-                )}
-
-                {selectionMode === "kakoei" && (
-                    <div
-                        className="flex flex-col gap-4 rounded-[28px] border p-6"
-                        style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
-                    >
-                        <input
-                            type="text"
-                            value={kakoeiSearch}
-                            onChange={(event) => setKakoeiSearch(event.target.value)}
-                            placeholder="Search Kakoei characters..."
-                            className="rounded-[18px] border px-4 py-4 text-[15px] outline-none"
-                            style={{
-                                borderColor: "rgba(232,213,163,0.16)",
-                                background: "rgba(12,10,8,0.9)",
-                                color: "#F7E7C1",
-                            }}
-                        />
-
-                        {loadingCharacters && (
-                            <div className="rounded-[20px] border px-5 py-6 text-center text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
-                                Loading characters...
+                            <div
+                                className="rounded-[20px] border px-4 py-4 text-[13px] leading-6 sm:rounded-[24px] sm:px-5 sm:py-5"
+                                style={{
+                                    borderColor: "rgba(232,213,163,0.14)",
+                                    background: "rgba(20,16,12,0.9)",
+                                    color: "rgba(247,231,193,0.72)",
+                                }}
+                            >
+                                Pick a path first and we will move you into a focused setup screen instead of making you work lower down on this page.
                             </div>
-                        )}
-
-                        {!loadingCharacters && availableCharacters.length === 0 && (
-                            <div className="rounded-[20px] border px-5 py-6 text-center text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
-                                No characters available.
-                            </div>
-                        )}
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                            {availableCharacters.map((character) => (
+                        </motion.div>
+                    ) : (
+                        <motion.div
+                            key={`selection-${selectionMode}`}
+                            initial={{ opacity: 0, x: 24 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -24 }}
+                            transition={{ duration: 0.22, ease: "easeOut" }}
+                            className="flex flex-col gap-4 sm:gap-5"
+                        >
+                            <div
+                                className="flex flex-col items-start gap-3 rounded-[20px] border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:rounded-[24px] sm:px-5"
+                                style={{
+                                    borderColor: "rgba(232,213,163,0.18)",
+                                    background: "rgba(20,16,12,0.9)",
+                                }}
+                            >
+                                <div>
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] sm:text-[12px] sm:tracking-[0.18em]" style={{ color: "rgba(232,213,163,0.68)" }}>
+                                        Current Path
+                                    </div>
+                                    <div className="mt-1 text-[15px] font-semibold sm:text-[16px]">{activeSelectionOption?.title}</div>
+                                </div>
                                 <button
-                                    key={character.id}
                                     type="button"
-                                    onClick={() => setSelectedKakoeiCharacterId(character.id)}
-                                    className="flex items-center gap-4 rounded-[22px] border p-4 text-left"
+                                    onClick={() => setSelectionMode(null)}
+                                    className="w-full rounded-full border px-4 py-2 text-[13px] font-semibold sm:w-auto"
                                     style={{
-                                        borderColor: selectedKakoeiCharacterId === character.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
-                                        background: selectedKakoeiCharacterId === character.id ? "rgba(232,213,163,0.1)" : "rgba(12,10,8,0.9)",
+                                        borderColor: "rgba(232,213,163,0.18)",
+                                        background: "rgba(12,10,8,0.92)",
                                         color: "#F7E7C1",
                                     }}
                                 >
-                                    <img
-                                        src={character.image}
-                                        alt={character.name}
-                                        style={{
-                                            width: "56px",
-                                            height: "56px",
-                                            borderRadius: "50%",
-                                            objectFit: "cover",
-                                            flexShrink: 0,
+                                    Change Method
+                                </button>
+                            </div>
+
+                        {selectionMode === "custom" && (
+                            <div
+                                className="flex flex-col gap-4 rounded-[22px] border p-4 sm:rounded-[28px] sm:p-6"
+                                style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
+                            >
+                                <div className="grid gap-4 md:grid-cols-[120px_1fr]">
+                                    <input
+                                        ref={customImageInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        style={{ display: "none" }}
+                                        onChange={(event) => {
+                                            const file = event.target.files?.[0];
+                                            if (!file) {
+                                                return;
+                                            }
+                                            const reader = new FileReader();
+                                            reader.onload = (loadEvent) => {
+                                                const result = loadEvent.target?.result;
+                                                if (typeof result === "string") {
+                                                    setCustomImage(result);
+                                                }
+                                            };
+                                            reader.readAsDataURL(file);
+                                            event.target.value = "";
                                         }}
                                     />
-                                    <div className="min-w-0">
-                                        <div className="text-[15px] font-semibold">{character.name}</div>
-                                        <div className="text-[13px]" style={{ color: "rgba(247,231,193,0.72)" }}>
-                                            {character.tag}
-                                        </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => customImageInputRef.current?.click()}
+                                        className="rounded-[18px] border text-[13px] font-semibold sm:rounded-[20px] sm:text-[14px]"
+                                        style={{
+                                            height: "132px",
+                                            borderColor: "rgba(232,213,163,0.18)",
+                                            background: customImage
+                                                ? `center / cover no-repeat url(${customImage})`
+                                                : "linear-gradient(135deg, #1E160F, #5C4326)",
+                                            color: "#F7E7C1",
+                                        }}
+                                    >
+                                        {!customImage && "Upload image"}
+                                    </button>
+                                    <div className="flex flex-col gap-3 sm:gap-4">
+                                        <input
+                                            type="text"
+                                            value={customName}
+                                            onChange={(event) => setCustomName(event.target.value)}
+                                            placeholder="Character name"
+                                            className="rounded-[16px] border px-4 py-3.5 text-[14px] outline-none sm:rounded-[18px] sm:py-4 sm:text-[15px]"
+                                            style={{
+                                                borderColor: "rgba(232,213,163,0.16)",
+                                                background: "rgba(12,10,8,0.9)",
+                                                color: "#F7E7C1",
+                                            }}
+                                        />
+                                        <textarea
+                                            value={customDescription}
+                                            onChange={(event) => setCustomDescription(event.target.value)}
+                                            placeholder="Appearance, backstory, and what drives this character"
+                                            className="min-h-[110px] rounded-[16px] border px-4 py-3.5 text-[14px] leading-6 outline-none sm:rounded-[18px] sm:py-4 sm:text-[15px]"
+                                            style={{
+                                                borderColor: "rgba(232,213,163,0.16)",
+                                                background: "rgba(12,10,8,0.9)",
+                                                color: "#F7E7C1",
+                                            }}
+                                        />
                                     </div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
+                                </div>
+                            </div>
+                        )}
 
-                <div className="flex justify-end">
-                    <button
-                        type="button"
-                        onClick={persistSelection}
-                        disabled={!canBegin}
-                        className="rounded-full px-6 py-3 text-[15px] font-semibold transition-opacity"
-                        style={{
-                            background: canBegin ? "#E8D5A3" : "rgba(232,213,163,0.24)",
-                            color: "#0E0C0A",
-                            cursor: canBegin ? "pointer" : "not-allowed",
-                            opacity: canBegin ? 1 : 0.7,
-                        }}
-                    >
-                        Begin Story -&gt;
-                    </button>
+                        {selectionMode === "creator" && (
+                            <div
+                                className="flex flex-col gap-4 rounded-[22px] border p-4 sm:rounded-[28px] sm:p-6"
+                                style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
+                            >
+                                {creatorCharacters.length === 0 ? (
+                                    <div className="rounded-[18px] border px-4 py-5 text-[13px] sm:rounded-[20px] sm:px-5 sm:py-6 sm:text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
+                                        No characters available.
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
+                                        {creatorCharacters.map((character) => (
+                                            <button
+                                                key={character.id}
+                                                type="button"
+                                                onClick={() => setSelectedCreatorCharacterId(character.id)}
+                                                className="flex gap-3 rounded-[18px] border p-3.5 text-left sm:gap-4 sm:rounded-[22px] sm:p-4"
+                                                style={{
+                                                    borderColor: selectedCreatorCharacterId === character.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
+                                                    background: selectedCreatorCharacterId === character.id ? "rgba(232,213,163,0.1)" : "rgba(12,10,8,0.9)",
+                                                    color: "#F7E7C1",
+                                                }}
+                                            >
+                                                <div
+                                                    className="h-[80px] w-[62px] flex-shrink-0 rounded-[16px] sm:h-[94px] sm:w-[74px] sm:rounded-[18px]"
+                                                    style={{
+                                                        background: character.image
+                                                            ? `center / cover no-repeat url(${character.image})`
+                                                            : "linear-gradient(135deg, #1E160F, #5C4326)",
+                                                    }}
+                                                />
+                                                <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:gap-2">
+                                                    <div className="text-[15px] font-semibold sm:text-[16px]">{character.name}</div>
+                                                    <div className="text-[12px] sm:text-[13px]" style={{ color: "rgba(247,231,193,0.72)" }}>
+                                                        {character.personality}
+                                                    </div>
+                                                    <div
+                                                        className="text-[12px] leading-5 sm:text-[13px] sm:leading-6"
+                                                        style={{
+                                                            color: "rgba(247,231,193,0.62)",
+                                                            display: "-webkit-box",
+                                                            WebkitLineClamp: 3,
+                                                            WebkitBoxOrient: "vertical",
+                                                            overflow: "hidden",
+                                                        }}
+                                                    >
+                                                        {character.description}
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {selectionMode === "kakoei" && (
+                            <div
+                                className="flex flex-col gap-4 rounded-[22px] border p-4 sm:rounded-[28px] sm:p-6"
+                                style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
+                            >
+                                <input
+                                    type="text"
+                                    value={kakoeiSearch}
+                                    onChange={(event) => setKakoeiSearch(event.target.value)}
+                                    placeholder="Search Kakoei characters..."
+                                    className="rounded-[16px] border px-4 py-3.5 text-[14px] outline-none sm:rounded-[18px] sm:py-4 sm:text-[15px]"
+                                    style={{
+                                        borderColor: "rgba(232,213,163,0.16)",
+                                        background: "rgba(12,10,8,0.9)",
+                                        color: "#F7E7C1",
+                                    }}
+                                />
+
+                                {loadingCharacters && (
+                                    <div className="rounded-[18px] border px-4 py-5 text-center text-[13px] sm:rounded-[20px] sm:px-5 sm:py-6 sm:text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
+                                        Loading characters...
+                                    </div>
+                                )}
+
+                                {!loadingCharacters && availableCharacters.length === 0 && (
+                                    <div className="rounded-[18px] border px-4 py-5 text-center text-[13px] sm:rounded-[20px] sm:px-5 sm:py-6 sm:text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
+                                        No characters available.
+                                    </div>
+                                )}
+
+                                <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
+                                    {availableCharacters.map((character) => (
+                                        <button
+                                            key={character.id}
+                                            type="button"
+                                            onClick={() => setSelectedKakoeiCharacterId(character.id)}
+                                            className="flex items-center gap-3 rounded-[18px] border p-3.5 text-left sm:gap-4 sm:rounded-[22px] sm:p-4"
+                                            style={{
+                                                borderColor: selectedKakoeiCharacterId === character.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
+                                                background: selectedKakoeiCharacterId === character.id ? "rgba(232,213,163,0.1)" : "rgba(12,10,8,0.9)",
+                                                color: "#F7E7C1",
+                                            }}
+                                        >
+                                            <img
+                                                src={character.image}
+                                                alt={character.name}
+                                                className="h-[48px] w-[48px] flex-shrink-0 rounded-full object-cover sm:h-[56px] sm:w-[56px]"
+                                            />
+                                            <div className="min-w-0">
+                                                <div className="text-[14px] font-semibold sm:text-[15px]">{character.name}</div>
+                                                <div className="text-[12px] sm:text-[13px]" style={{ color: "rgba(247,231,193,0.72)" }}>
+                                                    {character.tag}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex justify-stretch sm:justify-end">
+                            <button
+                                type="button"
+                                onClick={persistSelection}
+                                disabled={!canBegin}
+                                className="w-full rounded-full px-6 py-3 text-[14px] font-semibold transition-opacity sm:w-auto sm:text-[15px]"
+                                style={{
+                                    background: canBegin ? "#E8D5A3" : "rgba(232,213,163,0.24)",
+                                    color: "#0E0C0A",
+                                    cursor: canBegin ? "pointer" : "not-allowed",
+                                    opacity: canBegin ? 1 : 0.7,
+                                }}
+                            >
+                                Begin Story -&gt;
+                            </button>
+                        </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+                    </div>
                 </div>
             </div>
         </div>
