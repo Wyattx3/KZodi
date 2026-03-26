@@ -29,7 +29,7 @@ interface CreateCharacterFormProps {
 import { SOURCE_CATEGORIES, CHARACTER_TAGS } from "@/data/characters";
 
 // Custom Select Component for a premium feel
-const CustomSelect = ({ options, value, onChange }: { options: string[], value: string, onChange: (val: string) => void }) => {
+const CustomSelect = ({ options, value, onChange }: { options: readonly string[], value: string, onChange: (val: string) => void }) => {
     const [isOpen, setIsOpen] = useState(false);
 
     return (
@@ -353,7 +353,7 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
                     <div className="form-section">
                         <label className="label-sm">Classifications</label>
                         <CustomSelect
-                            options={SOURCE_CATEGORIES.filter(c => c !== "All")}
+                            options={SOURCE_CATEGORIES}
                             value={tag}
                             onChange={setTag}
                         />
