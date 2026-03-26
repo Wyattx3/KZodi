@@ -119,6 +119,7 @@ interface CharacterSelectionScreenProps {
     genre?: string;
     creatorLabel?: string;
     storyData: StoryData;
+    onBack: () => void;
     onConfirmed: () => void;
 }
 
@@ -129,9 +130,10 @@ function CharacterSelectionScreen({
     genre,
     creatorLabel,
     storyData,
+    onBack,
     onConfirmed,
 }: CharacterSelectionScreenProps) {
-    const [selectionMode, setSelectionMode] = useState<"custom" | "creator" | "kakoei">("custom");
+    const [selectionMode, setSelectionMode] = useState<"custom" | "creator" | "kakoei" | null>(null);
     const [customName, setCustomName] = useState("");
     const [customDescription, setCustomDescription] = useState("");
     const [customImage, setCustomImage] = useState("");
@@ -143,6 +145,10 @@ function CharacterSelectionScreen({
     const customImageInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
+        if (selectionMode !== "kakoei") {
+            return;
+        }
+
         let isCancelled = false;
         const controller = new AbortController();
 
@@ -186,16 +192,25 @@ function CharacterSelectionScreen({
             isCancelled = true;
             controller.abort();
         };
-    }, [kakoeiSearch]);
+    }, [kakoeiSearch, selectionMode]);
 
     const creatorCharacters = storyData.creatorCustomCharacters || [];
+    const selectionOptions = [
+        { id: "custom" as const, title: "\u270F\uFE0F Create My Own Character", subtitle: "Write a custom protagonist" },
+        { id: "creator" as const, title: "\u{1F3AD} Use Creator's Characters", subtitle: "Pick from the story creator's cast" },
+        { id: "kakoei" as const, title: "\u{1F310} Pick from Kakoei", subtitle: "Search the wider character library" },
+    ];
+    const activeSelectionOption = selectionOptions.find((option) => option.id === selectionMode) || null;
+    const isOverviewScreen = selectionMode === null;
     const selectedCreatorCharacter = creatorCharacters.find((character) => character.id === selectedCreatorCharacterId);
     const selectedKakoeiCharacter = availableCharacters.find((character) => character.id === selectedKakoeiCharacterId) || null;
     const canBegin = selectionMode === "custom"
         ? Boolean(customName.trim())
         : selectionMode === "creator"
             ? Boolean(selectedCreatorCharacter)
-            : Boolean(selectedKakoeiCharacter);
+            : selectionMode === "kakoei"
+                ? Boolean(selectedKakoeiCharacter)
+                : false;
 
     const persistSelection = () => {
         let playerCharacterName = "";
@@ -226,15 +241,55 @@ function CharacterSelectionScreen({
         onConfirmed();
     };
 
+    const handleSelectionBack = () => {
+        if (isOverviewScreen) {
+            onBack();
+            return;
+        }
+
+        setSelectionMode(null);
+    };
+
     return (
         <div
-            className="min-h-[100dvh] px-5 py-6 md:px-8"
+            className="min-h-[100dvh] h-[100dvh] overflow-y-auto px-5 py-6 md:px-8"
             style={{
                 backgroundColor: "#0E0C0A",
                 color: "#F7E7C1",
             }}
         >
             <div className="mx-auto flex w-full max-w-[760px] flex-col gap-6">
+                <div
+                    className="sticky top-0 z-10 -mx-5 -mt-6 flex items-center gap-4 px-5 py-4 md:-mx-8 md:px-8"
+                    style={{
+                        backgroundColor: "#0E0C0A",
+                        borderBottom: "1px solid rgba(232,213,163,0.12)",
+                    }}
+                >
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="flex h-[42px] w-[42px] items-center justify-center rounded-full border"
+                        style={{
+                            borderColor: "rgba(232,213,163,0.16)",
+                            background: "rgba(20,16,12,0.92)",
+                            color: "#F7E7C1",
+                            flexShrink: 0,
+                        }}
+                        aria-label="Back to chats"
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                            <path d="M15 4L7 12L15 20" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </button>
+                    <div className="min-w-0">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: "rgba(232,213,163,0.68)" }}>
+                            Story Setup
+                        </div>
+                        <div className="truncate font-serif text-[24px] leading-tight">{title}</div>
+                    </div>
+                </div>
+
                 <div
                     className="overflow-hidden rounded-[28px] border"
                     style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
@@ -735,6 +790,7 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                 genre={conversation.storyData?.genre}
                 creatorLabel={conversation.creatorId || "Creator"}
                 storyData={conversation.storyData}
+                onBack={() => router.replace("/chat?tab=chats")}
                 onConfirmed={() => setPlayerCharSelected(true)}
             />
         );

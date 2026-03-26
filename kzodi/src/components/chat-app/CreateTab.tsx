@@ -7,16 +7,39 @@ import AutoSetupForm from "./AutoSetupForm";
 import StoryCreateModal from "./StoryCreateModal";
 import type { Character } from "@/data/characters";
 
+interface LibraryStory {
+    id: string;
+    name: string;
+    image?: string;
+    synopsis?: string;
+    genre?: string;
+    is_published?: boolean;
+    storyData?: any;
+    worldData?: any;
+    creatorId?: string;
+}
+
 interface CreateTabProps {
     onNavigate?: (tab: "explore" | "chats" | "create" | "profile") => void;
     onSelectCharacter?: (character: any) => void;
     myCharacters: Character[];
-    setMyCharacters: (chars: Character[]) => void;
+    setMyCharacters: React.Dispatch<React.SetStateAction<Character[]>>;
+    myStories: LibraryStory[];
+    setMyStories: React.Dispatch<React.SetStateAction<LibraryStory[]>>;
     onCreateStory?: () => void;
     onCreateScreenChange?: (isActive: boolean) => void;
 }
 
-export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters = [], setMyCharacters, onCreateStory, onCreateScreenChange }: CreateTabProps) {
+export default function CreateTab({
+    onNavigate,
+    onSelectCharacter,
+    myCharacters = [],
+    setMyCharacters,
+    myStories = [],
+    setMyStories,
+    onCreateStory,
+    onCreateScreenChange,
+}: CreateTabProps) {
     const router = useRouter();
     const [view, setView] = useState<"library" | "setup" | "success">("library");
     const [setupMode, setSetupMode] = useState<"manual" | "auto">("manual");
@@ -24,6 +47,7 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
     // myCharacters state removed as it is now a prop
     const [createdChar, setCreatedChar] = useState<Character | null>(null);
     const [showStoryModal, setShowStoryModal] = useState(false);
+    const [storyModalInitialData, setStoryModalInitialData] = useState<LibraryStory | null>(null);
 
     useEffect(() => {
         onCreateScreenChange?.(view === "setup" || showStoryModal);
@@ -66,6 +90,7 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
                             setView("setup");
                         }}
                         onCreateStory={() => {
+                            setStoryModalInitialData(null);
                             setShowStoryModal(true);
                             onCreateStory?.();
                         }}
@@ -77,6 +102,11 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
                             if (onSelectCharacter) onSelectCharacter(char);
                         }}
                         characters={myCharacters}
+                        stories={myStories}
+                        onEditStoryClick={(story) => {
+                            setStoryModalInitialData(story);
+                            setShowStoryModal(true);
+                        }}
                     />
                 )}
                 {view === "setup" && (
@@ -108,9 +138,30 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
             <AnimatePresence>
                 {showStoryModal && (
                     <StoryCreateModal
-                        onClose={() => setShowStoryModal(false)}
-                        onCreated={(storyId) => {
+                        initialData={storyModalInitialData}
+                        onClose={() => {
                             setShowStoryModal(false);
+                            setStoryModalInitialData(null);
+                        }}
+                        onCreated={(storyId, story) => {
+                            if (story) {
+                                setMyStories((currentStories) => {
+                                    const existingIndex = currentStories.findIndex((item) => item.id === story.id);
+                                    if (existingIndex >= 0) {
+                                        return currentStories.map((item) => item.id === story.id ? story : item);
+                                    }
+                                    return [story, ...currentStories];
+                                });
+                            }
+
+                            const wasEditingStory = Boolean(storyModalInitialData?.id);
+                            setShowStoryModal(false);
+                            setStoryModalInitialData(null);
+
+                            if (wasEditingStory) {
+                                return;
+                            }
+
                             onNavigate?.("chats");
                             router.push(`/story/${storyId}`);
                         }}
@@ -123,13 +174,29 @@ export default function CreateTab({ onNavigate, onSelectCharacter, myCharacters 
 
 // Sub-components
 
-const LibraryView = ({ onCreateClick, onCreateStory, onEditClick, onChatClick, characters = [] }: { onCreateClick: () => void, onCreateStory?: () => void, onEditClick: (char: any) => void, onChatClick: (char: any) => void, characters: Character[] }) => {
+const LibraryView = ({
+    onCreateClick,
+    onCreateStory,
+    onEditClick,
+    onChatClick,
+    onEditStoryClick,
+    characters = [],
+    stories = [],
+}: {
+    onCreateClick: () => void,
+    onCreateStory?: () => void,
+    onEditClick: (char: any) => void,
+    onChatClick: (char: any) => void,
+    onEditStoryClick: (story: LibraryStory) => void,
+    characters: Character[],
+    stories: LibraryStory[],
+}) => {
     return (
         <motion.div>
             <div className="explore-hero" style={{ paddingBottom: '20px' }}>
                 <h1 className="explore-hero-title">My Library</h1>
                 <p className="explore-hero-subtitle">
-                    Manage and chat with your created characters
+                    Manage your created characters and stories
                 </p>
             </div>
 
@@ -234,6 +301,81 @@ const LibraryView = ({ onCreateClick, onCreateStory, onEditClick, onChatClick, c
                         </motion.div>
                     ))}
                 </div>
+            </div>
+
+            <div style={{ padding: "0 4px", marginTop: "30px" }}>
+                <h3 style={{ fontSize: "14px", fontWeight: "700", color: "#4A3728", marginBottom: "16px", paddingLeft: "4px" }}>
+                    Your Stories
+                </h3>
+
+                {stories.length === 0 ? (
+                    <div
+                        style={{
+                            borderRadius: "22px",
+                            background: "#FFFFFF",
+                            border: "1px solid #F3F4F6",
+                            padding: "20px",
+                            color: "#9CA3AF",
+                            fontSize: "14px",
+                        }}
+                    >
+                        Your saved stories will appear here.
+                    </div>
+                ) : (
+                    <div className="explore-grid">
+                        {stories.map((story) => (
+                            <motion.div
+                                key={story.id}
+                                className="explore-card"
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                <div className="explore-card-img-wrap">
+                                    {story.image ? (
+                                        <img src={story.image} alt={story.name} className="explore-card-img" />
+                                    ) : (
+                                        <div
+                                            className="explore-card-img"
+                                            style={{ background: "linear-gradient(135deg, #EED6BA, #C7A17A)" }}
+                                        />
+                                    )}
+                                    <div className="explore-card-img-overlay" />
+                                    <div className="explore-card-float-tag">
+                                        <span>{story.genre || story.storyData?.genre || "Story"}</span>
+                                    </div>
+                                    <button
+                                        className="explore-card-info-btn"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onEditStoryClick(story);
+                                        }}
+                                        aria-label="Edit story"
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div className="explore-card-body">
+                                    <div className="explore-card-name-row">
+                                        <h3 className="explore-card-name" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                            {story.name}
+                                        </h3>
+                                    </div>
+                                    <p className="explore-card-desc">{story.synopsis || story.storyData?.synopsis || "No synopsis yet."}</p>
+                                    <div className="explore-card-footer">
+                                        <span className="explore-card-chat-btn">
+                                            {story.is_published ? "Published" : "Draft"}
+                                        </span>
+                                        <span className="explore-card-personality">
+                                            {story.genre || story.storyData?.genre || "Story"}
+                                        </span>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <style jsx>{`

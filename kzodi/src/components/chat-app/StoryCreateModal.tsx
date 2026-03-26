@@ -7,7 +7,8 @@ import type { Character } from "@/data/characters";
 
 interface StoryCreateModalProps {
     onClose: () => void;
-    onCreated: (storyId: string) => void;
+    onCreated: (storyId: string, story?: any) => void;
+    initialData?: any;
 }
 
 type StoryStep = 1 | 2 | 3 | 4 | 5;
@@ -55,16 +56,62 @@ const CONTENT_RATINGS: Array<{ value: ContentRating; label: string }> = [
 
 const WORLD_TYPES = ["Fantasy", "Realistic", "Sci-Fi", "Supernatural", "Post-Apocalyptic"] as const;
 
-const ROLE_OPTIONS: Array<{ value: CastRole; label: string }> = [
-    { value: "main-npc", label: "Main NPC" },
-    { value: "supporting", label: "Supporting NPC" },
-    { value: "antagonist", label: "Antagonist" },
-    { value: "mentor", label: "Mentor" },
-    { value: "love-interest", label: "Love Interest" },
-    { value: "ally", label: "Ally" },
+const ROLE_OPTIONS: Array<{ value: CastRole; label: string; description: string }> = [
+    { value: "main-npc", label: "Main NPC", description: "Core presence in major scenes" },
+    { value: "supporting", label: "Supporting NPC", description: "Adds texture and helps arcs move" },
+    { value: "antagonist", label: "Antagonist", description: "Pushes conflict and raises stakes" },
+    { value: "mentor", label: "Mentor", description: "Guides growth and perspective" },
+    { value: "love-interest", label: "Love Interest", description: "Brings chemistry and emotional pull" },
+    { value: "ally", label: "Ally", description: "Reliable partner in tense moments" },
 ];
 
+const ROLE_STYLES: Record<CastRole, { background: string; border: string; color: string }> = {
+    "main-npc": {
+        background: "rgba(127,82,45,0.12)",
+        border: "1px solid rgba(127,82,45,0.18)",
+        color: "#6B4729",
+    },
+    supporting: {
+        background: "rgba(122,105,84,0.12)",
+        border: "1px solid rgba(122,105,84,0.18)",
+        color: "#6E6152",
+    },
+    antagonist: {
+        background: "rgba(151,80,72,0.12)",
+        border: "1px solid rgba(151,80,72,0.18)",
+        color: "#8C4C45",
+    },
+    mentor: {
+        background: "rgba(108,122,86,0.14)",
+        border: "1px solid rgba(108,122,86,0.18)",
+        color: "#5C6948",
+    },
+    "love-interest": {
+        background: "rgba(170,114,120,0.14)",
+        border: "1px solid rgba(170,114,120,0.18)",
+        color: "#955D63",
+    },
+    ally: {
+        background: "rgba(83,122,123,0.14)",
+        border: "1px solid rgba(83,122,123,0.18)",
+        color: "#446B6C",
+    },
+};
+
 const THEME_SWATCHES = ["#E8E1D5", "#E69A8D", "#8DA8E6", "#8DE6A8", "#E6D88D", "#C7A17A"];
+const EMPTY_WORLD_RULES = {
+    timePeriod: "",
+    worldType: "",
+    specialRules: "",
+    forbiddenTopics: "",
+};
+const EMPTY_CUSTOM_CHAR_FORM: CustomCharacterFormState = {
+    name: "",
+    description: "",
+    image: "",
+    personality: "",
+    role: "supporting",
+};
 
 const STEP_DETAILS: Record<StoryStep, { title: string; subtitle: string }> = {
     1: { title: "Story Info", subtitle: "Title, style, and presentation" },
@@ -89,7 +136,141 @@ function readFileAsDataUrl(file: File, onLoad: (value: string) => void) {
     reader.readAsDataURL(file);
 }
 
-export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModalProps) {
+function parseStoryValue(value: any) {
+    if (typeof value !== "string") {
+        return value;
+    }
+
+    try {
+        return JSON.parse(value);
+    } catch {
+        return undefined;
+    }
+}
+
+function getRoleLabel(role: CastRole) {
+    return ROLE_OPTIONS.find((option) => option.value === role)?.label ?? "Supporting NPC";
+}
+
+function summarizePersonality(personality: string) {
+    return personality
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(" / ");
+}
+
+function getInitials(name: string) {
+    const initials = name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("");
+
+    return initials || "?";
+}
+
+interface RoleSelectorProps {
+    value: CastRole;
+    onChange: (role: CastRole) => void;
+    disabled?: boolean;
+    compact?: boolean;
+    stopPropagation?: boolean;
+}
+
+function RoleSelector({
+    value,
+    onChange,
+    disabled = false,
+    compact = false,
+    stopPropagation = false,
+}: RoleSelectorProps) {
+    return (
+        <div
+            onClick={stopPropagation ? (event) => event.stopPropagation() : undefined}
+            style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: compact ? "8px" : "10px",
+                opacity: disabled ? 0.55 : 1,
+                pointerEvents: disabled ? "none" : "auto",
+            }}
+        >
+            {ROLE_OPTIONS.map((option) => {
+                const selected = option.value === value;
+                const roleStyle = ROLE_STYLES[option.value];
+
+                return (
+                    <button
+                        key={option.value}
+                        type="button"
+                        onClick={(event) => {
+                            if (stopPropagation) {
+                                event.stopPropagation();
+                            }
+                            onChange(option.value);
+                        }}
+                        style={{
+                            border: selected ? roleStyle.border : "1px solid rgba(74,55,40,0.08)",
+                            borderRadius: compact ? "16px" : "18px",
+                            background: selected
+                                ? `linear-gradient(180deg, ${roleStyle.background}, rgba(255,255,255,0.98))`
+                                : "#FFFFFF",
+                            padding: compact ? "10px 11px" : "12px 13px",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-start",
+                            gap: compact ? "4px" : "6px",
+                            textAlign: "left",
+                            color: "#4A3728",
+                            cursor: disabled ? "default" : "pointer",
+                            boxShadow: selected ? "0 10px 22px rgba(74,55,40,0.08)" : "none",
+                            transition: "transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease",
+                        }}
+                    >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%" }}>
+                            <span
+                                style={{
+                                    width: compact ? "9px" : "10px",
+                                    height: compact ? "9px" : "10px",
+                                    borderRadius: "999px",
+                                    background: selected ? roleStyle.color : "rgba(74,55,40,0.18)",
+                                    boxShadow: selected ? `0 0 0 4px ${roleStyle.background}` : "none",
+                                    flexShrink: 0,
+                                }}
+                            />
+                            <span
+                                style={{
+                                    fontSize: compact ? "12px" : "13px",
+                                    fontWeight: 800,
+                                    color: selected ? roleStyle.color : "#4A3728",
+                                    lineHeight: 1.3,
+                                }}
+                            >
+                                {option.label}
+                            </span>
+                        </div>
+                        {!compact && (
+                            <span
+                                style={{
+                                    fontSize: "11px",
+                                    lineHeight: 1.45,
+                                    color: selected ? "#6E645C" : "#8B8680",
+                                }}
+                            >
+                                {option.description}
+                            </span>
+                        )}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+export default function StoryCreateModal({ onClose, onCreated, initialData }: StoryCreateModalProps) {
     const [step, setStep] = useState<StoryStep>(1);
 
     const [title, setTitle] = useState("");
@@ -101,23 +282,12 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
     const [backgroundImage, setBackgroundImage] = useState("");
     const [themeColor, setThemeColor] = useState("#E8E1D5");
 
-    const [worldRules, setWorldRules] = useState({
-        timePeriod: "",
-        worldType: "",
-        specialRules: "",
-        forbiddenTopics: "",
-    });
+    const [worldRules, setWorldRules] = useState(EMPTY_WORLD_RULES);
 
     const [cast, setCast] = useState<CastMember[]>([]);
     const [castSourceTab, setCastSourceTab] = useState<CastSourceTab>("kakoei");
     const [castSearch, setCastSearch] = useState("");
-    const [customCharForm, setCustomCharForm] = useState<CustomCharacterFormState>({
-        name: "",
-        description: "",
-        image: "",
-        personality: "",
-        role: "supporting",
-    });
+    const [customCharForm, setCustomCharForm] = useState<CustomCharacterFormState>(EMPTY_CUSTOM_CHAR_FORM);
     const [creatorCustomCharacters, setCreatorCustomCharacters] = useState<CustomCastCharacter[]>([]);
     const [availableCharacters, setAvailableCharacters] = useState<Character[]>([]);
     const [loadingCharacters, setLoadingCharacters] = useState(false);
@@ -128,6 +298,7 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
 
     const [visibility, setVisibility] = useState<Visibility>("public");
     const [allowUserCharacterCustomization, setAllowUserCharacterCustomization] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     const coverInputRef = useRef<HTMLInputElement>(null);
     const backgroundInputRef = useRef<HTMLInputElement>(null);
@@ -179,6 +350,59 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
         };
     }, [castSearch]);
 
+    useEffect(() => {
+        const parsedStoryData = parseStoryValue(initialData?.storyData || initialData?.story_data) || {};
+
+        if (initialData) {
+            const allowsCustomization = parsedStoryData.allowUserCharacterCustomization === true;
+
+            setStep(1);
+            setTitle(initialData.name || "");
+            setGenre(initialData.genre || parsedStoryData.genre || "");
+            setSynopsis(initialData.synopsis || parsedStoryData.synopsis || "");
+            setTone(parsedStoryData.tone || "");
+            setContentRating(parsedStoryData.contentRating || "");
+            setCoverImage(initialData.image || "");
+            setBackgroundImage(parsedStoryData.backgroundImage || "");
+            setThemeColor(parsedStoryData.themeColor || "#E8E1D5");
+            setWorldRules(parsedStoryData.worldRules || EMPTY_WORLD_RULES);
+            setCast(Array.isArray(parsedStoryData.cast) ? parsedStoryData.cast : []);
+            setCreatorCustomCharacters(Array.isArray(parsedStoryData.creatorCustomCharacters) ? parsedStoryData.creatorCustomCharacters : []);
+            setCastSourceTab("kakoei");
+            setCastSearch("");
+            setCustomCharForm(EMPTY_CUSTOM_CHAR_FORM);
+            setMainCharMode(allowsCustomization ? "customizable" : "fixed");
+            setFixedCharName(parsedStoryData.playerCharacterName || "");
+            setFixedCharDescription(parsedStoryData.playerCharacterDescription || "");
+            setVisibility((parsedStoryData.isPublished || initialData.is_published) ? "public" : "private");
+            setAllowUserCharacterCustomization(allowsCustomization);
+            setIsSaving(false);
+            return;
+        }
+
+        setStep(1);
+        setTitle("");
+        setGenre("");
+        setSynopsis("");
+        setTone("");
+        setContentRating("");
+        setCoverImage("");
+        setBackgroundImage("");
+        setThemeColor("#E8E1D5");
+        setWorldRules(EMPTY_WORLD_RULES);
+        setCast([]);
+        setCastSourceTab("kakoei");
+        setCastSearch("");
+        setCustomCharForm(EMPTY_CUSTOM_CHAR_FORM);
+        setCreatorCustomCharacters([]);
+        setMainCharMode("fixed");
+        setFixedCharName("");
+        setFixedCharDescription("");
+        setVisibility("public");
+        setAllowUserCharacterCustomization(false);
+        setIsSaving(false);
+    }, [initialData]);
+
     const currentStep = STEP_DETAILS[step];
     const stepProgress = Array.from({ length: 5 }, (_, index) => index + 1 as StoryStep);
     const canContinueFromInfo = Boolean(title.trim() && coverImage && genre && synopsis.trim() && contentRating);
@@ -217,11 +441,12 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
         }
     };
 
-    const handleCreate = () => {
-        if (!canCreate) {
+    const handleCreate = async () => {
+        if (!canCreate || isSaving) {
             return;
         }
 
+        setIsSaving(true);
         const hasWorldRules = Object.values(worldRules).some((value) => value.trim().length > 0);
         const storyData: StoryData = {
             synopsis: synopsis.trim(),
@@ -240,8 +465,102 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
             backgroundImage: backgroundImage || undefined,
         };
 
-        const storyId = useChatStore.getState().createStory(title.trim(), coverImage, storyData);
-        onCreated(storyId);
+        const persistedWorldData = parseStoryValue(initialData?.worldData || initialData?.world_data);
+        const storyId = useChatStore.getState().createStory(
+            title.trim(),
+            coverImage,
+            storyData,
+            persistedWorldData,
+            initialData?.id,
+            initialData?.creatorId || initialData?.creator_id
+        );
+        const storyPayload = {
+            id: storyId,
+            name: title.trim(),
+            synopsis: synopsis.trim(),
+            genre,
+            image: coverImage,
+            story_data: storyData,
+            world_data: persistedWorldData || null,
+            is_published: visibility === "public",
+        };
+        const metadataPayload = {
+            conversationId: storyId,
+            conversationType: "story",
+            conversationMetadata: {
+                groupName: title.trim(),
+                groupImage: coverImage,
+                groupMemberIds: null,
+                worldData: persistedWorldData || null,
+                storyData,
+            },
+        };
+
+        try {
+            let response = await fetch("/api/stories", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(storyPayload),
+            });
+
+            if (!response.ok && response.status === 403) {
+                const syncResponse = await fetch("/api/messages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(metadataPayload),
+                });
+
+                if (!syncResponse.ok) {
+                    alert("Failed to sync story metadata.");
+                    return;
+                }
+
+                response = await fetch("/api/stories", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(storyPayload),
+                });
+            }
+
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                alert(data?.error || "Failed to save story.");
+                return;
+            }
+
+            const rawStory = data?.story || {
+                id: storyId,
+                name: title.trim(),
+                synopsis: synopsis.trim(),
+                genre,
+                image: coverImage,
+                creator_id: initialData?.creatorId || initialData?.creator_id,
+                is_published: visibility === "public",
+                story_data: storyData,
+                world_data: persistedWorldData || null,
+            };
+            const normalizedStoryData = parseStoryValue(rawStory.story_data) || storyData;
+
+            onCreated(storyId, {
+                ...rawStory,
+                creatorId: rawStory.creator_id || rawStory.creatorId,
+                synopsis: rawStory.synopsis || normalizedStoryData.synopsis || "",
+                genre: rawStory.genre || normalizedStoryData.genre || "",
+                is_published: Boolean(rawStory.is_published),
+                storyData: {
+                    ...normalizedStoryData,
+                    synopsis: rawStory.synopsis || normalizedStoryData.synopsis || "",
+                    genre: rawStory.genre || normalizedStoryData.genre || "",
+                    isPublished: Boolean(rawStory.is_published),
+                },
+                worldData: parseStoryValue(rawStory.world_data) || persistedWorldData,
+            });
+        } catch (error) {
+            console.error("Failed to save story:", error);
+            alert("Failed to save story.");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const toggleKakoeiCharacter = (character: Character) => {
@@ -303,13 +622,7 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
                 isCustom: true,
             },
         ]);
-        setCustomCharForm({
-            name: "",
-            description: "",
-            image: "",
-            personality: "",
-            role: "supporting",
-        });
+        setCustomCharForm(EMPTY_CUSTOM_CHAR_FORM);
     };
 
     const handleRemoveCastMember = (characterId: string) => {
@@ -323,12 +636,18 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
     };
 
     const headerAction = step === 5
-        ? { label: "Create", onClick: handleCreate, disabled: !canCreate }
+        ? {
+            label: isSaving ? "Saving..." : initialData?.id ? "Save" : "Create",
+            onClick: handleCreate,
+            disabled: !canCreate || isSaving,
+        }
         : {
             label: "Next ->",
             onClick: handleNext,
             disabled: (step === 1 && !canContinueFromInfo) || (step === 4 && !canContinueFromMainCharacter),
         };
+    const canAddCustomCharacter = Boolean(customCharForm.name.trim() && customCharForm.description.trim() && customCharForm.personality.trim());
+    const selectedCastCount = cast.length;
 
     return (
         <motion.div
@@ -763,12 +1082,88 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
                         <>
                             <div
                                 style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "14px",
+                                    padding: "18px",
+                                    borderRadius: "26px",
+                                    background: "linear-gradient(135deg, rgba(74,55,40,0.08), rgba(230,214,190,0.28))",
+                                    border: "1px solid rgba(74,55,40,0.1)",
+                                    boxShadow: "0 18px 38px rgba(74,55,40,0.08)",
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                        justifyContent: "space-between",
+                                        gap: "16px",
+                                        flexWrap: "wrap",
+                                    }}
+                                >
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
+                                        <div
+                                            style={{
+                                                fontSize: "11px",
+                                                fontWeight: 800,
+                                                letterSpacing: "0.08em",
+                                                color: "#8B8680",
+                                            }}
+                                        >
+                                            CAST CURATION
+                                        </div>
+                                        <div style={{ fontSize: "18px", fontWeight: 800, color: "#4A3728", lineHeight: 1.3 }}>
+                                            Build a cast with chemistry, tension, and room to grow.
+                                        </div>
+                                        <div style={{ fontSize: "13px", lineHeight: 1.6, color: "#6E645C", maxWidth: "460px" }}>
+                                            Blend Kakoei favorites with custom originals, then decide who drives the plot,
+                                            who complicates it, and who keeps the world alive.
+                                        </div>
+                                    </div>
+                                    <div
+                                        style={{
+                                            padding: "10px 14px",
+                                            borderRadius: "999px",
+                                            background: "#FFFFFF",
+                                            border: "1px solid rgba(74,55,40,0.1)",
+                                            color: "#4A3728",
+                                            fontSize: "13px",
+                                            fontWeight: 800,
+                                            boxShadow: "0 8px 18px rgba(74,55,40,0.08)",
+                                        }}
+                                    >
+                                        {selectedCastCount} selected
+                                    </div>
+                                </div>
+                                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                                    {["Kakoei picks", "Original creations", "Flexible roles"].map((label) => (
+                                        <div
+                                            key={label}
+                                            style={{
+                                                padding: "8px 12px",
+                                                borderRadius: "999px",
+                                                background: "rgba(255,255,255,0.72)",
+                                                border: "1px solid rgba(74,55,40,0.08)",
+                                                color: "#6E645C",
+                                                fontSize: "12px",
+                                                fontWeight: 700,
+                                            }}
+                                        >
+                                            {label}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div
+                                style={{
                                     display: "grid",
                                     gridTemplateColumns: "1fr 1fr",
                                     gap: "10px",
-                                    background: "rgba(74,55,40,0.05)",
-                                    borderRadius: "18px",
-                                    padding: "6px",
+                                    background: "linear-gradient(180deg, rgba(74,55,40,0.05), rgba(74,55,40,0.02))",
+                                    borderRadius: "22px",
+                                    padding: "8px",
+                                    border: "1px solid rgba(74,55,40,0.08)",
                                 }}
                             >
                                 <button
@@ -776,65 +1171,147 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
                                     onClick={() => setCastSourceTab("kakoei")}
                                     style={{
                                         border: "none",
-                                        borderRadius: "14px",
-                                        padding: "12px 10px",
+                                        borderRadius: "18px",
+                                        padding: "14px 14px 13px",
                                         background: castSourceTab === "kakoei" ? "#4A3728" : "transparent",
                                         color: castSourceTab === "kakoei" ? "#FFFFFF" : "#4A3728",
                                         fontSize: "13px",
                                         fontWeight: 700,
                                         cursor: "pointer",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "flex-start",
+                                        gap: "4px",
+                                        textAlign: "left",
+                                        boxShadow: castSourceTab === "kakoei" ? "0 12px 26px rgba(74,55,40,0.16)" : "none",
                                     }}
                                 >
-                                    Kakoei Characters
+                                    <span>Kakoei Characters</span>
+                                    <span
+                                        style={{
+                                            fontSize: "11px",
+                                            fontWeight: 600,
+                                            color: castSourceTab === "kakoei" ? "rgba(255,255,255,0.76)" : "#8B8680",
+                                        }}
+                                    >
+                                        Pick from the existing roster
+                                    </span>
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setCastSourceTab("custom")}
                                     style={{
                                         border: "none",
-                                        borderRadius: "14px",
-                                        padding: "12px 10px",
+                                        borderRadius: "18px",
+                                        padding: "14px 14px 13px",
                                         background: castSourceTab === "custom" ? "#4A3728" : "transparent",
                                         color: castSourceTab === "custom" ? "#FFFFFF" : "#4A3728",
                                         fontSize: "13px",
                                         fontWeight: 700,
                                         cursor: "pointer",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "flex-start",
+                                        gap: "4px",
+                                        textAlign: "left",
+                                        boxShadow: castSourceTab === "custom" ? "0 12px 26px rgba(74,55,40,0.16)" : "none",
                                     }}
                                 >
-                                    Custom Character
+                                    <span>Custom Character</span>
+                                    <span
+                                        style={{
+                                            fontSize: "11px",
+                                            fontWeight: 600,
+                                            color: castSourceTab === "custom" ? "rgba(255,255,255,0.76)" : "#8B8680",
+                                        }}
+                                    >
+                                        Create someone new for this story
+                                    </span>
                                 </button>
                             </div>
 
                             {castSourceTab === "kakoei" && (
                                 <>
-                                    <input
-                                        type="text"
-                                        value={castSearch}
-                                        onChange={(event) => setCastSearch(event.target.value)}
-                                        placeholder="Search Kakoei characters..."
-                                        style={{
-                                            width: "100%",
-                                            padding: "16px 20px",
-                                            borderRadius: "20px",
-                                            border: "none",
-                                            outline: "none",
-                                            fontSize: "15px",
-                                            color: "#4A3728",
-                                            background: "rgba(74,55,40,0.04)",
-                                            transition: "background 0.2s ease",
-                                        }}
-                                    />
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                                        <div
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "space-between",
+                                                gap: "12px",
+                                                flexWrap: "wrap",
+                                            }}
+                                        >
+                                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                                <div style={{ fontSize: "12px", fontWeight: 800, color: "#8B8680" }}>
+                                                    DISCOVER CHARACTERS
+                                                </div>
+                                                <div style={{ fontSize: "13px", color: "#6E645C", lineHeight: 1.5 }}>
+                                                    Tap a card to add it, then decide what role it plays in the story.
+                                                </div>
+                                            </div>
+                                            <div
+                                                style={{
+                                                    padding: "8px 12px",
+                                                    borderRadius: "999px",
+                                                    background: "#FFFFFF",
+                                                    border: "1px solid rgba(74,55,40,0.08)",
+                                                    color: "#6E645C",
+                                                    fontSize: "12px",
+                                                    fontWeight: 700,
+                                                }}
+                                            >
+                                                {loadingCharacters ? "Loading..." : `${availableCharacters.length} available`}
+                                            </div>
+                                        </div>
 
-                                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                                        <div style={{ position: "relative" }}>
+                                            <div
+                                                style={{
+                                                    position: "absolute",
+                                                    top: "50%",
+                                                    left: "18px",
+                                                    transform: "translateY(-50%)",
+                                                    color: "#A1978E",
+                                                    pointerEvents: "none",
+                                                }}
+                                            >
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                                    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                                                    <path d="M20 20L17 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                                </svg>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={castSearch}
+                                                onChange={(event) => setCastSearch(event.target.value)}
+                                                placeholder="Search Kakoei characters..."
+                                                style={{
+                                                    width: "100%",
+                                                    padding: "16px 18px 16px 46px",
+                                                    borderRadius: "20px",
+                                                    border: "1px solid rgba(74,55,40,0.08)",
+                                                    outline: "none",
+                                                    fontSize: "15px",
+                                                    color: "#4A3728",
+                                                    background: "#FFFFFF",
+                                                    boxShadow: "0 10px 24px rgba(74,55,40,0.05)",
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                                         {loadingCharacters && (
                                             <div
                                                 style={{
-                                                    padding: "18px",
-                                                    borderRadius: "18px",
+                                                    padding: "22px",
+                                                    borderRadius: "22px",
                                                     background: "rgba(74,55,40,0.04)",
                                                     color: "#8B8680",
                                                     textAlign: "center",
                                                     fontSize: "14px",
+                                                    border: "1px solid rgba(74,55,40,0.06)",
                                                 }}
                                             >
                                                 Loading characters...
@@ -844,12 +1321,13 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
                                         {!loadingCharacters && availableCharacters.length === 0 && (
                                             <div
                                                 style={{
-                                                    padding: "18px",
-                                                    borderRadius: "18px",
+                                                    padding: "22px",
+                                                    borderRadius: "22px",
                                                     background: "rgba(74,55,40,0.04)",
                                                     color: "#8B8680",
                                                     textAlign: "center",
                                                     fontSize: "14px",
+                                                    border: "1px solid rgba(74,55,40,0.06)",
                                                 }}
                                             >
                                                 No characters matched your search.
@@ -859,6 +1337,9 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
                                         {availableCharacters.map((character) => {
                                             const selectedMember = cast.find((member) => member.characterId === character.id);
                                             const isSelected = Boolean(selectedMember);
+                                            const currentRole = selectedMember?.role || "main-npc";
+                                            const roleStyle = ROLE_STYLES[currentRole];
+                                            const personalityPreview = summarizePersonality(character.personality);
 
                                             return (
                                                 <div
@@ -866,81 +1347,164 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
                                                     onClick={() => toggleKakoeiCharacter(character)}
                                                     style={{
                                                         display: "flex",
-                                                        alignItems: "center",
+                                                        flexDirection: "column",
                                                         gap: "12px",
-                                                        padding: "12px",
-                                                        borderRadius: "18px",
-                                                        background: isSelected ? "rgba(74,55,40,0.08)" : "#FFFFFF",
-                                                        border: isSelected ? "1px solid rgba(74,55,40,0.18)" : "1px solid rgba(74,55,40,0.08)",
+                                                        padding: "14px",
+                                                        borderRadius: "24px",
+                                                        background: isSelected
+                                                            ? "linear-gradient(180deg, rgba(74,55,40,0.09), rgba(255,255,255,0.95))"
+                                                            : "#FFFFFF",
+                                                        border: isSelected
+                                                            ? "1px solid rgba(74,55,40,0.16)"
+                                                            : "1px solid rgba(74,55,40,0.08)",
+                                                        boxShadow: isSelected
+                                                            ? "0 14px 32px rgba(74,55,40,0.1)"
+                                                            : "0 8px 22px rgba(74,55,40,0.05)",
                                                         cursor: "pointer",
                                                     }}
                                                 >
-                                                    <img
-                                                        src={character.image}
-                                                        alt={character.name}
-                                                        style={{
-                                                            width: "48px",
-                                                            height: "48px",
-                                                            borderRadius: "50%",
-                                                            objectFit: "cover",
-                                                            flexShrink: 0,
-                                                        }}
-                                                    />
-                                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                                        <div style={{ fontSize: "15px", fontWeight: 700, color: "#4A3728" }}>
-                                                            {character.name}
+                                                    <div style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
+                                                        <div style={{ position: "relative", flexShrink: 0 }}>
+                                                            <img
+                                                                src={character.image}
+                                                                alt={character.name}
+                                                                style={{
+                                                                    width: "64px",
+                                                                    height: "64px",
+                                                                    borderRadius: "20px",
+                                                                    objectFit: "cover",
+                                                                    display: "block",
+                                                                }}
+                                                            />
+                                                            <div
+                                                                style={{
+                                                                    position: "absolute",
+                                                                    right: "-4px",
+                                                                    bottom: "-4px",
+                                                                    width: "26px",
+                                                                    height: "26px",
+                                                                    borderRadius: "50%",
+                                                                    background: isSelected ? "#4A3728" : "#FFF8EE",
+                                                                    border: isSelected
+                                                                        ? "2px solid #FFFDF5"
+                                                                        : "1px solid rgba(74,55,40,0.12)",
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    justifyContent: "center",
+                                                                    boxShadow: "0 6px 14px rgba(74,55,40,0.12)",
+                                                                }}
+                                                            >
+                                                                {isSelected ? (
+                                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                                                        <path
+                                                                            d="M20 6L9 17L4 12"
+                                                                            stroke="#FFFFFF"
+                                                                            strokeWidth="3"
+                                                                            strokeLinecap="round"
+                                                                            strokeLinejoin="round"
+                                                                        />
+                                                                    </svg>
+                                                                ) : (
+                                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                                                        <path
+                                                                            d="M12 5V19"
+                                                                            stroke="#4A3728"
+                                                                            strokeWidth="2.4"
+                                                                            strokeLinecap="round"
+                                                                        />
+                                                                        <path
+                                                                            d="M5 12H19"
+                                                                            stroke="#4A3728"
+                                                                            strokeWidth="2.4"
+                                                                            strokeLinecap="round"
+                                                                        />
+                                                                    </svg>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        <div
-                                                            style={{
-                                                                fontSize: "12px",
-                                                                color: "#8B8680",
-                                                                whiteSpace: "nowrap",
-                                                                overflow: "hidden",
-                                                                textOverflow: "ellipsis",
-                                                            }}
-                                                        >
-                                                            {`${character.tag} | ${character.personality.split(",")[0]?.trim() || "Character"}`}
+
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div
+                                                                style={{
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    gap: "8px",
+                                                                    flexWrap: "wrap",
+                                                                }}
+                                                            >
+                                                                <div style={{ fontSize: "16px", fontWeight: 800, color: "#4A3728" }}>
+                                                                    {character.name}
+                                                                </div>
+                                                                <span
+                                                                    style={{
+                                                                        padding: "5px 9px",
+                                                                        borderRadius: "999px",
+                                                                        background: isSelected ? roleStyle.background : "rgba(74,55,40,0.06)",
+                                                                        border: isSelected ? roleStyle.border : "1px solid rgba(74,55,40,0.08)",
+                                                                        color: isSelected ? roleStyle.color : "#6E645C",
+                                                                        fontSize: "11px",
+                                                                        fontWeight: 800,
+                                                                    }}
+                                                                >
+                                                                    {isSelected ? getRoleLabel(currentRole) : character.tag || "Kakoei"}
+                                                                </span>
+                                                            </div>
+                                                            <div
+                                                                style={{
+                                                                    marginTop: "6px",
+                                                                    fontSize: "12px",
+                                                                    color: "#8B8680",
+                                                                }}
+                                                            >
+                                                                {personalityPreview || "Character profile available"}
+                                                            </div>
+                                                            <div
+                                                                style={{
+                                                                    marginTop: "9px",
+                                                                    fontSize: "13px",
+                                                                    color: "#6E645C",
+                                                                    lineHeight: 1.55,
+                                                                    maxHeight: "3.2em",
+                                                                    overflow: "hidden",
+                                                                }}
+                                                            >
+                                                                {character.description}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <select
-                                                        value={selectedMember?.role || "main-npc"}
-                                                        onChange={(event) => updateCastRole(character.id, event.target.value as CastRole)}
-                                                        onClick={(event) => event.stopPropagation()}
-                                                        disabled={!isSelected}
-                                                        style={{
-                                                            borderRadius: "12px",
-                                                            border: "1px solid rgba(74,55,40,0.12)",
-                                                            padding: "8px 10px",
-                                                            background: isSelected ? "#FFF8EE" : "#F7F4EE",
-                                                            color: "#4A3728",
-                                                            fontSize: "12px",
-                                                            fontWeight: 600,
-                                                            cursor: isSelected ? "pointer" : "not-allowed",
-                                                        }}
-                                                    >
-                                                        {ROLE_OPTIONS.map((option) => (
-                                                            <option key={option.value} value={option.value}>
-                                                                {option.label}
-                                                            </option>
-                                                        ))}
-                                                    </select>
                                                     <div
                                                         style={{
-                                                            width: "24px",
-                                                            height: "24px",
-                                                            borderRadius: "50%",
-                                                            background: isSelected ? "#4A3728" : "transparent",
-                                                            border: isSelected ? "none" : "2px solid rgba(74,55,40,0.18)",
                                                             display: "flex",
-                                                            alignItems: "center",
-                                                            justifyContent: "center",
-                                                            flexShrink: 0,
+                                                            flexDirection: "column",
+                                                            gap: "12px",
+                                                            paddingTop: "12px",
+                                                            borderTop: "1px solid rgba(74,55,40,0.08)",
                                                         }}
                                                     >
-                                                        {isSelected && (
-                                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                                                                <path d="M20 6L9 17L4 12" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
+                                                        <div style={{ fontSize: "12px", color: "#8B8680", fontWeight: 600 }}>
+                                                            {isSelected ? "Choose how they influence the story." : "Add first, then assign a role."}
+                                                        </div>
+                                                        {isSelected ? (
+                                                            <RoleSelector
+                                                                value={currentRole}
+                                                                onChange={(role) => updateCastRole(character.id, role)}
+                                                                compact
+                                                                stopPropagation
+                                                            />
+                                                        ) : (
+                                                            <div
+                                                                style={{
+                                                                    padding: "11px 12px",
+                                                                    borderRadius: "16px",
+                                                                    background: "rgba(74,55,40,0.04)",
+                                                                    border: "1px dashed rgba(74,55,40,0.12)",
+                                                                    color: "#8B8680",
+                                                                    fontSize: "12px",
+                                                                    fontWeight: 700,
+                                                                }}
+                                                            >
+                                                                Role options unlock after the character is added.
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -955,14 +1519,55 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
                                     style={{
                                         display: "flex",
                                         flexDirection: "column",
-                                        gap: "14px",
-                                        padding: "16px",
-                                        borderRadius: "22px",
-                                        background: "rgba(74,55,40,0.04)",
+                                        gap: "18px",
+                                        padding: "20px",
+                                        borderRadius: "28px",
+                                        background: "linear-gradient(180deg, rgba(74,55,40,0.06), rgba(255,255,255,0.92))",
                                         border: "1px solid rgba(74,55,40,0.08)",
+                                        boxShadow: "0 14px 34px rgba(74,55,40,0.07)",
                                     }}
                                 >
-                                    <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: "14px" }}>
+                                    <div
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "flex-start",
+                                            justifyContent: "space-between",
+                                            gap: "12px",
+                                            flexWrap: "wrap",
+                                        }}
+                                    >
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: 0 }}>
+                                            <div style={{ fontSize: "12px", fontWeight: 800, color: "#8B8680" }}>
+                                                CHARACTER COMPOSER
+                                            </div>
+                                            <div style={{ fontSize: "18px", fontWeight: 800, color: "#4A3728", lineHeight: 1.3 }}>
+                                                Design someone the story can orbit around.
+                                            </div>
+                                            <div style={{ fontSize: "13px", color: "#6E645C", lineHeight: 1.6, maxWidth: "430px" }}>
+                                                Give them a portrait, a role, and enough personality for the plot to react to.
+                                            </div>
+                                        </div>
+                                        <div
+                                            style={{
+                                                ...ROLE_STYLES[customCharForm.role],
+                                                padding: "8px 12px",
+                                                borderRadius: "999px",
+                                                fontSize: "12px",
+                                                fontWeight: 800,
+                                            }}
+                                        >
+                                            {getRoleLabel(customCharForm.role)}
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        style={{
+                                            display: "grid",
+                                            gridTemplateColumns: "110px minmax(0, 1fr)",
+                                            gap: "16px",
+                                            alignItems: "start",
+                                        }}
+                                    >
                                         <input
                                             ref={customCharImageInputRef}
                                             type="file"
@@ -978,200 +1583,445 @@ export default function StoryCreateModal({ onClose, onCreated }: StoryCreateModa
                                             type="button"
                                             onClick={() => customCharImageInputRef.current?.click()}
                                             style={{
-                                                width: "96px",
-                                                height: "120px",
-                                                borderRadius: "18px",
+                                                width: "110px",
+                                                height: "146px",
+                                                borderRadius: "22px",
                                                 border: customCharForm.image ? "none" : "2px dashed rgba(74,55,40,0.18)",
                                                 background: customCharForm.image
                                                     ? `center / cover no-repeat url(${customCharForm.image})`
-                                                    : "linear-gradient(135deg, #F7F0E4, #EED6BA)",
+                                                    : "linear-gradient(145deg, #F7F0E4, #E7C9A3)",
                                                 color: "#4A3728",
-                                                fontSize: "12px",
-                                                fontWeight: 700,
                                                 cursor: "pointer",
+                                                position: "relative",
+                                                overflow: "hidden",
+                                                boxShadow: "0 12px 24px rgba(74,55,40,0.08)",
                                             }}
                                         >
-                                            {!customCharForm.image && "Upload image"}
+                                            {customCharForm.image ? (
+                                                <div
+                                                    style={{
+                                                        position: "absolute",
+                                                        left: "10px",
+                                                        right: "10px",
+                                                        bottom: "10px",
+                                                        padding: "8px 10px",
+                                                        borderRadius: "14px",
+                                                        background: "rgba(20,16,12,0.56)",
+                                                        color: "#FFFFFF",
+                                                        fontSize: "11px",
+                                                        fontWeight: 800,
+                                                        textAlign: "center",
+                                                    }}
+                                                >
+                                                    Change portrait
+                                                </div>
+                                            ) : (
+                                                <div
+                                                    style={{
+                                                        height: "100%",
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        gap: "8px",
+                                                        padding: "12px",
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            width: "34px",
+                                                            height: "34px",
+                                                            borderRadius: "50%",
+                                                            background: "rgba(255,255,255,0.65)",
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            justifyContent: "center",
+                                                            fontSize: "22px",
+                                                            fontWeight: 400,
+                                                            lineHeight: 1,
+                                                        }}
+                                                    >
+                                                        +
+                                                    </div>
+                                                    <div style={{ fontSize: "12px", fontWeight: 800 }}>Upload portrait</div>
+                                                    <div style={{ fontSize: "11px", color: "#6E645C", lineHeight: 1.4 }}>
+                                                        PNG, JPG, or anything that fits their energy.
+                                                    </div>
+                                                </div>
+                                            )}
                                         </button>
 
                                         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                            <input
-                                                type="text"
-                                                value={customCharForm.name}
-                                                onChange={(event) =>
-                                                    setCustomCharForm((current) => ({ ...current, name: event.target.value }))
-                                                }
-                                                placeholder="Character name"
-                                                style={{
-                                                    width: "100%",
-                                                    padding: "16px 20px",
-                                                    borderRadius: "18px",
-                                                    border: "none",
-                                                    outline: "none",
-                                                    fontSize: "14px",
-                                                    color: "#4A3728",
-                                                    background: "rgba(74,55,40,0.04)",
-                                                }}
-                                            />
-                                            <select
-                                                value={customCharForm.role}
-                                                onChange={(event) =>
-                                                    setCustomCharForm((current) => ({ ...current, role: event.target.value as CastRole }))
-                                                }
-                                                style={{
-                                                    width: "100%",
-                                                    padding: "16px 20px",
-                                                    borderRadius: "18px",
-                                                    border: "none",
-                                                    outline: "none",
-                                                    fontSize: "14px",
-                                                    color: "#4A3728",
-                                                    background: "rgba(74,55,40,0.04)",
-                                                }}
-                                            >
-                                                {ROLE_OPTIONS.map((option) => (
-                                                    <option key={option.value} value={option.value}>
-                                                        {option.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <input
-                                                type="text"
-                                                value={customCharForm.personality}
-                                                onChange={(event) =>
-                                                    setCustomCharForm((current) => ({ ...current, personality: event.target.value }))
-                                                }
-                                                placeholder="Personality"
-                                                style={{
-                                                    width: "100%",
-                                                    padding: "16px 20px",
-                                                    borderRadius: "18px",
-                                                    border: "none",
-                                                    outline: "none",
-                                                    fontSize: "14px",
-                                                    color: "#4A3728",
-                                                    background: "rgba(74,55,40,0.04)",
-                                                }}
-                                            />
+                                            <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                <span style={{ fontSize: "11px", fontWeight: 800, color: "#8B8680" }}>NAME</span>
+                                                <input
+                                                    type="text"
+                                                    value={customCharForm.name}
+                                                    onChange={(event) =>
+                                                        setCustomCharForm((current) => ({ ...current, name: event.target.value }))
+                                                    }
+                                                    placeholder="Character name"
+                                                    style={{
+                                                        width: "100%",
+                                                        padding: "15px 18px",
+                                                        borderRadius: "18px",
+                                                        border: "1px solid rgba(74,55,40,0.08)",
+                                                        outline: "none",
+                                                        fontSize: "14px",
+                                                        color: "#4A3728",
+                                                        background: "#FFFFFF",
+                                                    }}
+                                                />
+                                            </label>
+                                            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                                <span style={{ fontSize: "11px", fontWeight: 800, color: "#8B8680" }}>STORY ROLE</span>
+                                                <RoleSelector
+                                                    value={customCharForm.role}
+                                                    onChange={(role) => setCustomCharForm((current) => ({ ...current, role }))}
+                                                />
+                                            </div>
+                                            <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                                <span style={{ fontSize: "11px", fontWeight: 800, color: "#8B8680" }}>PERSONALITY NOTES</span>
+                                                <input
+                                                    type="text"
+                                                    value={customCharForm.personality}
+                                                    onChange={(event) =>
+                                                        setCustomCharForm((current) => ({ ...current, personality: event.target.value }))
+                                                    }
+                                                    placeholder="Calm strategist, reckless charmer..."
+                                                    style={{
+                                                        width: "100%",
+                                                        padding: "15px 18px",
+                                                        borderRadius: "18px",
+                                                        border: "1px solid rgba(74,55,40,0.08)",
+                                                        outline: "none",
+                                                        fontSize: "14px",
+                                                        color: "#4A3728",
+                                                        background: "#FFFFFF",
+                                                    }}
+                                                />
+                                            </label>
                                         </div>
                                     </div>
 
-                                    <textarea
-                                        value={customCharForm.description}
-                                        onChange={(event) =>
-                                            setCustomCharForm((current) => ({ ...current, description: event.target.value }))
-                                        }
-                                        placeholder="Description, role in the story, and the energy they bring"
-                                        style={{
-                                            width: "100%",
-                                            minHeight: "120px",
-                                            padding: "16px 20px",
-                                            borderRadius: "20px",
-                                            border: "none",
-                                            outline: "none",
-                                            resize: "vertical",
-                                            fontSize: "15px",
-                                            color: "#4A3728",
-                                            background: "rgba(74,55,40,0.04)",
-                                        }}
-                                    />
+                                    <label style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                        <span style={{ fontSize: "11px", fontWeight: 800, color: "#8B8680" }}>DESCRIPTION</span>
+                                        <textarea
+                                            value={customCharForm.description}
+                                            onChange={(event) =>
+                                                setCustomCharForm((current) => ({ ...current, description: event.target.value }))
+                                            }
+                                            placeholder="Description, role in the story, and the energy they bring"
+                                            style={{
+                                                width: "100%",
+                                                minHeight: "130px",
+                                                padding: "16px 18px",
+                                                borderRadius: "20px",
+                                                border: "1px solid rgba(74,55,40,0.08)",
+                                                outline: "none",
+                                                resize: "vertical",
+                                                fontSize: "15px",
+                                                color: "#4A3728",
+                                                background: "#FFFFFF",
+                                            }}
+                                        />
+                                    </label>
 
-                                    <button
-                                        type="button"
-                                        onClick={handleAddCustomCharacter}
-                                        disabled={!customCharForm.name.trim() || !customCharForm.description.trim() || !customCharForm.personality.trim()}
+                                    <div
                                         style={{
-                                            border: "none",
-                                            borderRadius: "16px",
-                                            background:
-                                                customCharForm.name.trim() && customCharForm.description.trim() && customCharForm.personality.trim()
-                                                    ? "#4A3728"
-                                                    : "rgba(74,55,40,0.18)",
-                                            color: "#FFFFFF",
-                                            padding: "14px 16px",
-                                            fontSize: "14px",
-                                            fontWeight: 700,
-                                            cursor:
-                                                customCharForm.name.trim() && customCharForm.description.trim() && customCharForm.personality.trim()
-                                                    ? "pointer"
-                                                    : "not-allowed",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            gap: "12px",
+                                            flexWrap: "wrap",
                                         }}
                                     >
-                                        Add Character
-                                    </button>
+                                        <div style={{ fontSize: "12px", color: "#8B8680", fontWeight: 600 }}>
+                                            {canAddCustomCharacter
+                                                ? "Ready to join the cast."
+                                                : "Name, personality, and description are required."}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleAddCustomCharacter}
+                                            disabled={!canAddCustomCharacter}
+                                            style={{
+                                                border: "none",
+                                                borderRadius: "18px",
+                                                background: canAddCustomCharacter ? "#4A3728" : "rgba(74,55,40,0.18)",
+                                                color: "#FFFFFF",
+                                                padding: "14px 18px",
+                                                fontSize: "14px",
+                                                fontWeight: 800,
+                                                cursor: canAddCustomCharacter ? "pointer" : "not-allowed",
+                                                boxShadow: canAddCustomCharacter ? "0 14px 28px rgba(74,55,40,0.16)" : "none",
+                                            }}
+                                        >
+                                            {canAddCustomCharacter ? "Add to Cast" : "Complete Character"}
+                                        </button>
+                                    </div>
                                 </div>
                             )}
 
-                            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                                <div style={{ fontSize: "12px", fontWeight: 700, color: "#8B8680" }}>
-                                    SELECTED CAST {cast.length > 0 ? `(${cast.length})` : ""}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        gap: "12px",
+                                        flexWrap: "wrap",
+                                    }}
+                                >
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                        <div style={{ fontSize: "12px", fontWeight: 800, color: "#8B8680" }}>
+                                            SELECTED CAST {selectedCastCount > 0 ? `(${selectedCastCount})` : ""}
+                                        </div>
+                                        <div style={{ fontSize: "13px", color: "#6E645C", lineHeight: 1.5 }}>
+                                            {selectedCastCount === 0
+                                                ? "Start picking characters to give the story its social gravity."
+                                                : "Refine each character's role before you continue."}
+                                        </div>
+                                    </div>
+                                    {selectedCastCount > 0 && (
+                                        <div
+                                            style={{
+                                                padding: "8px 12px",
+                                                borderRadius: "999px",
+                                                background: "#FFFFFF",
+                                                border: "1px solid rgba(74,55,40,0.08)",
+                                                color: "#4A3728",
+                                                fontSize: "12px",
+                                                fontWeight: 800,
+                                            }}
+                                        >
+                                            {selectedCastCount} ready
+                                        </div>
+                                    )}
                                 </div>
-                                {cast.length === 0 ? (
+                                {selectedCastCount === 0 ? (
                                     <div
                                         style={{
-                                            padding: "16px",
-                                            borderRadius: "18px",
-                                            background: "rgba(74,55,40,0.04)",
-                                            color: "#8B8680",
-                                            fontSize: "14px",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "14px",
+                                            padding: "18px",
+                                            borderRadius: "24px",
+                                            background: "linear-gradient(180deg, rgba(74,55,40,0.04), rgba(255,255,255,0.96))",
+                                            border: "1px solid rgba(74,55,40,0.08)",
                                         }}
                                     >
-                                        Add Kakoei characters or create custom ones to build your cast.
+                                        <div
+                                            style={{
+                                                width: "48px",
+                                                height: "48px",
+                                                borderRadius: "18px",
+                                                background: "rgba(74,55,40,0.08)",
+                                                color: "#4A3728",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                flexShrink: 0,
+                                            }}
+                                        >
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                                <path
+                                                    d="M9 11C10.6569 11 12 9.65685 12 8C12 6.34315 10.6569 5 9 5C7.34315 5 6 6.34315 6 8C6 9.65685 7.34315 11 9 11Z"
+                                                    stroke="currentColor"
+                                                    strokeWidth="1.8"
+                                                />
+                                                <path
+                                                    d="M15 13C16.1046 13 17 12.1046 17 11C17 9.89543 16.1046 9 15 9C13.8954 9 13 9.89543 13 11C13 12.1046 13.8954 13 15 13Z"
+                                                    stroke="currentColor"
+                                                    strokeWidth="1.8"
+                                                />
+                                                <path
+                                                    d="M3 18C3 15.7909 5.23858 14 8 14H10C12.7614 14 15 15.7909 15 18"
+                                                    stroke="currentColor"
+                                                    strokeWidth="1.8"
+                                                    strokeLinecap="round"
+                                                />
+                                                <path
+                                                    d="M13 18C13.1475 16.9987 14.2143 16 15.5 16H16.5C17.8807 16 19 17.1193 19 18.5"
+                                                    stroke="currentColor"
+                                                    strokeWidth="1.8"
+                                                    strokeLinecap="round"
+                                                />
+                                            </svg>
+                                        </div>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                                            <div style={{ fontSize: "15px", fontWeight: 800, color: "#4A3728" }}>
+                                                Your cast board is empty
+                                            </div>
+                                            <div style={{ fontSize: "13px", color: "#8B8680", lineHeight: 1.6 }}>
+                                                Add Kakoei characters or create custom ones to build a mix of allies,
+                                                mentors, rivals, and scene-stealers.
+                                            </div>
+                                        </div>
                                     </div>
                                 ) : (
-                                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                                        {cast.map((member) => (
-                                            <div
-                                                key={member.characterId}
-                                                style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: "8px",
-                                                    padding: "8px 10px",
-                                                    borderRadius: "18px",
-                                                    background: "#FFFFFF",
-                                                    border: "1px solid rgba(74,55,40,0.1)",
-                                                }}
-                                            >
-                                                <span style={{ fontSize: "13px", fontWeight: 700, color: "#4A3728" }}>
-                                                    {member.name}
-                                                </span>
-                                                <select
-                                                    value={member.role}
-                                                    onChange={(event) => updateCastRole(member.characterId, event.target.value as CastRole)}
+                                    <div
+                                        style={{
+                                            display: "grid",
+                                            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                                            gap: "12px",
+                                        }}
+                                    >
+                                        {cast.map((member) => {
+                                            const roleStyle = ROLE_STYLES[member.role];
+                                            const personalityPreview = summarizePersonality(member.personality);
+
+                                            return (
+                                                <div
+                                                    key={member.characterId}
                                                     style={{
-                                                        borderRadius: "10px",
-                                                        border: "1px solid rgba(74,55,40,0.12)",
-                                                        padding: "6px 8px",
-                                                        background: "#FFF8EE",
-                                                        color: "#4A3728",
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        cursor: "pointer",
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        gap: "14px",
+                                                        padding: "14px",
+                                                        borderRadius: "24px",
+                                                        background: "#FFFFFF",
+                                                        border: "1px solid rgba(74,55,40,0.08)",
+                                                        boxShadow: "0 12px 28px rgba(74,55,40,0.06)",
                                                     }}
                                                 >
-                                                    {ROLE_OPTIONS.map((option) => (
-                                                        <option key={option.value} value={option.value}>
-                                                            {option.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleRemoveCastMember(member.characterId)}
-                                                    style={{
-                                                        border: "none",
-                                                        background: "transparent",
-                                                        color: "#8B8680",
-                                                        cursor: "pointer",
-                                                        fontSize: "14px",
-                                                        lineHeight: 1,
-                                                    }}
-                                                >
-                                                    x
-                                                </button>
-                                            </div>
-                                        ))}
+                                                    <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                                                        {member.image ? (
+                                                            <img
+                                                                src={member.image}
+                                                                alt={member.name}
+                                                                style={{
+                                                                    width: "56px",
+                                                                    height: "56px",
+                                                                    borderRadius: "18px",
+                                                                    objectFit: "cover",
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <div
+                                                                style={{
+                                                                    width: "56px",
+                                                                    height: "56px",
+                                                                    borderRadius: "18px",
+                                                                    background: "linear-gradient(145deg, #F4E6D2, #DFC19A)",
+                                                                    color: "#4A3728",
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    justifyContent: "center",
+                                                                    fontSize: "18px",
+                                                                    fontWeight: 800,
+                                                                    flexShrink: 0,
+                                                                }}
+                                                            >
+                                                                {getInitials(member.name)}
+                                                            </div>
+                                                        )}
+
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ fontSize: "15px", fontWeight: 800, color: "#4A3728" }}>
+                                                                {member.name}
+                                                            </div>
+                                                            <div
+                                                                style={{
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    gap: "8px",
+                                                                    flexWrap: "wrap",
+                                                                    marginTop: "8px",
+                                                                }}
+                                                            >
+                                                                <span
+                                                                    style={{
+                                                                        padding: "5px 9px",
+                                                                        borderRadius: "999px",
+                                                                        background: "rgba(74,55,40,0.05)",
+                                                                        border: "1px solid rgba(74,55,40,0.08)",
+                                                                        color: "#6E645C",
+                                                                        fontSize: "11px",
+                                                                        fontWeight: 800,
+                                                                    }}
+                                                                >
+                                                                    {member.isCustom ? "Original creation" : "From Kakoei"}
+                                                                </span>
+                                                                <span
+                                                                    style={{
+                                                                        ...roleStyle,
+                                                                        padding: "5px 9px",
+                                                                        borderRadius: "999px",
+                                                                        fontSize: "11px",
+                                                                        fontWeight: 800,
+                                                                    }}
+                                                                >
+                                                                    {getRoleLabel(member.role)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveCastMember(member.characterId)}
+                                                            style={{
+                                                                width: "32px",
+                                                                height: "32px",
+                                                                borderRadius: "50%",
+                                                                border: "none",
+                                                                background: "rgba(74,55,40,0.06)",
+                                                                color: "#8B8680",
+                                                                cursor: "pointer",
+                                                                flexShrink: 0,
+                                                                display: "flex",
+                                                                alignItems: "center",
+                                                                justifyContent: "center",
+                                                            }}
+                                                        >
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                                                <path
+                                                                    d="M6 6L18 18"
+                                                                    stroke="currentColor"
+                                                                    strokeWidth="2.4"
+                                                                    strokeLinecap="round"
+                                                                />
+                                                                <path
+                                                                    d="M18 6L6 18"
+                                                                    stroke="currentColor"
+                                                                    strokeWidth="2.4"
+                                                                    strokeLinecap="round"
+                                                                />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+
+                                                    <div
+                                                        style={{
+                                                            fontSize: "13px",
+                                                            color: "#6E645C",
+                                                            lineHeight: 1.6,
+                                                            maxHeight: "4.8em",
+                                                            overflow: "hidden",
+                                                        }}
+                                                    >
+                                                        {member.description}
+                                                    </div>
+
+                                                    <div
+                                                        style={{
+                                                            fontSize: "12px",
+                                                            color: "#8B8680",
+                                                            fontWeight: 600,
+                                                        }}
+                                                    >
+                                                        {personalityPreview || "No personality notes yet."}
+                                                    </div>
+
+                                                    <RoleSelector
+                                                        value={member.role}
+                                                        onChange={(role) => updateCastRole(member.characterId, role)}
+                                                        compact
+                                                    />
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>

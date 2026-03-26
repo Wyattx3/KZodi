@@ -237,8 +237,13 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
         };
 
         try {
-            const res = await fetch("/api/characters", {
-                method: "POST",
+            const editId = initialData?.id;
+            const isEditing = Boolean(editId);
+            const endpoint = editId ? `/api/characters/${editId}` : "/api/characters";
+            const method = isEditing ? "PUT" : "POST";
+
+            const res = await fetch(endpoint, {
+                method,
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(characterData)
             });
@@ -247,11 +252,12 @@ export default function CreateCharacterForm({ onSuccess, initialData }: CreateCh
                 const data = await res.json();
                 if (onSuccess) onSuccess(data.character || characterData);
             } else {
-                console.error("Failed to create character");
-                alert("Failed to save character to database.");
+                const data = await res.json().catch(() => ({}));
+                console.error(`Failed to ${isEditing ? "update" : "create"} character`, data);
+                alert(data.error || "Failed to save character to database.");
             }
         } catch (error) {
-            console.error("Error creating character:", error);
+            console.error(`Error ${initialData?.id ? "updating" : "creating"} character:`, error);
             alert("An error occurred while saving the character.");
         }
     };

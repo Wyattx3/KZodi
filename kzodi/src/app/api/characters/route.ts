@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { pool, ensureSchema } from "@/lib/db";
 import { auth } from "@/auth";
 import valkey from "@/lib/redis";
 
@@ -25,18 +25,22 @@ export async function GET(req: NextRequest) {
         // Count query for total
         let countStr = `SELECT COUNT(*) FROM characters c `;
 
-        let params: any[] = [null]; // Placeholder for user ID (can be null if not logged in)
+        const session = await auth();
+        const userId = session?.user && (session.user as any).id ? (session.user as any).id : null;
+        let params: any[] = [userId]; // $1 is always reserved for the user-like subquery
         let countParams: any[] = [];
         let paramCount = 2; // Since $1 is user_id
         let countParamCount = 1;
 
-        const session = await auth();
-        const userId = session?.user && (session.user as any).id ? (session.user as any).id : null;
-        params[0] = userId;
+        if (mine && !userId) {
+            return NextResponse.json({ characters: [], total: 0, hasMore: false, offset: 0 });
+        }
 
         // If mine=true, only show characters created by the logged-in user (any visibility)
         if (mine) {
-            queryStr += ` WHERE c.creator_id = $1`;
+            queryStr += ` WHERE c.creator_id = CAST($${paramCount} AS VARCHAR) /* $2 = creator_id filter */`;
+            params.push(userId);
+            paramCount++;
             countStr += ` WHERE c.creator_id = $${countParamCount}`;
             countParams.push(userId);
             countParamCount++;
@@ -152,6 +156,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        await ensureSchema();
+
         const body = await req.json();
 
         const {
@@ -164,36 +170,48 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
+        const existing = await pool.query(
+            `SELECT creator_id FROM characters WHERE id = $1`,
+            [id]
+        );
+
+        if (existing.rows.length > 0) {
+            return NextResponse.json(
+                { error: "Character already exists. Use PUT /api/characters/[id] to update it." },
+                { status: 409 }
+            );
+        }
+
         await pool.query(`
             INSERT INTO characters (
                 id, name, nickname, tag, tags, description, long_description, scenario, example_dialogue,
                 image, greeting, personality, visibility, source, zodiac_sign, birthday, creator_id
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
-            ) ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                nickname = EXCLUDED.nickname,
-                tag = EXCLUDED.tag,
-                tags = EXCLUDED.tags,
-                description = EXCLUDED.description,
-                long_description = EXCLUDED.long_description,
-                scenario = EXCLUDED.scenario,
-                example_dialogue = EXCLUDED.example_dialogue,
-                image = EXCLUDED.image,
-                greeting = EXCLUDED.greeting,
-                personality = EXCLUDED.personality,
-                visibility = EXCLUDED.visibility,
-                source = EXCLUDED.source,
-                zodiac_sign = EXCLUDED.zodiac_sign,
-                birthday = EXCLUDED.birthday,
-                updated_at = NOW()
+            )
         `, [
             id, name, nickname, tag, JSON.stringify(tags), description, longDescription, scenario, exampleDialogue,
             image, greeting, personality, visibility, source, zodiac_sign, birthday, userId
         ]);
 
+        // Invalidate Redis character listing cache so the new character
+        // appears immediately on the Explore page.
+        try {
+            const keys = await valkey.keys('chars:*');
+            if (keys.length > 0) {
+                await valkey.del(...keys);
+            }
+        } catch (e) { /* cache clear is best-effort */ }
+
         return NextResponse.json({ success: true, character: body });
     } catch (error) {
+        if ((error as { code?: string })?.code === "23505") {
+            return NextResponse.json(
+                { error: "Character already exists. Use PUT /api/characters/[id] to update it." },
+                { status: 409 }
+            );
+        }
+
         console.error("Failed to save character:", error);
         return NextResponse.json({ error: "Failed to save character" }, { status: 500 });
     }

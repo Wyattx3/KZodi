@@ -20,6 +20,41 @@ function getTabFromSearchParam(value: string | null): Tab | null {
     return null;
 }
 
+const parseStoryValue = (value: any) => {
+    if (typeof value !== "string") {
+        return value;
+    }
+
+    try {
+        return JSON.parse(value);
+    } catch {
+        return undefined;
+    }
+};
+
+const mapStoryRecord = (story: any) => {
+    const parsedStoryData = parseStoryValue(story.story_data) || {};
+    const parsedWorldData = parseStoryValue(story.world_data);
+
+    return {
+        ...story,
+        id: story.id,
+        name: story.name,
+        image: story.image ?? null,
+        synopsis: story.synopsis || parsedStoryData.synopsis || "",
+        genre: story.genre || parsedStoryData.genre || "",
+        is_published: Boolean(story.is_published),
+        creatorId: story.creator_id ? String(story.creator_id) : undefined,
+        storyData: {
+            ...parsedStoryData,
+            synopsis: story.synopsis || parsedStoryData.synopsis || "",
+            genre: story.genre || parsedStoryData.genre || "",
+            isPublished: Boolean(story.is_published),
+        },
+        worldData: parsedWorldData,
+    };
+};
+
 export default function ChatApp() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -28,6 +63,7 @@ export default function ChatApp() {
     const [activeCharacter, setActiveCharacter] = useState<Character | null>(null);
     const [showProfileOnLoad, setShowProfileOnLoad] = useState<boolean>(false);
     const [myCharacters, setMyCharacters] = useState<Character[]>([]);
+    const [myStories, setMyStories] = useState<any[]>([]);
     const [allCharacters, setAllCharacters] = useState<Character[]>([]);
     const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
     const [isCreateScreenActive, setIsCreateScreenActive] = useState(false);
@@ -388,6 +424,63 @@ export default function ChatApp() {
         }
     };
 
+    const loadMyStories = async () => {
+        try {
+            const res = await fetch("/api/stories?mine=true&limit=50&offset=0");
+            if (!res.ok) {
+                if (res.status === 401) {
+                    setMyStories([]);
+                    return;
+                }
+                throw new Error(`Story fetch failed with ${res.status}`);
+            }
+
+            const data = await res.json();
+            const firstPageItems = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+            setMyStories(firstPageItems.map((story: any) => mapStoryRecord(story)));
+
+            if (!data?.hasMore || firstPageItems.length === 0) {
+                return;
+            }
+
+            void (async () => {
+                try {
+                    const allStoryItems = [...firstPageItems];
+                    let nextOffset = typeof data?.nextOffset === "number" ? data.nextOffset : firstPageItems.length;
+                    let hasMore = Boolean(data?.hasMore);
+
+                    while (hasMore) {
+                        const pagedRes = await fetch(`/api/stories?mine=true&limit=50&offset=${nextOffset}`);
+                        if (!pagedRes.ok) {
+                            if (pagedRes.status === 401) {
+                                return;
+                            }
+                            throw new Error(`Story fetch failed with ${pagedRes.status}`);
+                        }
+
+                        const pagedData = await pagedRes.json();
+                        const storyItems = Array.isArray(pagedData?.items) ? pagedData.items : Array.isArray(pagedData) ? pagedData : [];
+                        allStoryItems.push(...storyItems);
+                        setMyStories(allStoryItems.map((story: any) => mapStoryRecord(story)));
+
+                        hasMore = Boolean(pagedData?.hasMore);
+                        if (!hasMore || storyItems.length === 0) {
+                            break;
+                        }
+
+                        nextOffset = typeof pagedData?.nextOffset === "number"
+                            ? pagedData.nextOffset
+                            : nextOffset + storyItems.length;
+                    }
+                } catch (err) {
+                    console.error("Failed to continue loading my stories:", err);
+                }
+            })();
+        } catch (err) {
+            console.error("Failed to load my stories:", err);
+        }
+    };
+
     // Load all available characters for proactive messaging
     const loadAllCharacters = async () => {
         try {
@@ -413,6 +506,7 @@ export default function ChatApp() {
         // Fetch the current session user before trusting the persisted store.
         // If the persisted owner differs (or is absent), wipe stale data first.
         const initWithIdentityCheck = async () => {
+            let loadedAllChars: Character[] = [];
             try {
                 const meRes = await fetch("/api/user/me");
                 if (meRes.ok) {
@@ -434,15 +528,22 @@ export default function ChatApp() {
             } catch {
                 // If /api/user/me fails we proceed normally — identity check is
                 // best-effort; it must not block the UI entirely.
+            } finally {
+                try {
+                    const [,, hydratedAllChars] = await Promise.all([
+                        loadConversations(),
+                        loadMyCharacters(),
+                        loadAllCharacters(),
+                        loadMyStories(),
+                    ]);
+
+                    loadedAllChars = hydratedAllChars;
+                } catch (error) {
+                    console.error("Failed to hydrate chat bootstrap data:", error);
+                } finally {
+                    setIsLoadingChats(false);
+                }
             }
-
-            const [,, loadedAllChars] = await Promise.all([
-                loadConversations(),
-                loadMyCharacters(),
-                loadAllCharacters(),
-            ]);
-
-            setIsLoadingChats(false);
 
             // Birthday greeting logic
             try {
@@ -695,6 +796,8 @@ export default function ChatApp() {
                                 onSelectCharacter={handleSelectCharacter}
                                 myCharacters={myCharacters}
                                 setMyCharacters={setMyCharacters}
+                                myStories={myStories}
+                                setMyStories={setMyStories}
                                 onCreateScreenChange={setIsCreateScreenActive}
                             />
                         </div>

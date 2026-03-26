@@ -79,10 +79,10 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
             if (res.ok) {
                 const data = await res.json();
 
-                const safeParseJSON = (jsonStr: any) => {
-                    if (typeof jsonStr !== 'string') return jsonStr;
+                const safeParseJSON = (jsonValue: any) => {
+                    if (typeof jsonValue !== "string") return jsonValue;
                     try {
-                        return JSON.parse(jsonStr);
+                        return JSON.parse(jsonValue);
                     } catch (e) {
                         console.warn("Safe JSON parse failed for story metadata, returning undefined", e);
                         return undefined;
@@ -92,24 +92,29 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                 let chars: Character[] = [];
                 if (activeCategory === "Stories") {
                     const storyItems = data.items || data;
-                    chars = (Array.isArray(storyItems) ? storyItems : []).map((story: any) => ({
-                        id: story.id,
-                        name: story.name,
-                        tag: story.genre || "Story",
-                        description: story.synopsis || "",
-                        personality: "Play Story",
-                        greeting: story.synopsis || "Begin your story...",
-                        image: story.image,
-                        source: "story",
-                        creatorId: story.creator_id,
-                        storyData: {
-                            ...(safeParseJSON(story.story_data) || {}),
-                            isPublished: Boolean(story.is_published),
-                            synopsis: story.synopsis || safeParseJSON(story.story_data)?.synopsis || "",
-                            genre: story.genre || safeParseJSON(story.story_data)?.genre || "",
-                        },
-                        worldData: safeParseJSON(story.world_data),
-                    } as Character));
+                    chars = (Array.isArray(storyItems) ? storyItems : []).map((story: any) => {
+                        const parsedStoryData = safeParseJSON(story.story_data) || {};
+                        const parsedWorldData = safeParseJSON(story.world_data);
+
+                        return {
+                            id: story.id,
+                            name: story.name,
+                            tag: story.genre || parsedStoryData.genre || "Story",
+                            description: story.synopsis || parsedStoryData.synopsis || "",
+                            personality: "Play Story",
+                            greeting: story.synopsis || parsedStoryData.synopsis || "Begin your story...",
+                            image: story.image,
+                            source: "story",
+                            creatorId: story.creator_id,
+                            storyData: {
+                                ...parsedStoryData,
+                                isPublished: Boolean(story.is_published),
+                                synopsis: story.synopsis || parsedStoryData.synopsis || "",
+                                genre: story.genre || parsedStoryData.genre || "",
+                            },
+                            worldData: parsedWorldData,
+                        } as Character;
+                    });
                 } else {
                     chars = data.characters || data;
                 }
@@ -614,8 +619,12 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                         <path d="M92 98c5 4 11 4 16 0" stroke="#6B7280" strokeWidth="3" strokeLinecap="round" fill="none" />
                                         <path d="M125 50l5-8M140 60l10-4M55 120l-10 5" stroke="#D1D5DB" strokeWidth="3" strokeLinecap="round" />
                                     </svg>
-                                    <p style={{ fontSize: '18px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>No characters found</p>
-                                    <p style={{ fontSize: '14px', color: '#6B7280' }}>Try a different search or category</p>
+                                    <p style={{ fontSize: '18px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>
+                                        {activeCategory === "Stories" ? "No stories found" : "No characters found"}
+                                    </p>
+                                    <p style={{ fontSize: '14px', color: '#6B7280' }}>
+                                        {activeCategory === "Stories" ? "Try a different search or publish a story" : "Try a different search or category"}
+                                    </p>
                                 </motion.div>
                             )}
                         </div>
@@ -887,7 +896,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                     <div className="explore-section">
                                         <div className="explore-section-header">
                                             <h2 className="explore-section-title">
-                                                {activeCategory === "All" ? "All Characters" : activeCategory}
+                                                {activeCategory === "All" ? "All Characters" : activeCategory === "Stories" ? "Stories" : activeCategory}
                                             </h2>
                                         </div>
                                         <div className="explore-grid">
@@ -1016,8 +1025,12 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                 <path d="M92 98c5 4 11 4 16 0" stroke="#6B7280" strokeWidth="3" strokeLinecap="round" fill="none" />
                                                 <path d="M125 50l5-8M140 60l10-4M55 120l-10 5" stroke="#D1D5DB" strokeWidth="3" strokeLinecap="round" />
                                             </svg>
-                                            <p style={{ fontSize: '18px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>No characters found</p>
-                                            <p style={{ fontSize: '14px', color: '#6B7280' }}>Try a different search or category</p>
+                                            <p style={{ fontSize: '18px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>
+                                                {activeCategory === "Stories" ? "No stories found" : "No characters found"}
+                                            </p>
+                                            <p style={{ fontSize: '14px', color: '#6B7280' }}>
+                                                {activeCategory === "Stories" ? "Try a different search or publish a story" : "Try a different search or category"}
+                                            </p>
                                         </motion.div>
                                     )}
                                 </div>

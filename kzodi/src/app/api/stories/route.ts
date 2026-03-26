@@ -13,6 +13,7 @@ export async function GET(req: Request) {
         let limit = parseInt(searchParams.get("limit") || String(DEFAULT_LIMIT), 10);
         let offset = parseInt(searchParams.get("offset") || "0", 10);
         const search = (searchParams.get("search") || "").trim();
+        const mine = searchParams.get("mine") === "true";
 
         // Clamp to sane bounds
         if (isNaN(limit) || limit < 1) limit = DEFAULT_LIMIT;
@@ -23,7 +24,29 @@ export async function GET(req: Request) {
         let query: string;
         let params: (string | number)[];
 
-        if (search) {
+        if (mine) {
+            const session = await auth();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const userId = session?.user && (session.user as any).id ? (session.user as any).id : null;
+
+            if (!userId) {
+                return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            }
+
+            if (search) {
+                const pattern = `%${search}%`;
+                query = `SELECT *, user_id AS creator_id FROM stories
+                         WHERE user_id = $1
+                           AND (name ILIKE $2 OR synopsis ILIKE $2 OR genre ILIKE $2)
+                         ORDER BY created_at DESC LIMIT $3 OFFSET $4`;
+                params = [userId, pattern, limit + 1, offset];
+            } else {
+                query = `SELECT *, user_id AS creator_id FROM stories
+                         WHERE user_id = $1
+                         ORDER BY created_at DESC LIMIT $2 OFFSET $3`;
+                params = [userId, limit + 1, offset];
+            }
+        } else if (search) {
             // Case-insensitive search across name, synopsis, and genre
             const pattern = `%${search}%`;
             query = `SELECT *, user_id AS creator_id FROM stories
@@ -132,7 +155,7 @@ export async function POST(req: Request) {
                  story_data = EXCLUDED.story_data, 
                  world_data = EXCLUDED.world_data, 
                  is_published = EXCLUDED.is_published
-                 RETURNING id`,
+                 RETURNING *, user_id AS creator_id`,
                 [id, userId, name, synopsis, genre, image, normalized_story_data, world_data, is_published]
             );
 
@@ -155,7 +178,7 @@ export async function POST(req: Request) {
             // Invalidate conversation cache so the chat list reflects published state
             valkey.del(`convos:${userId}`).catch(err => console.warn("Failed to clear conv cache", err));
             
-            return NextResponse.json({ success: true, storyId: result.rows[0].id });
+            return NextResponse.json({ success: true, storyId: result.rows[0].id, story: result.rows[0] });
         } catch (e) {
             await client.query('ROLLBACK');
             console.error(e);

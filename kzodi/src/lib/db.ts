@@ -195,6 +195,7 @@ export async function ensureSchema() {
       CREATE TABLE IF NOT EXISTS characters (
         id VARCHAR(255) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
+        nickname VARCHAR(255),
         tag VARCHAR(100) NOT NULL,
         tags JSONB,
         description TEXT NOT NULL,
@@ -251,6 +252,7 @@ export async function ensureSchema() {
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS mbti_type TEXT;`);
       await query(`ALTER TABLE readings ADD COLUMN IF NOT EXISTS name TEXT;`);
       await query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_type VARCHAR(50) DEFAULT 'personal';`);
+      await query(`ALTER TABLE characters ADD COLUMN IF NOT EXISTS nickname VARCHAR(255);`);
     } catch (e) { /* ignore if already exists */ }
 
   } catch (e) {
