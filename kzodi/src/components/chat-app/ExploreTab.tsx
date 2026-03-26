@@ -25,11 +25,69 @@ interface ExploreTabProps {
 }
 
 const PAGE_SIZE = 50;
+const SEARCH_HISTORY_STORAGE_KEY = "kzodi.explore.search.history";
+const SEARCH_FALLBACK_TERMS = ["Baji", "Jungkook", "Mafia", "Boyfriend", "Gojo", "Bakugo", "Romance", "Yandere"];
+
+function formatCompactSocialCount(value?: number) {
+    if (typeof value !== "number" || Number.isNaN(value) || value < 0) {
+        return "0";
+    }
+
+    if (value < 1_000) {
+        return `${value}`;
+    }
+
+    const divisor = value >= 1_000_000 ? 1_000_000 : 1_000;
+    const suffix = divisor === 1_000_000 ? "M" : "K";
+    const scaled = value / divisor;
+    const digits = scaled >= 100 ? 0 : 1;
+    return `${scaled.toFixed(digits).replace(/\.0$/, "")}${suffix}`;
+}
+
+function getSearchResultTags(character: Character) {
+    const candidates = [
+        character.tag,
+        character.personality?.split(",")[0]?.trim(),
+        character.personality?.split(",")[1]?.trim(),
+        character.source === "story" ? "Interactive" : undefined,
+    ].filter(Boolean) as string[];
+
+    return [...new Set(candidates.map((item) => item.trim()).filter(Boolean))].slice(0, 3);
+}
+
+function getCharacterLikeTotal(character: Character) {
+    return character.likes ?? character.likesCount ?? 0;
+}
+
+function getTrendingSearchMeta(character: Character) {
+    return [
+        character.tag,
+        character.personality?.split(",")[0]?.trim(),
+    ].filter(Boolean).join(" | ");
+}
+
+function getSearchResultMeta(character: Character) {
+    if (character.source === "story") {
+        return [character.tag || "Story", "Interactive story"].filter(Boolean).join(" | ");
+    }
+
+    return [
+        character.tag,
+        `${formatCompactSocialCount(getCharacterLikeTotal(character))} likes`,
+    ].filter(Boolean).join(" | ");
+}
+
+function getSearchResultCopy(character: Character) {
+    return (character.description || character.greeting || "No description yet.")
+        .replace(/\s+/g, " ")
+        .trim();
+}
 
 export default function ExploreTab({ onSelectCharacter, onSelectGroup }: ExploreTabProps) {
     const [activeCategory, setActiveCategory] = useState<ExploreCategory>("All");
     const [search, setSearch] = useState("");
     const [searchMode, setSearchMode] = useState(false);
+    const [recentSearches, setRecentSearches] = useState<string[]>([]);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [selectedPreview, setSelectedPreview] = useState<Character | null>(null);
     // Pre-play character setup modal state
@@ -290,7 +348,23 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
         return characters.slice(0, 5);
     }, [characters]);
 
-    const featured = featuredList.length > 0 ? featuredList[featuredIndex] : null;
+    const safeFeaturedIndex = featuredList.length > 0
+        ? Math.min(featuredIndex, featuredList.length - 1)
+        : 0;
+    const featured = featuredList[safeFeaturedIndex] ?? null;
+
+    useEffect(() => {
+        if (featuredList.length === 0) {
+            if (featuredIndex !== 0) {
+                setFeaturedIndex(0);
+            }
+            return;
+        }
+
+        if (featuredIndex >= featuredList.length) {
+            setFeaturedIndex(featuredList.length - 1);
+        }
+    }, [featuredIndex, featuredList.length]);
 
     // Auto-play the slider
     useEffect(() => {
@@ -327,6 +401,94 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
     const forYou = forYouCharacters.length > 0
         ? forYouCharacters
         : characters.slice(featuredList.length, featuredList.length + 3);
+
+    const hasSearchQuery = search.trim().length > 0;
+    const searchTrendingCharacters = useMemo(() => {
+        const merged = [...characters, ...specialCharacters, ...forYou];
+        const unique = merged.filter((character, index, array) =>
+            array.findIndex((candidate) => candidate.id === character.id) === index
+        );
+
+        return unique
+            .filter((character) => character.source !== "story")
+            .sort((left, right) => getCharacterLikeTotal(right) - getCharacterLikeTotal(left))
+            .slice(0, 6);
+    }, [characters, specialCharacters, forYou]);
+
+    const searchHotTerms = useMemo(() => {
+        const dynamicTerms = [
+            ...searchTrendingCharacters.map((character) => character.name),
+            ...searchTrendingCharacters.map((character) => character.tag),
+            ...searchTrendingCharacters.flatMap((character) => character.personality?.split(",").map((item) => item.trim()).slice(0, 1) || []),
+        ];
+
+        const merged = [...recentSearches, ...dynamicTerms, ...SEARCH_FALLBACK_TERMS];
+        return merged.filter(Boolean).filter((term, index, array) =>
+            array.findIndex((candidate) => candidate.toLowerCase() === term.toLowerCase()) === index
+        ).slice(0, 10);
+    }, [recentSearches, searchTrendingCharacters]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") {
+            return;
+        }
+
+        try {
+            const raw = window.localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY);
+            if (!raw) {
+                return;
+            }
+
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+                setRecentSearches(parsed.filter((item): item is string => typeof item === "string").slice(0, 8));
+            }
+        } catch (error) {
+            console.warn("Failed to restore search history", error);
+        }
+    }, []);
+
+    const pushRecentSearch = useCallback((term: string) => {
+        const normalized = term.trim();
+        if (!normalized) {
+            return;
+        }
+
+        setRecentSearches((previous) => {
+            const next = [
+                normalized,
+                ...previous.filter((entry) => entry.toLowerCase() !== normalized.toLowerCase()),
+            ].slice(0, 8);
+
+            if (typeof window !== "undefined") {
+                window.localStorage.setItem(SEARCH_HISTORY_STORAGE_KEY, JSON.stringify(next));
+            }
+
+            return next;
+        });
+    }, []);
+
+    const clearRecentSearches = useCallback(() => {
+        setRecentSearches([]);
+        if (typeof window !== "undefined") {
+            window.localStorage.removeItem(SEARCH_HISTORY_STORAGE_KEY);
+        }
+    }, []);
+
+    const applySearchTerm = useCallback((term: string) => {
+        const normalized = term.trim();
+        if (!normalized) {
+            return;
+        }
+
+        setActiveCategory("All");
+        setSearch(normalized);
+        pushRecentSearch(normalized);
+
+        window.requestAnimationFrame(() => {
+            searchInputRef.current?.focus();
+        });
+    }, [pushRecentSearch]);
 
     const handlePreview = (char: Character, e?: React.MouseEvent | React.TouchEvent) => {
         if (e) e.stopPropagation();
@@ -448,183 +610,247 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
         <div className="explore-container">
             <AnimatePresence mode="wait">
                 {searchMode ? (
-                    /* ══════════ SEARCH PAGE ══════════ */
                     <motion.div
                         key="search-page"
-                        style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+                        className="explore-search-mode explore-search-theme"
                     >
-                        {/* Sticky Search Header */}
-                        <div className="explore-header-sticky">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '16px 0 8px' }}>
-                                <button
-                                    onClick={() => { setSearchMode(false); setSearch(""); setActiveCategory("All"); }}
-                                    style={{
-                                        background: 'none', border: 'none', cursor: 'pointer',
-                                        color: '#4A3728', padding: '6px', borderRadius: '12px',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}
-                                >
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                                        <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                </button>
-                                <div className="explore-search-glass" style={{ flex: 1, marginBottom: 0 }}>
-                                    <svg className="explore-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ position: 'absolute', left: '16px', color: '#9CA3AF', pointerEvents: 'none' }}>
+                        <div className="explore-search-header">
+                            <div className="explore-search-topbar">
+                                <div className="explore-search-shell">
+                                    <svg className="explore-search-shell-icon" width="16" height="16" viewBox="0 0 24 24" fill="none">
                                         <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
                                         <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                                     </svg>
                                     <input
                                         ref={searchInputRef}
-                                        className="explore-search"
+                                        className="explore-search-shell-input"
                                         type="text"
-                                        placeholder="Search characters..."
+                                        placeholder="Search characters, tags, vibes"
                                         value={search}
-                                        onChange={(e) => setSearch(e.target.value)}
+                                        onChange={(event) => setSearch(event.target.value)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter") {
+                                                pushRecentSearch(search);
+                                            }
+                                        }}
                                         autoFocus
-                                        style={{ padding: '12px 14px 12px 40px', width: '100%', border: 'none', background: 'transparent', outline: 'none' }}
                                     />
                                     {search && (
-                                        <button className="explore-search-clear" onClick={() => setSearch("")} style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer' }}>
+                                        <button
+                                            type="button"
+                                            className="explore-search-shell-clear"
+                                            onClick={() => setSearch("")}
+                                            aria-label="Clear search"
+                                        >
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                                                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                                             </svg>
                                         </button>
                                     )}
                                 </div>
-                            </div>
 
-                            {/* Category chips */}
-                            <div className="explore-chips no-scrollbar" style={{ paddingTop: '4px', paddingBottom: '12px' }}>
-                                {CATEGORIES.map((cat) => (
-                                    <button
-                                        key={cat}
-                                        className={`explore-chip ${activeCategory === cat ? "explore-chip-active" : ""}`}
-                                        onClick={() => setActiveCategory(cat)}
-                                    >
-                                        {cat}
-                                    </button>
-                                ))}
+                                <button
+                                    type="button"
+                                    className="explore-search-cancel"
+                                    onClick={() => {
+                                        setSearchMode(false);
+                                        setSearch("");
+                                        setActiveCategory("All");
+                                    }}
+                                >
+                                    Cancel
+                                </button>
                             </div>
                         </div>
 
-                        {/* Scrollable Search Results */}
-                        <div className="explore-scroll-content no-scrollbar">
-
-                            {/* Search Results */}
-                            {initialLoading ? (
-                                /* First-load skeleton — shown only when no data exists yet */
-                                <div style={{ paddingTop: '8px' }}>
-                                    <div className="explore-section-header">
-                                        <div style={{ width: '150px', height: '28px', background: '#F3F4F6', borderRadius: '8px', animation: 'pulse 1.5s infinite' }} />
-                                        <div style={{ width: '80px', height: '16px', background: '#F3F4F6', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                    </div>
-                                    <div className="explore-grid">
-                                        {[1, 2, 3, 4].map((i) => (
-                                            <div key={i} className="explore-card" style={{ pointerEvents: 'none' }}>
-                                                <div className="explore-card-img-wrap" style={{ background: '#F3F4F6', animation: 'pulse 1.5s infinite' }} />
-                                                <div className="explore-card-body">
-                                                    <div className="explore-card-name-row">
-                                                        <div style={{ width: '70%', height: '20px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                                    </div>
-                                                    <div style={{ width: '100%', height: '12px', background: '#e5e7eb', borderRadius: '4px', marginTop: '6px', animation: 'pulse 1.5s infinite' }} />
-                                                    <div style={{ width: '80%', height: '12px', background: '#e5e7eb', borderRadius: '4px', marginTop: '4px', animation: 'pulse 1.5s infinite' }} />
-                                                    <div className="explore-card-footer" style={{ marginTop: '8px' }}>
-                                                        <div style={{ width: '40px', height: '16px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                                        <div style={{ width: '50px', height: '14px', background: '#e5e7eb', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-                                                    </div>
-                                                </div>
+                        <div className="explore-search-scroll no-scrollbar">
+                            {!hasSearchQuery ? (
+                                <div className="explore-search-dashboard">
+                                    <section className="explore-search-section">
+                                        <div className="explore-search-section-head">
+                                            <h2 className="explore-search-section-title">History</h2>
+                                            {recentSearches.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    className="explore-search-section-action"
+                                                    onClick={clearRecentSearches}
+                                                >
+                                                    Clear
+                                                </button>
+                                            )}
+                                        </div>
+                                        {recentSearches.length > 0 ? (
+                                            <div className="explore-search-pill-list">
+                                                {recentSearches.map((term) => (
+                                                    <button
+                                                        key={term}
+                                                        type="button"
+                                                        className="explore-search-pill"
+                                                        onClick={() => applySearchTerm(term)}
+                                                    >
+                                                        {term}
+                                                    </button>
+                                                ))}
                                             </div>
+                                        ) : (
+                                            <div className="explore-search-muted-copy">
+                                                Your recent taps will show up here.
+                                            </div>
+                                        )}
+                                    </section>
+
+                                    <section className="explore-search-section">
+                                        <div className="explore-search-section-head">
+                                            <h2 className="explore-search-section-title">Hot</h2>
+                                        </div>
+                                        <div className="explore-search-pill-list">
+                                            {searchHotTerms.map((term) => (
+                                                <button
+                                                    key={term}
+                                                    type="button"
+                                                    className="explore-search-keyword-pill"
+                                                    onClick={() => applySearchTerm(term)}
+                                                >
+                                                    {term}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </section>
+
+                                    <section className="explore-search-section">
+                                        <div className="explore-search-section-head">
+                                            <h2 className="explore-search-section-title">Trending</h2>
+                                        </div>
+                                        <div className="explore-search-trending-list">
+                                            {initialLoading
+                                                ? Array.from({ length: 6 }).map((_, index) => (
+                                                    <div key={`search-trending-skeleton-${index}`} className="explore-search-trending-skeleton" />
+                                                ))
+                                                : searchTrendingCharacters.map((item, index) => (
+                                                    <button
+                                                        key={item.id}
+                                                        type="button"
+                                                        className="explore-search-trending-card"
+                                                        onClick={() => applySearchTerm(item.name)}
+                                                    >
+                                                        <span className="explore-search-rank">{index + 1}</span>
+                                                        <img
+                                                            src={getSafeImage(item.image, item.name)}
+                                                            alt={item.name}
+                                                            className="explore-search-trending-avatar"
+                                                        />
+                                                        <span className="explore-search-trending-copy">
+                                                            <span className="explore-search-trending-name">{item.name}</span>
+                                                            <span className="explore-search-trending-meta">
+                                                                {getTrendingSearchMeta(item)}
+                                                            </span>
+                                                        </span>
+                                                        <span className="explore-search-trending-count">
+                                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5C2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3C19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                                                            </svg>
+                                                            {formatCompactSocialCount(getCharacterLikeTotal(item))}
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    </section>
+                                </div>
+                            ) : initialLoading ? (
+                                <div className="explore-search-results">
+                                    <div className="explore-search-results-head">
+                                        <div>
+                                            <div className="explore-search-results-label">Searching</div>
+                                            <h2 className="explore-search-results-title">{search}</h2>
+                                        </div>
+                                    </div>
+                                    <div className="explore-search-result-list">
+                                        {Array.from({ length: 5 }).map((_, index) => (
+                                            <div key={`search-result-skeleton-${index}`} className="explore-search-result-skeleton" />
                                         ))}
                                     </div>
                                 </div>
                             ) : characters.length > 0 ? (
-                                <div style={{ paddingTop: '8px', position: 'relative' }}>
-                                    {/* Refresh overlay spinner — shown over existing cards on category/search change */}
+                                <div className="explore-search-results">
                                     {refreshLoading && (
-                                        <div style={{
-                                            position: 'absolute', inset: 0, zIndex: 10,
-                                            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-                                            paddingTop: '48px',
-                                            background: 'rgba(255,253,245,0.65)', backdropFilter: 'blur(2px)',
-                                            borderRadius: '12px', pointerEvents: 'none'
-                                        }}>
-                                            <div style={{
-                                                width: '28px', height: '28px', border: '3px solid #e5e7eb',
-                                                borderTop: '3px solid #4A3728', borderRadius: '50%',
-                                                animation: 'spin 0.8s linear infinite'
-                                            }} />
+                                        <div className="explore-search-loading-overlay">
+                                            <div className="explore-search-loading-spinner" />
                                         </div>
                                     )}
-                                    <div className="explore-section-header">
-                                        <h2 className="explore-section-title">
-                                            {search ? `Results for "${search}"` : activeCategory === "All" ? "All Characters" : activeCategory}
-                                        </h2>
+                                    <div className="explore-search-results-head">
+                                        <div>
+                                            <div className="explore-search-results-label">Search Results</div>
+                                            <h2 className="explore-search-results-title">{search}</h2>
+                                        </div>
+                                        <div className="explore-search-results-count">{characters.length} found</div>
                                     </div>
-                                    <div className="explore-grid">
-                                        <AnimatePresence mode="popLayout">
-                                            {characters.map((char) => (
-                                                <motion.div
-                                                    key={char.id}
-                                                    className="explore-card"
-                                                    onClick={(e) => handleCardClick(char, e as any)}
-                                                    onTouchStart={(e) => handlePressStart(char, e)}
-                                                    onTouchEnd={handlePressEnd}
-                                                    onTouchMove={handlePressEnd}
-                                                    onMouseDown={(e) => handlePressStart(char, e)}
-                                                    onMouseUp={handlePressEnd}
-                                                    onMouseLeave={handlePressEnd}
-                                                    whileTap={{ scale: 0.97 }}
-                                                    layout
-                                                >
-                                                    <div className="explore-card-img-wrap">
-                                                        <img src={getSafeImage(char.image, char.name)} alt={char.name} className="explore-card-img" />
-                                                        <div className="explore-card-img-overlay" />
-                                                        <div className="explore-card-float-tag">
-                                                            <span>{char.tag}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="explore-card-body">
-                                                        <div className="explore-card-name-row">
-                                                            <h3 className="explore-card-name" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                {char.name}
-                                                            </h3>
-                                                        </div>
-                                                        <p className="explore-card-desc">{char.description}</p>
-                                                        <div className="explore-card-footer">
-                                                            <span className="explore-card-chat-btn">
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                                                                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                                </svg>
-                                                                Chat
+
+                                    <div className="explore-search-result-list">
+                                        {characters.map((char) => (
+                                            <motion.button
+                                                key={char.id}
+                                                type="button"
+                                                className="explore-search-result-card"
+                                                onClick={(event) => {
+                                                    pushRecentSearch(search);
+                                                    handleCardClick(char, event as any);
+                                                }}
+                                                onTouchStart={(event) => handlePressStart(char, event)}
+                                                onTouchEnd={handlePressEnd}
+                                                onTouchMove={handlePressEnd}
+                                                onMouseDown={(event) => handlePressStart(char, event)}
+                                                onMouseUp={handlePressEnd}
+                                                onMouseLeave={handlePressEnd}
+                                                whileTap={{ scale: 0.985 }}
+                                                layout
+                                            >
+                                                <img
+                                                    src={getSafeImage(char.image, char.name)}
+                                                    alt={char.name}
+                                                    className="explore-search-result-avatar"
+                                                />
+                                                <span className="explore-search-result-copy">
+                                                    <span className="explore-search-result-name-row">
+                                                        <span className="explore-search-result-title-group">
+                                                            <span className="explore-search-result-name">{char.name}</span>
+                                                            {char.nickname && (
+                                                                <span className="explore-search-result-alias">{char.nickname}</span>
+                                                            )}
+                                                        </span>
+                                                        {char.source === "story" && (
+                                                            <span className="explore-search-result-badge">Story</span>
+                                                        )}
+                                                    </span>
+                                                    <span className="explore-search-result-subtitle">
+                                                        {getSearchResultMeta(char)}
+                                                    </span>
+                                                    <span className="explore-search-result-desc">
+                                                        {getSearchResultCopy(char)}
+                                                    </span>
+                                                    <span className="explore-search-result-tags">
+                                                        {getSearchResultTags(char).map((tag) => (
+                                                            <span key={`${char.id}-${tag}`} className="explore-search-result-tag">
+                                                                {tag}
                                                             </span>
-                                                            <span className="explore-card-personality">
-                                                                {char.personality.split(",")[0].trim()}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </motion.div>
-                                            ))}
-                                        </AnimatePresence>
+                                                        ))}
+                                                    </span>
+                                                </span>
+                                            </motion.button>
+                                        ))}
                                     </div>
                                 </div>
                             ) : (
-                                <motion.div
-                                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', textAlign: 'center' }}
-                                >
-                                    <svg width="140" height="140" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginBottom: '16px', opacity: 0.9, filter: 'drop-shadow(0px 8px 16px rgba(0,0,0,0.06))' }}>
-                                        <circle cx="100" cy="90" r="60" fill="#F9FAFB" stroke="#E5E7EB" strokeWidth="8" />
-                                        <path d="M140 130l25 25" stroke="#E5E7EB" strokeWidth="16" strokeLinecap="round" />
-                                        <circle cx="85" cy="80" r="4" fill="#6B7280" />
-                                        <circle cx="115" cy="80" r="4" fill="#6B7280" />
-                                        <path d="M92 98c5 4 11 4 16 0" stroke="#6B7280" strokeWidth="3" strokeLinecap="round" fill="none" />
-                                        <path d="M125 50l5-8M140 60l10-4M55 120l-10 5" stroke="#D1D5DB" strokeWidth="3" strokeLinecap="round" />
-                                    </svg>
-                                    <p style={{ fontSize: '18px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>
-                                        {activeCategory === "Stories" ? "No stories found" : "No characters found"}
-                                    </p>
-                                    <p style={{ fontSize: '14px', color: '#6B7280' }}>
-                                        {activeCategory === "Stories" ? "Try a different search or publish a story" : "Try a different search or category"}
-                                    </p>
+                                <motion.div className="explore-search-empty">
+                                    <div className="explore-search-empty-icon">
+                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                                            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                                            <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                        </svg>
+                                    </div>
+                                    <div className="explore-search-empty-title">No matches yet</div>
+                                    <div className="explore-search-empty-copy">
+                                        Try a different keyword, tag, or vibe.
+                                    </div>
                                 </motion.div>
                             )}
                         </div>
@@ -644,7 +870,10 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                 </div>
                                 <motion.button
                                     className="explore-header-search-btn"
-                                    onClick={() => setSearchMode(true)}
+                                    onClick={() => {
+                                        setActiveCategory("All");
+                                        setSearchMode(true);
+                                    }}
                                     whileTap={{ scale: 0.95 }}
                                     style={{
                                         width: '36px', height: '36px', borderRadius: '50%',
@@ -690,7 +919,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                             <div style={{ width: '150px', height: '28px', background: '#F3F4F6', borderRadius: '8px', animation: 'pulse 1.5s infinite' }} />
                                             <div style={{ width: '80px', height: '16px', background: '#F3F4F6', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
                                         </div>
-                                        <div className="explore-grid">
+                                        <div className="explore-grid explore-grid-masonry">
                                             {[1, 2, 3, 4, 5, 6].map((i) => (
                                                 <div key={i} className="explore-card" style={{ pointerEvents: 'none' }}>
                                                     <div className="explore-card-img-wrap" style={{ background: '#F3F4F6', animation: 'pulse 1.5s infinite' }} />
@@ -773,7 +1002,8 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
 
                                     {/* ── Featured Character Spotlight ──────────── */}
                                     {activeCategory === "All" && !search && featuredList.length > 0 && (() => {
-                                        const currentChar = featuredList[featuredIndex];
+                                        const currentChar = featured;
+                                        if (!currentChar) return null;
                                         return (
                                             <motion.div
                                                 className="explore-featured"
@@ -783,7 +1013,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                 onTouchEnd={handleTouchEnd}
                                             >
                                                 <div
-                                                    key={featuredIndex}
+                                                    key={currentChar.id}
                                                     className="explore-featured-card explore-slide-in"
                                                     onClick={(e) => handleCardClick(currentChar, e as any)}
                                                     onTouchStart={(e) => handlePressStart(currentChar, e)}
@@ -797,7 +1027,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                         <img src={getSafeImage(currentChar.image, currentChar.name)} alt={currentChar.name} className="explore-featured-img" style={{ pointerEvents: 'none', userSelect: 'none' }} />
                                                         <div className="explore-featured-overlay" />
                                                         <div className="explore-featured-content">
-                                                            <span className="explore-featured-label">#{featuredIndex + 1} Trending</span>
+                                                            <span className="explore-featured-label">#{safeFeaturedIndex + 1} Trending</span>
                                                             <h2 className="explore-featured-name">{currentChar.name}</h2>
                                                             <p className="explore-featured-desc">{currentChar.description}</p>
                                                             <div className="explore-featured-actions">
@@ -834,11 +1064,11 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                                 }}
                                                                 style={{
                                                                     width: '8px', height: '8px', borderRadius: '50%',
-                                                                    background: idx === featuredIndex ? '#FFE566' : 'rgba(255,255,255,0.4)',
+                                                                    background: idx === safeFeaturedIndex ? '#FFE566' : 'rgba(255,255,255,0.4)',
                                                                     border: 'none', cursor: 'pointer', padding: 0,
                                                                     transition: 'all 0.3s',
-                                                                    transform: idx === featuredIndex ? 'scale(1.4)' : 'scale(1)',
-                                                                    boxShadow: idx === featuredIndex ? '0 0 6px rgba(255, 229, 102, 0.6)' : 'none'
+                                                                    transform: idx === safeFeaturedIndex ? 'scale(1.4)' : 'scale(1)',
+                                                                    boxShadow: idx === safeFeaturedIndex ? '0 0 6px rgba(255, 229, 102, 0.6)' : 'none'
                                                                 }}
                                                                 aria-label={`Go to slide ${idx + 1}`}
                                                             />
@@ -882,7 +1112,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                                 </div>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '2px', color: '#ff4d4f' }}>
                                                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
-                                                                    {char.likes || 0}
+                                                                    {formatCompactSocialCount(char.likes)}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -899,7 +1129,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                 {activeCategory === "All" ? "All Characters" : activeCategory === "Stories" ? "Stories" : activeCategory}
                                             </h2>
                                         </div>
-                                        <div className="explore-grid">
+                                        <div className="explore-grid explore-grid-masonry">
                                             <AnimatePresence mode="popLayout">
                                                 {characters.map((char, i) => (
                                                     <motion.div
@@ -934,55 +1164,39 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                         </div>
                                                         <div className="explore-card-body">
                                                             <div className="explore-card-name-row">
-                                                                <h3 className="explore-card-name" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                    {char.name}
-                                                                    {char.nickname && <span style={{ fontSize: '12px', color: '#9CA3AF', marginLeft: '6px', fontWeight: 'normal' }}>"{char.nickname}"</span>}
-                                                                </h3>
+                                                                <div className="explore-card-title-group">
+                                                                    <h3 className="explore-card-name">
+                                                                        {char.name}
+                                                                    </h3>
+                                                                    {char.nickname && (
+                                                                        <div className="explore-card-nickname">
+                                                                            "{char.nickname}"
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                                 {char.source !== "story" && (
                                                                     <button
                                                                         onClick={(e) => handleLike(char, e)}
                                                                         className="explore-like-btn"
-                                                                        style={{
-                                                                            background: 'transparent',
-                                                                            border: 'none',
-                                                                            cursor: 'pointer',
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: '2px',
-                                                                            color: '#ff4d4f',
-                                                                            fontSize: '11px',
-                                                                            fontWeight: 600,
-                                                                            padding: '2px'
-                                                                        }}
                                                                     >
                                                                         <svg width="16" height="16" viewBox="0 0 24 24" fill={char.userHasLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                                             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
                                                                         </svg>
-                                                                        {char.likes || 0}
+                                                                        {formatCompactSocialCount(char.likes)}
                                                                     </button>
                                                                 )}
                                                             </div>
                                                             <p className="explore-card-desc">{char.description}</p>
                                                             <div className="explore-card-footer">
-                                                                <span className="explore-card-chat-btn">
-                                                                    {char.source === "story" ? (
-                                                                        <>
-                                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                                                                <path d="M8 5v14l11-7z" />
-                                                                            </svg>
-                                                                            Play
-                                                                        </>
-                                                                    ) : (
-                                                                        <>
-                                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                                                                                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                                                                            </svg>
-                                                                            Chat
-                                                                        </>
-                                                                    )}
-                                                                </span>
+                                                                {char.source === "story" && (
+                                                                    <span className="explore-card-meta-chip">
+                                                                        Playable Story
+                                                                    </span>
+                                                                )}
                                                                 <span className="explore-card-personality">
-                                                                    {char.source === "story" ? (char.tag || "Story") : char.personality.split(",")[0].trim()}
+                                                                    {char.source === "story"
+                                                                        ? (char.tag || "Story")
+                                                                        : ((char.personality?.split(",")[0] || char.tag || "Character").trim())}
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -1075,7 +1289,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                     <span className="explore-preview-tag-pill">{selectedPreview.tag}</span>
                                     <div className="explore-preview-online-row">
                                         <span className="explore-preview-online-dot" />
-                                        <span>Online{selectedPreview.source !== "story" ? ` • ${selectedPreview.likes || 0} Likes` : ""}</span>
+                                        <span>Online{selectedPreview.source !== "story" ? ` | ${formatCompactSocialCount(selectedPreview.likes)} Likes` : ""}</span>
                                     </div>
                                     {selectedPreview.source !== "story" && (
                                         <button

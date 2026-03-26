@@ -276,25 +276,23 @@ const LibraryView = ({
                                 </button>
                             </div>
                             <div className="explore-card-body">
+                                <div className="explore-card-kicker">Your Character</div>
                                 <div className="explore-card-name-row">
-                                    <h3 className="explore-card-name" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {char.name}
-                                        {char.nickname && <span style={{ fontSize: '12px', color: '#9CA3AF', marginLeft: '6px', fontWeight: 'normal' }}>"{char.nickname}"</span>}
-                                    </h3>
-                                    <span className="explore-card-online">
-                                        <span className="online-dot-sm" />
-                                    </span>
+                                    <div className="explore-card-title-group">
+                                        <h3 className="explore-card-name">
+                                            {char.name}
+                                        </h3>
+                                        {char.nickname && (
+                                            <div className="explore-card-nickname">
+                                                "{char.nickname}"
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                                 <p className="explore-card-desc">{char.description}</p>
                                 <div className="explore-card-footer">
-                                    <span className="explore-card-chat-btn">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ marginRight: '4px' }}>
-                                            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                        Chat
-                                    </span>
                                     <span className="explore-card-personality">
-                                        {char.personality.split(",")[0].trim()}
+                                        {(char.personality?.split(",")[0] || char.tag || "Character").trim()}
                                     </span>
                                 </div>
                             </div>
@@ -357,14 +355,17 @@ const LibraryView = ({
                                     </button>
                                 </div>
                                 <div className="explore-card-body">
+                                    <div className="explore-card-kicker">Your Story</div>
                                     <div className="explore-card-name-row">
-                                        <h3 className="explore-card-name" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                            {story.name}
-                                        </h3>
+                                        <div className="explore-card-title-group">
+                                            <h3 className="explore-card-name">
+                                                {story.name}
+                                            </h3>
+                                        </div>
                                     </div>
                                     <p className="explore-card-desc">{story.synopsis || story.storyData?.synopsis || "No synopsis yet."}</p>
                                     <div className="explore-card-footer">
-                                        <span className="explore-card-chat-btn">
+                                        <span className="explore-card-meta-chip">
                                             {story.is_published ? "Published" : "Draft"}
                                         </span>
                                         <span className="explore-card-personality">

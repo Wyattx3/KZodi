@@ -24,6 +24,237 @@ interface StoryFragment {
 }
 
 const DEFAULT_QUICK_ACTIONS = ["Continue", "Ask a question", "Look around"];
+const STORY_CHARACTER_CARD_PRESETS = [
+    {
+        imageRatio: "4 / 5",
+        fallbackGradient: "linear-gradient(160deg, #24170F 0%, #6F4B28 52%, #D1AC73 100%)",
+        overlay: "linear-gradient(180deg, rgba(9,7,5,0.08) 0%, rgba(9,7,5,0.22) 42%, rgba(9,7,5,0.92) 100%)",
+        halo: "rgba(214, 162, 96, 0.26)",
+    },
+    {
+        imageRatio: "1 / 1",
+        fallbackGradient: "linear-gradient(160deg, #1E1714 0%, #574033 50%, #B68D67 100%)",
+        overlay: "linear-gradient(180deg, rgba(12,8,6,0.04) 0%, rgba(12,8,6,0.18) 38%, rgba(12,8,6,0.9) 100%)",
+        halo: "rgba(161, 111, 87, 0.24)",
+    },
+    {
+        imageRatio: "3 / 4",
+        fallbackGradient: "linear-gradient(160deg, #1B1410 0%, #3F2D21 45%, #8B6B44 100%)",
+        overlay: "linear-gradient(180deg, rgba(9,6,5,0.05) 0%, rgba(9,6,5,0.16) 40%, rgba(9,6,5,0.88) 100%)",
+        halo: "rgba(132, 102, 74, 0.24)",
+    },
+    {
+        imageRatio: "5 / 6",
+        fallbackGradient: "linear-gradient(160deg, #231912 0%, #6B4735 48%, #C69A68 100%)",
+        overlay: "linear-gradient(180deg, rgba(10,7,5,0.04) 0%, rgba(10,7,5,0.16) 34%, rgba(10,7,5,0.9) 100%)",
+        halo: "rgba(188, 140, 94, 0.24)",
+    },
+] as const;
+
+interface StoryCharacterCardProps {
+    name: string;
+    description: string;
+    image?: string;
+    personality?: string;
+    categoryLabel?: string;
+    statsLabel?: string | null;
+    selected: boolean;
+    mode: "creator" | "kakoei";
+    index: number;
+    onSelect: () => void;
+}
+
+function formatCompactCount(value?: number) {
+    if (typeof value !== "number" || Number.isNaN(value) || value <= 0) {
+        return null;
+    }
+
+    if (value < 1_000) {
+        return `${value}`;
+    }
+
+    const divisor = value >= 1_000_000 ? 1_000_000 : 1_000;
+    const suffix = divisor === 1_000_000 ? "M" : "k";
+    const precision = value >= divisor * 10 ? 0 : 1;
+    return `${Number((value / divisor).toFixed(precision))}${suffix}`;
+}
+
+function getCharacterCardChips(personality?: string, categoryLabel?: string) {
+    const tokens = personality
+        ?.split(/,|\/|\||\u2022/g)
+        .map((token) => token.trim())
+        .filter(Boolean) || [];
+    const chips: string[] = [];
+    const seen = new Set<string>();
+
+    for (const token of [categoryLabel, ...tokens]) {
+        const normalized = token?.toLowerCase();
+        if (!token || !normalized || seen.has(normalized)) {
+            continue;
+        }
+
+        seen.add(normalized);
+        chips.push(token);
+
+        if (chips.length === 3) {
+            break;
+        }
+    }
+
+    return chips;
+}
+
+function StoryCharacterCard({
+    name,
+    description,
+    image,
+    personality,
+    categoryLabel,
+    statsLabel,
+    selected,
+    mode,
+    index,
+    onSelect,
+}: StoryCharacterCardProps) {
+    const preset = STORY_CHARACTER_CARD_PRESETS[index % STORY_CHARACTER_CARD_PRESETS.length];
+    const chips = getCharacterCardChips(personality, mode === "kakoei" ? categoryLabel : undefined);
+    const topLabel = mode === "creator" ? "Story Cast" : "Kakoei";
+    const eyebrow = mode === "creator" ? "Creator POV" : categoryLabel || "Character";
+    const footerText = selected
+        ? "Selected for this story"
+        : mode === "creator"
+            ? "Tap to step into this role"
+            : "Tap to bring into this world";
+    const cardBodyBackground = selected
+        ? "linear-gradient(180deg, rgba(255,248,236,0.92) 0%, rgba(255,250,242,0.98) 22%, #FFFDF8 52%)"
+        : "linear-gradient(180deg, rgba(255,249,239,0.84) 0%, rgba(255,252,246,0.96) 24%, #FFFCF7 54%)";
+
+    return (
+        <button
+            type="button"
+            onClick={onSelect}
+            className="story-character-masonry-item group w-full overflow-hidden rounded-[22px] border text-left align-top transition-transform duration-200 hover:-translate-y-1 active:scale-[0.99] sm:rounded-[26px]"
+            style={{
+                borderColor: selected ? "#E8D5A3" : "rgba(232,213,163,0.14)",
+                background: selected ? "linear-gradient(180deg, rgba(232,213,163,0.14), rgba(12,10,8,0.96))" : "rgba(12,10,8,0.92)",
+                color: "#F7E7C1",
+                boxShadow: selected ? `0 22px 60px ${preset.halo}` : "0 16px 40px rgba(0,0,0,0.24)",
+            }}
+        >
+            <div className="relative overflow-hidden rounded-[inherit]">
+                <div className="pointer-events-none absolute -right-10 top-[44%] h-28 w-28 rounded-full blur-3xl" style={{ background: preset.halo }} />
+
+                <div
+                    className="relative overflow-hidden"
+                    style={{
+                        aspectRatio: preset.imageRatio,
+                        background: image ? `center / cover no-repeat url(${image})` : preset.fallbackGradient,
+                    }}
+                >
+                    <div className="absolute inset-0" style={{ background: preset.overlay }} />
+
+                    <div
+                        className="absolute left-3 top-3 inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] backdrop-blur-md"
+                        style={{
+                            borderColor: "rgba(247,231,193,0.18)",
+                            background: "rgba(14,12,10,0.42)",
+                            color: "#F7E7C1",
+                        }}
+                    >
+                        {topLabel}
+                    </div>
+
+                    <div
+                        className="absolute right-3 top-3 inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] backdrop-blur-md"
+                        style={{
+                            borderColor: selected ? "rgba(232,213,163,0.36)" : "rgba(247,231,193,0.14)",
+                            background: selected ? "rgba(232,213,163,0.2)" : "rgba(14,12,10,0.36)",
+                            color: selected ? "#F7E7C1" : "rgba(247,231,193,0.76)",
+                        }}
+                    >
+                        {selected ? "Selected" : String(index + 1).padStart(2, "0")}
+                    </div>
+
+                    <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: "rgba(247,231,193,0.74)" }}>
+                            {eyebrow}
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    className="relative -mt-6 flex flex-col gap-3 rounded-t-[24px] p-4 sm:-mt-7 sm:gap-3.5 sm:rounded-t-[28px] sm:p-5"
+                    style={{
+                        background: cardBodyBackground,
+                        color: "#3B2A1A",
+                        boxShadow: "0 -14px 32px rgba(255,248,236,0.42)",
+                    }}
+                >
+                    <div
+                        className="pointer-events-none absolute inset-x-0 -top-10 h-12"
+                        style={{
+                            background: "linear-gradient(180deg, rgba(255,252,246,0) 0%, rgba(255,250,242,0.46) 46%, rgba(255,250,242,0.96) 100%)",
+                        }}
+                    />
+
+                    <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "rgba(84,60,38,0.58)" }}>
+                            {topLabel}
+                        </div>
+                        <div className="mt-2 font-serif text-[24px] leading-[1.05] sm:text-[28px]" style={{ color: "#3B2A1A" }}>
+                            {name}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        {(chips.length > 0 ? chips : [mode === "creator" ? "Original Cast" : categoryLabel || "Kakoei"]).map((chip) => (
+                            <span
+                                key={`${name}-${chip}`}
+                                className="rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] sm:text-[11px]"
+                                style={{
+                                    borderColor: "rgba(168,127,82,0.18)",
+                                    background: "rgba(232,213,163,0.24)",
+                                    color: "#8A5F36",
+                                }}
+                            >
+                                {chip}
+                            </span>
+                        ))}
+                    </div>
+
+                    <div
+                        className="text-[13px] leading-6 sm:text-[14px]"
+                        style={{
+                            color: "rgba(74,55,40,0.72)",
+                            display: "-webkit-box",
+                            WebkitLineClamp: mode === "creator" ? 4 : 3,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                        }}
+                    >
+                        {description}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-1 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                        <span style={{ color: selected ? "#5A4026" : "rgba(74,55,40,0.64)" }}>{footerText}</span>
+                        {statsLabel ? (
+                            <span
+                                className="rounded-full border px-2.5 py-1"
+                                style={{
+                                    borderColor: "rgba(168,127,82,0.18)",
+                                    background: "rgba(232,213,163,0.28)",
+                                    color: "#8A5F36",
+                                }}
+                            >
+                                {statsLabel}
+                            </span>
+                        ) : null}
+                    </div>
+                </div>
+            </div>
+        </button>
+    );
+}
 
 function normalizeCharacterName(name: string) {
     return name.trim().toLowerCase();
@@ -525,46 +756,19 @@ function CharacterSelectionScreen({
                                         No characters available.
                                     </div>
                                 ) : (
-                                    <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
-                                        {creatorCharacters.map((character) => (
-                                            <button
+                                    <div className="story-character-masonry">
+                                        {creatorCharacters.map((character, index) => (
+                                            <StoryCharacterCard
                                                 key={character.id}
-                                                type="button"
-                                                onClick={() => setSelectedCreatorCharacterId(character.id)}
-                                                className="flex gap-3 rounded-[18px] border p-3.5 text-left sm:gap-4 sm:rounded-[22px] sm:p-4"
-                                                style={{
-                                                    borderColor: selectedCreatorCharacterId === character.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
-                                                    background: selectedCreatorCharacterId === character.id ? "rgba(232,213,163,0.1)" : "rgba(12,10,8,0.9)",
-                                                    color: "#F7E7C1",
-                                                }}
-                                            >
-                                                <div
-                                                    className="h-[80px] w-[62px] flex-shrink-0 rounded-[16px] sm:h-[94px] sm:w-[74px] sm:rounded-[18px]"
-                                                    style={{
-                                                        background: character.image
-                                                            ? `center / cover no-repeat url(${character.image})`
-                                                            : "linear-gradient(135deg, #1E160F, #5C4326)",
-                                                    }}
-                                                />
-                                                <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:gap-2">
-                                                    <div className="text-[15px] font-semibold sm:text-[16px]">{character.name}</div>
-                                                    <div className="text-[12px] sm:text-[13px]" style={{ color: "rgba(247,231,193,0.72)" }}>
-                                                        {character.personality}
-                                                    </div>
-                                                    <div
-                                                        className="text-[12px] leading-5 sm:text-[13px] sm:leading-6"
-                                                        style={{
-                                                            color: "rgba(247,231,193,0.62)",
-                                                            display: "-webkit-box",
-                                                            WebkitLineClamp: 3,
-                                                            WebkitBoxOrient: "vertical",
-                                                            overflow: "hidden",
-                                                        }}
-                                                    >
-                                                        {character.description}
-                                                    </div>
-                                                </div>
-                                            </button>
+                                                name={character.name}
+                                                description={character.description}
+                                                image={character.image}
+                                                personality={character.personality}
+                                                selected={selectedCreatorCharacterId === character.id}
+                                                mode="creator"
+                                                index={index}
+                                                onSelect={() => setSelectedCreatorCharacterId(character.id)}
+                                            />
                                         ))}
                                     </div>
                                 )}
@@ -601,32 +805,32 @@ function CharacterSelectionScreen({
                                     </div>
                                 )}
 
-                                <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
-                                    {availableCharacters.map((character) => (
-                                        <button
-                                            key={character.id}
-                                            type="button"
-                                            onClick={() => setSelectedKakoeiCharacterId(character.id)}
-                                            className="flex items-center gap-3 rounded-[18px] border p-3.5 text-left sm:gap-4 sm:rounded-[22px] sm:p-4"
-                                            style={{
-                                                borderColor: selectedKakoeiCharacterId === character.id ? "#E8D5A3" : "rgba(232,213,163,0.14)",
-                                                background: selectedKakoeiCharacterId === character.id ? "rgba(232,213,163,0.1)" : "rgba(12,10,8,0.9)",
-                                                color: "#F7E7C1",
-                                            }}
-                                        >
-                                            <img
-                                                src={character.image}
-                                                alt={character.name}
-                                                className="h-[48px] w-[48px] flex-shrink-0 rounded-full object-cover sm:h-[56px] sm:w-[56px]"
+                                <div className="story-character-masonry">
+                                    {availableCharacters.map((character, index) => {
+                                        const chatterLabel = formatCompactCount(character.chatterCount ?? character.totalUsers);
+                                        const likeLabel = formatCompactCount(character.likesCount ?? character.likes);
+                                        const statsLabel = chatterLabel
+                                            ? `${chatterLabel} chats`
+                                            : likeLabel
+                                                ? `${likeLabel} likes`
+                                                : null;
+
+                                        return (
+                                            <StoryCharacterCard
+                                                key={character.id}
+                                                name={character.name}
+                                                description={character.description}
+                                                image={character.image}
+                                                personality={character.personality}
+                                                categoryLabel={character.tag}
+                                                statsLabel={statsLabel}
+                                                selected={selectedKakoeiCharacterId === character.id}
+                                                mode="kakoei"
+                                                index={index}
+                                                onSelect={() => setSelectedKakoeiCharacterId(character.id)}
                                             />
-                                            <div className="min-w-0">
-                                                <div className="text-[14px] font-semibold sm:text-[15px]">{character.name}</div>
-                                                <div className="text-[12px] sm:text-[13px]" style={{ color: "rgba(247,231,193,0.72)" }}>
-                                                    {character.tag}
-                                                </div>
-                                            </div>
-                                        </button>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
