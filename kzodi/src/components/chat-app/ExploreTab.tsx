@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SOURCE_CATEGORIES, type Category, type Character } from "@/data/characters";
+import { SOURCE_CATEGORIES, type Character } from "@/data/characters";
 
-const CATEGORIES = ["All", "Stories", ...SOURCE_CATEGORIES] as const;
+const CATEGORIES = ["All", ...SOURCE_CATEGORIES] as const;
 type ExploreCategory = (typeof CATEGORIES)[number];
 import { App } from '@capacitor/app';
 import { useChatStore } from "@/lib/chatStore";
@@ -24,9 +24,201 @@ interface ExploreTabProps {
     onSelectGroup?: (groupId: string) => void;
 }
 
+type StoryDetailField = {
+    label: string;
+    value: string;
+};
+
+type StoryPreviewCastMember = {
+    name: string;
+    image: string;
+    description: string;
+    role: string;
+    roleLabel: string;
+};
+
 const PAGE_SIZE = 50;
+const STORY_GENRES = ["All", "Fantasy", "Romance", "Mystery", "Action", "Horror", "Sci-Fi", "Slice of Life", "Thriller", "Comedy"] as const;
 const SEARCH_HISTORY_STORAGE_KEY = "kzodi.explore.search.history";
 const SEARCH_FALLBACK_TERMS = ["Baji", "Jungkook", "Mafia", "Boyfriend", "Gojo", "Bakugo", "Romance", "Yandere"];
+const STORY_LIBRARY_SPRING = [0.34, 1.56, 0.64, 1] as const;
+const STORY_DETAIL_EASE = [0.22, 1, 0.36, 1] as const;
+
+const storyOverlayVariants = {
+    initial: { opacity: 0, y: "0%" },
+    animate: {
+        opacity: 1,
+        y: "-100%",
+        transition: {
+            opacity: { duration: 0.2 },
+            y: { delay: 0.2, duration: 0.4, ease: STORY_LIBRARY_SPRING },
+        },
+    },
+    exit: {
+        y: "-100%",
+        transition: { duration: 0.4, ease: STORY_LIBRARY_SPRING },
+    },
+};
+
+const storyLibraryVariants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { delay: 0.5 } },
+    exit: { opacity: 0, transition: { duration: 0.2 } },
+};
+
+const storyDetailVariants = {
+    initial: { opacity: 0, x: "8%" },
+    animate: { opacity: 1, x: "0%", transition: { duration: 0.28, ease: STORY_DETAIL_EASE } },
+    exit: { opacity: 0, x: "8%", transition: { duration: 0.18, ease: STORY_DETAIL_EASE } },
+};
+
+function safeParseJSON(jsonValue: any) {
+    if (typeof jsonValue !== "string") return jsonValue;
+    try {
+        return JSON.parse(jsonValue);
+    } catch (error) {
+        console.warn("Safe JSON parse failed for story metadata, returning undefined", error);
+        return undefined;
+    }
+}
+
+function mapStoryToCharacter(story: any): Character {
+    const parsedStoryData = safeParseJSON(story.story_data) || {};
+    const parsedWorldData = safeParseJSON(story.world_data);
+
+    return {
+        id: story.id,
+        name: story.name,
+        tag: story.genre || parsedStoryData.genre || "Story",
+        description: story.synopsis || parsedStoryData.synopsis || "",
+        personality: "Play Story",
+        greeting: story.synopsis || parsedStoryData.synopsis || "Begin your story...",
+        image: story.image,
+        source: "story",
+        creatorId: story.creator_id,
+        storyData: {
+            ...parsedStoryData,
+            isPublished: Boolean(story.is_published),
+            synopsis: story.synopsis || parsedStoryData.synopsis || "",
+            genre: story.genre || parsedStoryData.genre || "",
+        },
+        worldData: parsedWorldData,
+    } as Character;
+}
+
+function getStoryHeatBadge(story: any, index: number) {
+    const createdAt = story?.created_at ? new Date(story.created_at).getTime() : 0;
+    if (createdAt && Date.now() - createdAt < 1000 * 60 * 60 * 24 * 7) {
+        return "New";
+    }
+
+    if (index < 3) {
+        return "Hot";
+    }
+
+    return null;
+}
+
+function getFirstNonEmptyString(...values: any[]) {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim()) {
+            return value.trim();
+        }
+    }
+    return "";
+}
+
+function getStorySynopsis(story: any) {
+    const parsedStoryData = safeParseJSON(story?.story_data) || {};
+    return getFirstNonEmptyString(
+        story?.synopsis,
+        parsedStoryData.synopsis,
+        parsedStoryData.summary,
+    ) || "Step into a new world and start the story.";
+}
+
+function getStoryWorldLabel(story: any) {
+    const parsedStoryData = safeParseJSON(story?.story_data) || {};
+    const parsedWorldData = safeParseJSON(story?.world_data) || {};
+    return getFirstNonEmptyString(
+        parsedWorldData.name,
+        parsedWorldData.title,
+        parsedWorldData.setting,
+        parsedStoryData.setting,
+        parsedStoryData.world,
+    );
+}
+
+function getStoryToneLabel(story: any) {
+    const parsedStoryData = safeParseJSON(story?.story_data) || {};
+    const parsedWorldData = safeParseJSON(story?.world_data) || {};
+    return getFirstNonEmptyString(
+        parsedStoryData.tone,
+        parsedStoryData.mood,
+        parsedStoryData.vibe,
+        parsedWorldData.tone,
+        parsedWorldData.vibe,
+    );
+}
+
+function getStoryHook(story: any) {
+    const parsedStoryData = safeParseJSON(story?.story_data) || {};
+    const parsedWorldData = safeParseJSON(story?.world_data) || {};
+    return getFirstNonEmptyString(
+        parsedStoryData.opening,
+        parsedStoryData.hook,
+        parsedStoryData.premise,
+        parsedStoryData.intro,
+        parsedWorldData.description,
+    );
+}
+
+function getStoryMetaLine(story: any) {
+    const worldLabel = getStoryWorldLabel(story);
+    const toneLabel = getStoryToneLabel(story);
+    return [worldLabel, toneLabel, story?.genre || "Story"].filter(Boolean).slice(0, 2).join(" • ");
+}
+
+const STORY_ROLE_LABELS: Record<string, string> = {
+    "main-npc": "Main NPC",
+    supporting: "Supporting",
+    antagonist: "Antagonist",
+    mentor: "Mentor",
+    "love-interest": "Love Interest",
+    ally: "Ally",
+};
+
+const STORY_CONTENT_RATING_LABELS: Record<string, string> = {
+    "all-ages": "All Ages",
+    teen: "Teen",
+    mature: "Mature",
+};
+
+function getStoryCast(story: any) {
+    const parsedStoryData = safeParseJSON(story?.story_data) || {};
+    const baseCast = Array.isArray(parsedStoryData.cast) ? parsedStoryData.cast : [];
+    const customCast = Array.isArray(parsedStoryData.creatorCustomCharacters) ? parsedStoryData.creatorCustomCharacters : [];
+    const seenNames = new Set<string>();
+
+    return [...baseCast, ...customCast]
+        .map((member: any): StoryPreviewCastMember | null => {
+            const name = getFirstNonEmptyString(member?.name);
+            if (!name || seenNames.has(name.toLowerCase())) {
+                return null;
+            }
+
+            seenNames.add(name.toLowerCase());
+            return {
+                name,
+                image: member?.image || "",
+                description: getFirstNonEmptyString(member?.description, member?.personality),
+                role: member?.role || "",
+                roleLabel: STORY_ROLE_LABELS[member?.role] || (member?.isCustom ? "Custom Cast" : "Story Cast"),
+            };
+        })
+        .filter((member): member is StoryPreviewCastMember => Boolean(member))
+        .slice(0, 12);
+}
 
 function formatCompactSocialCount(value?: number) {
     if (typeof value !== "number" || Number.isNaN(value) || value < 0) {
@@ -87,6 +279,13 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
     const [activeCategory, setActiveCategory] = useState<ExploreCategory>("All");
     const [search, setSearch] = useState("");
     const [searchMode, setSearchMode] = useState(false);
+    const [storyLibraryMode, setStoryLibraryMode] = useState(false);
+    const [storyGenre, setStoryGenre] = useState("All");
+    const [storySearchMode, setStorySearchMode] = useState(false);
+    const [storyPreviewItem, setStoryPreviewItem] = useState<any | null>(null);
+    const [storyItems, setStoryItems] = useState<any[]>([]);
+    const [storyLoading, setStoryLoading] = useState(false);
+    const [storySearch, setStorySearch] = useState("");
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [selectedPreview, setSelectedPreview] = useState<Character | null>(null);
@@ -129,53 +328,11 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
             }
         }
         try {
-            let fetchUrl = `/api/characters?category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`;
-            if (activeCategory === "Stories") {
-                fetchUrl = `/api/stories?search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`;
-            }
+            const fetchUrl = `/api/characters?category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(search)}&limit=${PAGE_SIZE}&offset=${offset}`;
             const res = await fetch(fetchUrl, { signal });
             if (res.ok) {
                 const data = await res.json();
-
-                const safeParseJSON = (jsonValue: any) => {
-                    if (typeof jsonValue !== "string") return jsonValue;
-                    try {
-                        return JSON.parse(jsonValue);
-                    } catch (e) {
-                        console.warn("Safe JSON parse failed for story metadata, returning undefined", e);
-                        return undefined;
-                    }
-                };
-
-                let chars: Character[] = [];
-                if (activeCategory === "Stories") {
-                    const storyItems = data.items || data;
-                    chars = (Array.isArray(storyItems) ? storyItems : []).map((story: any) => {
-                        const parsedStoryData = safeParseJSON(story.story_data) || {};
-                        const parsedWorldData = safeParseJSON(story.world_data);
-
-                        return {
-                            id: story.id,
-                            name: story.name,
-                            tag: story.genre || parsedStoryData.genre || "Story",
-                            description: story.synopsis || parsedStoryData.synopsis || "",
-                            personality: "Play Story",
-                            greeting: story.synopsis || parsedStoryData.synopsis || "Begin your story...",
-                            image: story.image,
-                            source: "story",
-                            creatorId: story.creator_id,
-                            storyData: {
-                                ...parsedStoryData,
-                                isPublished: Boolean(story.is_published),
-                                synopsis: story.synopsis || parsedStoryData.synopsis || "",
-                                genre: story.genre || parsedStoryData.genre || "",
-                            },
-                            worldData: parsedWorldData,
-                        } as Character;
-                    });
-                } else {
-                    chars = data.characters || data;
-                }
+                const chars: Character[] = data.characters || data;
 
                 if (append) {
                     // Discard stale load-more append if the query context has changed
@@ -184,7 +341,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                 } else {
                     setCharacters(chars);
                 }
-                setHasMore(activeCategory === "Stories" ? (data.hasMore ?? false) : (data.hasMore ?? false));
+                setHasMore(data.hasMore ?? false);
                 setCurrentOffset(offset + chars.length);
             }
         } catch (error: any) {
@@ -243,6 +400,70 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
             console.error("Failed to fetch for-you characters:", error);
         }
     };
+
+    const fetchStoryLibrary = useCallback(async () => {
+        setStoryLoading(true);
+        try {
+            const fetchUrl = `/api/stories?genre=${encodeURIComponent(storyGenre)}&search=${encodeURIComponent(storySearch)}&limit=50&offset=0`;
+            const res = await fetch(fetchUrl);
+            if (res.ok) {
+                const data = await res.json();
+                setStoryItems(Array.isArray(data.items) ? data.items : []);
+            } else {
+                setStoryItems([]);
+            }
+        } catch (error) {
+            console.error("Failed to fetch story library:", error);
+            setStoryItems([]);
+        } finally {
+            setStoryLoading(false);
+        }
+    }, [storyGenre, storySearch]);
+
+    useEffect(() => {
+        if (!storyLibraryMode) {
+            return;
+        }
+
+        fetchStoryLibrary();
+    }, [fetchStoryLibrary, storyLibraryMode]);
+
+    const storyPreviewDetails = useMemo(() => {
+        if (!storyPreviewItem) {
+            return null;
+        }
+
+        const parsedStoryData = safeParseJSON(storyPreviewItem.story_data) || {};
+        const worldRules = parsedStoryData.worldRules || {};
+        const worldLabel = getStoryWorldLabel(storyPreviewItem);
+        const toneLabel = getStoryToneLabel(storyPreviewItem) || getFirstNonEmptyString(parsedStoryData.tone);
+        const contentRating = STORY_CONTENT_RATING_LABELS[parsedStoryData.contentRating] || "";
+        const playerMode = parsedStoryData.allowUserCharacterCustomization ? "Custom lead" : "Preset lead";
+        const cast = getStoryCast(storyPreviewItem);
+
+        return {
+            synopsis: getStorySynopsis(storyPreviewItem),
+            worldLabel,
+            toneLabel,
+            hook: getStoryHook(storyPreviewItem),
+            tags: [worldLabel, toneLabel].filter(Boolean).slice(0, 2),
+            overview: [
+                { label: "Genre", value: storyPreviewItem.genre || "Story" },
+                toneLabel ? { label: "Tone", value: toneLabel } : null,
+                contentRating ? { label: "Rating", value: contentRating } : null,
+                { label: "Lead", value: playerMode },
+                worldRules.worldType ? { label: "World", value: worldRules.worldType } : null,
+                worldRules.timePeriod ? { label: "Era", value: worldRules.timePeriod } : null,
+            ].filter((item): item is StoryDetailField => Boolean(item)),
+            worldRules: [
+                worldRules.timePeriod ? { label: "Time Period", value: worldRules.timePeriod } : null,
+                worldRules.worldType ? { label: "World Type", value: worldRules.worldType } : null,
+                worldRules.specialRules ? { label: "Special Rules", value: worldRules.specialRules } : null,
+                worldRules.forbiddenTopics ? { label: "Boundaries", value: worldRules.forbiddenTopics } : null,
+            ].filter((item): item is StoryDetailField => Boolean(item)),
+            cast,
+        };
+    }, [storyPreviewItem]);
 
     useEffect(() => {
         setCurrentOffset(0);
@@ -529,7 +750,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
         }
     };
 
-    const handleCardClick = (char: Character, e: React.MouseEvent | React.TouchEvent) => {
+    const handleCardClick = useCallback((char: Character, e: React.MouseEvent | React.TouchEvent) => {
         if (isLongPressActive.current) {
             e.preventDefault();
             e.stopPropagation();
@@ -552,7 +773,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
         } else {
             onSelectCharacter(char);
         }
-    };
+    }, [onSelectCharacter, onSelectGroup]);
 
     /** Called when the player confirms their character in the pre-play setup modal. */
     const handleStorySetupConfirm = () => {
@@ -606,8 +827,361 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
         setStorySetupChar(null);
     };
 
+    const closeStoryLibrary = useCallback(() => {
+        setStoryLibraryMode(false);
+        setStorySearchMode(false);
+        setStoryPreviewItem(null);
+        setStorySearch("");
+    }, []);
+
+    const handleStoryLibraryCardClick = useCallback((story: any) => {
+        setStorySearchMode(false);
+        setStoryPreviewItem(story);
+    }, []);
+
+    const handleStoryLibraryStart = useCallback((story: any, e: React.MouseEvent | React.TouchEvent) => {
+        setStoryPreviewItem(null);
+        handleCardClick(mapStoryToCharacter(story), e);
+    }, [handleCardClick]);
+
     return (
         <div className="explore-container">
+            <AnimatePresence>
+                {storyLibraryMode && (
+                    <>
+                        <motion.div
+                            className="story-lib-overlay"
+                            variants={storyOverlayVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                        >
+                            <motion.div
+                                className="story-lib-overlay-icon"
+                                initial={{ scale: 0.88, opacity: 0 }}
+                                animate={{ scale: [0.88, 1.04, 1], opacity: 1, transition: { duration: 0.3 } }}
+                            >
+                                <svg width="42" height="42" viewBox="0 0 24 24" fill="none">
+                                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="#FAFAF8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M6.5 2H20V22H6.5A2.5 2.5 0 0 1 4 19.5V4.5A2.5 2.5 0 0 1 6.5 2Z" stroke="#FAFAF8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </motion.div>
+                        </motion.div>
+
+                        <motion.div
+                            className="story-lib-container"
+                            variants={storyLibraryVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                        >
+                            <div className="story-lib-header">
+                                <button type="button" className="story-lib-back-btn" onClick={closeStoryLibrary} aria-label="Back to explore">
+                                    <span aria-hidden="true">←</span>
+                                    <span>Back</span>
+                                </button>
+                                <div className="story-lib-header-copy">
+                                    <span className="story-lib-header-kicker">Curated Shelf</span>
+                                    <span className="story-lib-header-title">Story Library</span>
+                                </div>
+                            </div>
+
+                            <div className="story-lib-search" onClick={() => setStorySearchMode(true)}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                                    <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                </svg>
+                                <span>{storySearch || "Search titles, genres, worlds"}</span>
+                            </div>
+
+                            <div className="story-lib-genre-chips no-scrollbar">
+                                {STORY_GENRES.map((genre) => (
+                                    <button
+                                        key={genre}
+                                        type="button"
+                                        className={`story-genre-chip ${storyGenre === genre ? "active" : ""}`}
+                                        onClick={() => setStoryGenre(genre)}
+                                    >
+                                        {genre}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="story-lib-section-head">
+                                <div>
+                                    <div className="story-lib-section-kicker">{storyGenre === "All" ? "Editor Picks" : storyGenre}</div>
+                                    <div className="story-lib-section-title">{storyItems.length} stories on the shelf</div>
+                                </div>
+                            </div>
+
+                            <div className="story-lib-grid no-scrollbar">
+                                {storyLoading ? (
+                                    Array.from({ length: 9 }).map((_, index) => (
+                                        <div key={`story-skeleton-${index}`} className="story-novel-card story-novel-card-skeleton">
+                                            <div className="story-novel-card-cover story-novel-card-cover-skeleton" />
+                                            <div className="story-novel-card-body">
+                                                <div className="story-novel-card-book-title story-novel-card-headline-skeleton" />
+                                                <div className="story-novel-card-meta story-novel-card-kicker-skeleton" />
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    storyItems.map((story, index) => {
+                                        const heatBadge = getStoryHeatBadge(story, index);
+                                        return (
+                                            <motion.div
+                                                key={story.id}
+                                                className="story-novel-card"
+                                                onClick={() => handleStoryLibraryCardClick(story)}
+                                                whileTap={{ scale: 0.97 }}
+                                            >
+                                                <div className="story-novel-card-cover">
+                                                    <img src={getSafeImage(story.image, story.name)} alt={story.name} className="story-novel-card-image" />
+                                                    <span className="story-novel-card-genre-badge">{story.genre || "Story"}</span>
+                                                    {heatBadge && (
+                                                        <span className="story-hot-badge">{heatBadge}</span>
+                                                    )}
+                                                </div>
+                                                <div className="story-novel-card-body">
+                                                    <div className="story-novel-card-book-title">{story.name}</div>
+                                                    <div className="story-novel-card-meta">{getStoryMetaLine(story) || story.genre || "Story"}</div>
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })
+                                )}
+                            </div>
+
+                            <AnimatePresence>
+                                {storySearchMode && (
+                                    <motion.div
+                                        className="story-lib-search-overlay"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                    >
+                                        <div className="story-lib-search-overlay-top">
+                                            <div className="story-lib-search-shell">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                                    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                                                    <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                                </svg>
+                                                <input
+                                                    type="text"
+                                                    className="story-lib-search-input"
+                                                    placeholder="Search story library"
+                                                    value={storySearch}
+                                                    onChange={(event) => setStorySearch(event.target.value)}
+                                                    autoFocus
+                                                />
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="story-lib-search-cancel"
+                                                onClick={() => {
+                                                    setStorySearchMode(false);
+                                                    setStorySearch("");
+                                                }}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+
+                                        <div className="story-lib-search-results no-scrollbar">
+                                            {storyLoading ? (
+                                                Array.from({ length: 6 }).map((_, index) => (
+                                                    <div key={`story-row-skeleton-${index}`} className="story-search-row story-search-row-skeleton" />
+                                                ))
+                                            ) : storyItems.length > 0 ? (
+                                                storyItems.map((story, index) => {
+                                                    const heatBadge = getStoryHeatBadge(story, index);
+                                                    return (
+                                                        <motion.div
+                                                            key={`${story.id}-search`}
+                                                            className="story-search-row"
+                                                            onClick={() => handleStoryLibraryCardClick(story)}
+                                                            whileTap={{ scale: 0.985 }}
+                                                        >
+                                                            <div className="story-search-row-cover-wrap">
+                                                                <img src={getSafeImage(story.image, story.name)} alt={story.name} className="story-search-row-cover" />
+                                                                {heatBadge && (
+                                                                    <span className="story-hot-badge story-search-hot-badge">{heatBadge}</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="story-search-row-content">
+                                                                <div className="story-search-row-head">
+                                                                    <div className="story-search-row-title">{story.name}</div>
+                                                                    <span className="story-novel-card-genre-badge story-search-genre-badge">
+                                                                        {story.genre || "Story"}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="story-search-row-kicker">{getStoryMetaLine(story)}</div>
+                                                                <div className="story-search-row-synopsis">
+                                                                    {getStorySynopsis(story)}
+                                                                </div>
+                                                            </div>
+                                                        </motion.div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div className="story-search-empty">
+                                                    No stories found for that search yet.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            <AnimatePresence>
+                                {storyPreviewItem && storyPreviewDetails && (
+                                    <motion.div
+                                        className="story-detail-page"
+                                        variants={storyDetailVariants}
+                                        initial="initial"
+                                        animate="animate"
+                                        exit="exit"
+                                    >
+                                        <div className="story-detail-header">
+                                            <button
+                                                type="button"
+                                                className="story-lib-back-btn story-detail-header-back"
+                                                onClick={() => setStoryPreviewItem(null)}
+                                                aria-label="Back to story library"
+                                            >
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                </svg>
+                                            </button>
+                                            <div className="story-detail-header-copy">
+                                                <div className="story-detail-header-titleline">Story Preview</div>
+                                            </div>
+                                        </div>
+                                        <div className="story-detail-scroll no-scrollbar">
+                                            <div className="story-detail-hero">
+                                                <img
+                                                    src={getSafeImage(storyPreviewItem.image, storyPreviewItem.name)}
+                                                    alt={storyPreviewItem.name}
+                                                    className="story-detail-cover"
+                                                />
+                                                <div className="story-detail-hero-fade" />
+                                                <div className="story-detail-hero-content">
+                                                    <h2 className="story-detail-title">{storyPreviewItem.name}</h2>
+                                                    <p className="story-detail-subtitle">
+                                                        {[storyPreviewDetails.worldLabel, storyPreviewDetails.toneLabel].filter(Boolean).join(" • ") || "An interactive story from the library shelf."}
+                                                    </p>
+                                                    <div className="story-detail-meta-line">
+                                                        {[storyPreviewItem.genre || "Story", storyPreviewDetails.toneLabel, storyPreviewDetails.worldLabel].filter(Boolean).join(" / ")}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="story-detail-sheet">
+                                                <div className="story-detail-sheet-head">
+                                                    <div className="story-detail-sheet-kicker">Story Preview</div>
+                                                    <div className="story-detail-sheet-title">{storyPreviewItem.name}</div>
+                                                    <div className="story-detail-sheet-meta">
+                                                        {[storyPreviewItem.genre || "Story", storyPreviewDetails.toneLabel, storyPreviewDetails.worldLabel].filter(Boolean).join(" / ")}
+                                                    </div>
+                                                </div>
+
+                                                {storyPreviewDetails.tags.length > 0 && (
+                                                    <div className="story-detail-tag-row">
+                                                        {storyPreviewDetails.tags.map((tag) => (
+                                                            <span key={tag} className="story-detail-tag">
+                                                                {tag}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                <button
+                                                    type="button"
+                                                    className="story-detail-start-btn"
+                                                    onClick={(event) => handleStoryLibraryStart(storyPreviewItem, event)}
+                                                >
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                                        <path d="M8 5v14l11-7z" />
+                                                    </svg>
+                                                    Start story
+                                                </button>
+
+                                                {storyPreviewDetails.overview.length > 0 && (
+                                                    <div className="story-detail-meta-grid">
+                                                        {storyPreviewDetails.overview.map((item) => (
+                                                            <div key={item.label} className="story-detail-meta-card">
+                                                                <div className="story-detail-meta-label">{item.label}</div>
+                                                                <div className="story-detail-meta-value">{item.value}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                <div className="story-detail-section">
+                                                    <div className="story-detail-section-label">Synopsis</div>
+                                                    <p className="story-detail-copy">{storyPreviewDetails.synopsis}</p>
+                                                </div>
+
+                                                {storyPreviewDetails.hook && (
+                                                    <div className="story-detail-section">
+                                                        <div className="story-detail-section-label">Story Hook</div>
+                                                        <p className="story-detail-copy">{storyPreviewDetails.hook}</p>
+                                                    </div>
+                                                )}
+
+                                                {storyPreviewDetails.worldRules.length > 0 && (
+                                                    <div className="story-detail-section">
+                                                        <div className="story-detail-section-label">World Rules</div>
+                                                        <div className="story-detail-world-list">
+                                                            {storyPreviewDetails.worldRules.map((item) => (
+                                                                <div key={item.label} className="story-detail-world-item">
+                                                                    <div className="story-detail-world-item-label">{item.label}</div>
+                                                                    <div className="story-detail-world-item-value">{item.value}</div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="story-detail-section">
+                                                    <div className="story-detail-section-label">Character Cast</div>
+                                                    {storyPreviewDetails.cast.length > 0 ? (
+                                                        <div className="story-detail-cast-grid">
+                                                            {storyPreviewDetails.cast.map((member) => (
+                                                                <div key={member.name} className="story-detail-cast-card">
+                                                                    <img
+                                                                        src={getSafeImage(member.image, member.name)}
+                                                                        alt={member.name}
+                                                                        className="story-detail-cast-avatar"
+                                                                    />
+                                                                    <div className="story-detail-cast-info">
+                                                                        <div className="story-detail-cast-name-row">
+                                                                            <div className="story-detail-cast-name">{member.name}</div>
+                                                                            <span className="story-detail-cast-role">{member.roleLabel}</span>
+                                                                        </div>
+                                                                        <div className="story-detail-cast-copy">
+                                                                            {member.description || "A key presence inside this story world."}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="story-detail-empty">
+                                                            No cast profile has been added yet, but the story world is ready to explore.
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+
             <AnimatePresence mode="wait">
                 {searchMode ? (
                     <motion.div
@@ -868,27 +1442,40 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                     <h1 className="explore-hero-title" style={{ fontSize: '22px', marginBottom: '2px' }}>Discover</h1>
                                     <p className="explore-hero-subtitle" style={{ fontSize: '11px' }}>Find your next partner</p>
                                 </div>
-                                <motion.button
-                                    className="explore-header-search-btn"
-                                    onClick={() => {
-                                        setActiveCategory("All");
-                                        setSearchMode(true);
-                                    }}
-                                    whileTap={{ scale: 0.95 }}
-                                    style={{
-                                        width: '36px', height: '36px', borderRadius: '50%',
-                                        background: '#F3F4F6', border: 'none',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        color: '#4A3728', cursor: 'pointer',
-                                        flexShrink: 0
-                                    }}
-                                    aria-label="Search characters"
-                                >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                                        <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                                        <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                    </svg>
-                                </motion.button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <motion.button
+                                        className="story-mode-btn"
+                                        onClick={() => setStoryLibraryMode(true)}
+                                        whileTap={{ scale: 0.92 }}
+                                        aria-label="Story Library"
+                                    >
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5V4.5A2.5 2.5 0 0 1 6.5 2Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                    </motion.button>
+                                    <motion.button
+                                        className="explore-header-search-btn"
+                                        onClick={() => {
+                                            setActiveCategory("All");
+                                            setSearchMode(true);
+                                        }}
+                                        whileTap={{ scale: 0.95 }}
+                                        style={{
+                                            width: '36px', height: '36px', borderRadius: '50%',
+                                            background: '#F3F4F6', border: 'none',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: '#4A3728', cursor: 'pointer',
+                                            flexShrink: 0
+                                        }}
+                                        aria-label="Search characters"
+                                    >
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                                            <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                        </svg>
+                                    </motion.button>
+                                </div>
                             </div>
 
                             {/* ── Category chips ─────────────────────────── */}
@@ -1124,9 +1711,9 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
 
                                     {/* ── All Characters grid ────────────────────── */}
                                     <div className="explore-section">
-                                        <div className="explore-section-header">
-                                            <h2 className="explore-section-title">
-                                                {activeCategory === "All" ? "All Characters" : activeCategory === "Stories" ? "Stories" : activeCategory}
+                                            <div className="explore-section-header">
+                                                <h2 className="explore-section-title">
+                                                {activeCategory === "All" ? "All Characters" : activeCategory}
                                             </h2>
                                         </div>
                                         <div className="explore-grid explore-grid-masonry">
@@ -1240,10 +1827,10 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                                 <path d="M125 50l5-8M140 60l10-4M55 120l-10 5" stroke="#D1D5DB" strokeWidth="3" strokeLinecap="round" />
                                             </svg>
                                             <p style={{ fontSize: '18px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>
-                                                {activeCategory === "Stories" ? "No stories found" : "No characters found"}
+                                                No characters found
                                             </p>
                                             <p style={{ fontSize: '14px', color: '#6B7280' }}>
-                                                {activeCategory === "Stories" ? "Try a different search or publish a story" : "Try a different search or category"}
+                                                Try a different search or category
                                             </p>
                                         </motion.div>
                                     )}

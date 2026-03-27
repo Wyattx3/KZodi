@@ -13,6 +13,7 @@ export async function GET(req: Request) {
         let limit = parseInt(searchParams.get("limit") || String(DEFAULT_LIMIT), 10);
         let offset = parseInt(searchParams.get("offset") || "0", 10);
         const search = (searchParams.get("search") || "").trim();
+        const genre = (searchParams.get("genre") || "").trim();
         const mine = searchParams.get("mine") === "true";
 
         // Clamp to sane bounds
@@ -26,7 +27,6 @@ export async function GET(req: Request) {
 
         if (mine) {
             const session = await auth();
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const userId = session?.user && (session.user as any).id ? (session.user as any).id : null;
 
             if (!userId) {
@@ -35,30 +35,46 @@ export async function GET(req: Request) {
 
             if (search) {
                 const pattern = `%${search}%`;
+                const genrePattern = `%${genre}%`;
                 query = `SELECT *, user_id AS creator_id FROM stories
                          WHERE user_id = $1
                            AND (name ILIKE $2 OR synopsis ILIKE $2 OR genre ILIKE $2)
-                         ORDER BY created_at DESC LIMIT $3 OFFSET $4`;
-                params = [userId, pattern, limit + 1, offset];
+                           ${genre && genre !== "All" ? "AND genre ILIKE $3" : ""}
+                         ORDER BY created_at DESC LIMIT ${genre && genre !== "All" ? "$4" : "$3"} OFFSET ${genre && genre !== "All" ? "$5" : "$4"}`;
+                params = genre && genre !== "All"
+                    ? [userId, pattern, genrePattern, limit + 1, offset]
+                    : [userId, pattern, limit + 1, offset];
             } else {
+                const genrePattern = `%${genre}%`;
                 query = `SELECT *, user_id AS creator_id FROM stories
                          WHERE user_id = $1
-                         ORDER BY created_at DESC LIMIT $2 OFFSET $3`;
-                params = [userId, limit + 1, offset];
+                         ${genre && genre !== "All" ? "AND genre ILIKE $2" : ""}
+                         ORDER BY created_at DESC LIMIT ${genre && genre !== "All" ? "$3" : "$2"} OFFSET ${genre && genre !== "All" ? "$4" : "$3"}`;
+                params = genre && genre !== "All"
+                    ? [userId, genrePattern, limit + 1, offset]
+                    : [userId, limit + 1, offset];
             }
         } else if (search) {
             // Case-insensitive search across name, synopsis, and genre
             const pattern = `%${search}%`;
+            const genrePattern = `%${genre}%`;
             query = `SELECT *, user_id AS creator_id FROM stories
                      WHERE is_published = true
                        AND (name ILIKE $1 OR synopsis ILIKE $1 OR genre ILIKE $1)
-                     ORDER BY created_at DESC LIMIT $2 OFFSET $3`;
-            params = [pattern, limit + 1, offset];
+                       ${genre && genre !== "All" ? "AND genre ILIKE $2" : ""}
+                     ORDER BY created_at DESC LIMIT ${genre && genre !== "All" ? "$3" : "$2"} OFFSET ${genre && genre !== "All" ? "$4" : "$3"}`;
+            params = genre && genre !== "All"
+                ? [pattern, genrePattern, limit + 1, offset]
+                : [pattern, limit + 1, offset];
         } else {
+            const genrePattern = `%${genre}%`;
             query = `SELECT *, user_id AS creator_id FROM stories
                      WHERE is_published = true
-                     ORDER BY created_at DESC LIMIT $1 OFFSET $2`;
-            params = [limit + 1, offset];
+                     ${genre && genre !== "All" ? "AND genre ILIKE $1" : ""}
+                     ORDER BY created_at DESC LIMIT ${genre && genre !== "All" ? "$2" : "$1"} OFFSET ${genre && genre !== "All" ? "$3" : "$2"}`;
+            params = genre && genre !== "All"
+                ? [genrePattern, limit + 1, offset]
+                : [limit + 1, offset];
         }
 
         // Fetch one extra to determine hasMore
@@ -85,7 +101,6 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
     const session = await auth();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (!session?.user || !(session.user as any).id) {
         return NextResponse.json({error: "Unauthorized"}, {status: 401});
     }
@@ -105,7 +120,6 @@ export async function POST(req: Request) {
             isPublished: Boolean(is_published)
         };
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (session.user as any).id;
 
         // ─── ID Format & Namespace Guard ────────────────────────────
