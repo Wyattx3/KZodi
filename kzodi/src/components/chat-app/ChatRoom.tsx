@@ -1432,7 +1432,13 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     setIsTyping(false);
                     isAiRespondingRef.current = false;
                 } else {
-                    await processAiResponse(data.reply || "...", undefined, undefined, data.delayFactor, data.replyToId);
+                    if (!data.reply) {
+                        // Reaction-only turn: cooldown stripped all text, nothing to render.
+                        setIsTyping(false);
+                        isAiRespondingRef.current = false;
+                        return;
+                    }
+                    await processAiResponse(data.reply, undefined, undefined, data.delayFactor, data.replyToId);
 
                     // 🔥 Comfort Follow-up: If user is upset/angry/sad, AI sends a second wave of comfort messages
                     if (data.needsComfort && data.detectedEmotion) {
@@ -1944,6 +1950,38 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         reader.readAsDataURL(blob);
     };
 
+    const resolveReactionTargetMessageId = (requestedMessageId?: string, explicitReplyToId?: string, reactingSenderId?: string) => {
+        const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
+        const knownMessageIds = new Set(currentMessages.map((message) => message.id));
+
+        if (requestedMessageId && knownMessageIds.has(requestedMessageId)) {
+            return requestedMessageId;
+        }
+
+        if (explicitReplyToId && knownMessageIds.has(explicitReplyToId)) {
+            return explicitReplyToId;
+        }
+
+        for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
+            const message = currentMessages[index];
+
+            if (!message?.id) continue;
+            if (message.content === "__transcribing__" || message.content === "__transcribing_failed__") continue;
+
+            if (reactingSenderId) {
+                if (message.role === "assistant" && message.senderId === reactingSenderId) continue;
+                if (message.role === "assistant" && !message.senderId) continue;
+                return message.id;
+            }
+
+            if (message.role === "user") {
+                return message.id;
+            }
+        }
+
+        return requestedMessageId || explicitReplyToId || "";
+    };
+
     // Process AI response and handle splitting
     const processAiResponse = async (responseText: string, groupSenderId?: string, groupSenderName?: string, delayFactor = 1.0, replyToId?: string) => {
         let cleanText = responseText;
@@ -1963,6 +2001,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             // Handles: [[REACT:msg_id:like]], [[REACT::like]], [[REACT:like]], [[REACT : like]]
             const reactRegex = /\[\[\s*REACT\s*[:\s]\s*(.*?)\s*\]+/gi;
             let reactMatch;
+            const reactionActorId = groupSenderId || character.id;
             while ((reactMatch = reactRegex.exec(cleanText)) !== null) {
                 const inner = reactMatch[1].trim(); // e.g. "msg_id:like", ":like", "like"
                 const parts = inner.split(/[,:]+/).map(p => p.trim()).filter(p => p);
@@ -1986,9 +2025,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     } else if (emojiToReactionId[reactionRaw]) {
                         reactionId = emojiToReactionId[reactionRaw];
                     }
-                    // Only store valid reaction IDs and only if we have a message ID
-                    if (validReactionIds.includes(reactionId) && msgId) {
-                        useChatStore.getState().addReaction(character.id, msgId, reactionId, character.id);
+                    const targetMessageId = resolveReactionTargetMessageId(msgId, replyToId, groupSenderId);
+
+                    if (validReactionIds.includes(reactionId) && targetMessageId) {
+                        useChatStore.getState().addReaction(character.id, targetMessageId, reactionId, reactionActorId);
                     }
                 }
             }
@@ -2036,9 +2076,12 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             finalParts.push(...subParts);
         }
 
-        // SAFETY: If AI only sent a react/reply tag with no actual text, force a fallback
+        // If the AI only sent a reaction tag with no text content, that is valid.
+        // The reaction was already applied above — no chat bubble is needed.
         if (finalParts.length === 0) {
-            finalParts.push("...");
+            setIsTyping(false);
+            isAiRespondingRef.current = false;
+            return;
         }
 
         await sendAiSequence(finalParts, replyToId, groupSenderId, groupSenderName, delayFactor);
@@ -3125,20 +3168,20 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             <AnimatePresence>
                 {activeActionMenuId !== null && activeMessage !== null && reactionRowPlacement !== null && (() => {
                     const emojis = [
-                        { id: "like", icon: <ThumbsUp size={20} strokeWidth={2.5} color="#D48806" /> },
-                        { id: "love", icon: <Heart size={20} strokeWidth={2.5} color="#FF4D4F" /> },
-                        { id: "haha", icon: <Laugh size={20} strokeWidth={2.5} color="#FAAD14" /> },
-                        { id: "wow", icon: <Sparkles size={20} strokeWidth={2.5} color="#FFC53D" /> },
-                        { id: "sad", icon: <Frown size={20} strokeWidth={2.5} color="#4BC0C8" /> }
+                        { id: "like", icon: "👍" },
+                        { id: "love", icon: "❤️" },
+                        { id: "haha", icon: "😂" },
+                        { id: "wow", icon: "😮" },
+                        { id: "sad", icon: "😢" }
                     ];
                     const dismissMenu = () => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); setReactionRowPlacement(null); };
                     return (
                         <motion.div
                             key="chatroom-reaction-row-floating"
-                            initial={{ opacity: 0, scale: 0.85, y: 6 }}
+                            initial={{ opacity: 0, scale: 0.6, y: 8 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.85 }}
-                            transition={{ duration: 0.15 }}
+                            exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }}
+                            transition={{ type: "spring", stiffness: 420, damping: 22 }}
                             onClick={e => e.stopPropagation()}
                             style={{
                                 position: "fixed",
@@ -3146,35 +3189,53 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                 ...reactionRowPlacement,
                                 display: "flex",
                                 gap: `${RX_GAP}px`,
-                                padding: `8px ${RX_PADDING_H}px`,
-                                background: "rgba(255,255,255,0.85)",
-                                backdropFilter: "blur(16px)",
-                                WebkitBackdropFilter: "blur(16px)",
+                                padding: `6px ${RX_PADDING_H}px`,
+                                background: "rgba(255,255,255,0.92)",
+                                backdropFilter: "blur(24px)",
+                                WebkitBackdropFilter: "blur(24px)",
                                 borderRadius: "999px",
-                                boxShadow: "0 4px 16px rgba(0,0,0,0.14)",
-                                border: `${RX_BORDER}px solid rgba(0,0,0,0.07)`
+                                boxShadow: "0 6px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06)",
+                                border: `${RX_BORDER}px solid rgba(0,0,0,0.05)`
                             }}
                         >
-                            {emojis.map(e => (
-                                <button
-                                    key={e.id}
-                                    onClick={() => {
-                                        const hasReacted = activeMessage.reactions?.[e.id]?.includes(USER_CHARACTER.id);
-                                        if (hasReacted) {
-                                            useChatStore.getState().removeReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
-                                        } else {
-                                            useChatStore.getState().addReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
-                                        }
-                                        dismissMenu();
-                                    }}
-                                    style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", fontSize: "22px", cursor: "pointer", padding: "4px", borderRadius: "50%", transition: "transform 0.15s ease", width: `${RX_BUTTON_SIZE}px`, height: `${RX_BUTTON_SIZE}px` }}
-                                    onMouseEnter={ev => ev.currentTarget.style.transform = "scale(1.2)"}
-                                    onMouseLeave={ev => ev.currentTarget.style.transform = "scale(1)"}
-                                    title={e.id}
-                                >
-                                    {e.icon}
-                                </button>
-                            ))}
+                            {emojis.map((e, idx) => {
+                                const hasReacted = activeMessage.reactions?.[e.id]?.includes(USER_CHARACTER.id);
+                                return (
+                                    <motion.button
+                                        key={e.id}
+                                        initial={{ scale: 0, y: 8 }}
+                                        animate={{ scale: 1, y: 0 }}
+                                        transition={{ type: "spring", stiffness: 500, damping: 20, delay: idx * 0.04 }}
+                                        onClick={() => {
+                                            if (hasReacted) {
+                                                useChatStore.getState().removeReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
+                                            } else {
+                                                useChatStore.getState().addReaction(character.id, activeMessage.id, e.id, USER_CHARACTER.id);
+                                            }
+                                            dismissMenu();
+                                        }}
+                                        whileHover={{ scale: 1.35, y: -4 }}
+                                        whileTap={{ scale: 0.85 }}
+                                        style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            background: hasReacted ? "rgba(59,130,246,0.1)" : "none",
+                                            border: "none",
+                                            fontSize: "26px",
+                                            cursor: "pointer",
+                                            padding: "2px",
+                                            borderRadius: "50%",
+                                            width: `${RX_BUTTON_SIZE}px`,
+                                            height: `${RX_BUTTON_SIZE}px`,
+                                            transition: "background 0.15s"
+                                        }}
+                                        title={e.id}
+                                    >
+                                        {e.icon}
+                                    </motion.button>
+                                );
+                            })}
                         </motion.div>
                     );
                 })()}
@@ -3184,61 +3245,46 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             <AnimatePresence>
                 {activeActionMenuId !== null && activeMessage !== null && (() => {
                     const dismissMenu = () => { setActiveActionMenuId(null); setMenuPlacement(null); setActiveMessage(null); setActiveBubbleRect(null); setReactionRowPlacement(null); };
+                    const actionItems = [
+                        { key: "reply", label: "Reply", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M3 10h10a5 5 0 015 5v2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /><path d="M7 14L3 10l4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>, action: () => { setReplyingTo(activeMessage); setTimeout(() => inputRef.current?.focus(), 50); dismissMenu(); } },
+                        { key: "copy", label: "Copy", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.8" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="1.8" /></svg>, action: () => { navigator.clipboard.writeText(activeMessage.content); dismissMenu(); } },
+                        { key: "select", label: "Select Text", icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h10M4 17h7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>, action: () => { setSelectTextContent(activeMessage.content); dismissMenu(); } },
+                    ];
                     return (
                         <motion.div
                             key="chatroom-action-menu-fixed"
-                            initial={{ opacity: 0, y: -6, scale: 0.9 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, transition: { duration: 0 } }}
-                            transition={{ duration: 0.15 }}
+                            initial={{ opacity: 0, scale: 0.85, y: 6 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.08 } }}
+                            transition={{ type: "spring", stiffness: 500, damping: 26 }}
                             onClick={e => e.stopPropagation()}
                             style={{
                                 position: "fixed",
                                 zIndex: 200,
                                 ...(menuPlacement ?? {}),
-                                backdropFilter: "blur(20px)",
-                                WebkitBackdropFilter: "blur(20px)",
-                                background: "rgba(255,255,255,0.7)",
-                                border: "1px solid rgba(0,0,0,0.08)",
-                                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                                backdropFilter: "blur(24px)",
+                                WebkitBackdropFilter: "blur(24px)",
+                                background: "rgba(255,255,255,0.88)",
+                                border: "1px solid rgba(0,0,0,0.06)",
+                                boxShadow: "0 8px 32px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.04)",
                                 borderRadius: "14px",
                                 minWidth: "160px",
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "4px",
-                                padding: "4px"
+                                overflow: "hidden"
                             }}
                         >
-                            <button className="chatroom-msg-action-btn" onClick={() => {
-                                setReplyingTo(activeMessage);
-                                setTimeout(() => inputRef.current?.focus(), 50);
-                                dismissMenu();
-                            }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                    <path d="M3 10h10a5 5 0 015 5v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M7 14L3 10l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                                Reply
-                            </button>
-                            <button className="chatroom-msg-action-btn" onClick={() => {
-                                navigator.clipboard.writeText(activeMessage.content);
-                                dismissMenu();
-                            }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="1.5" />
-                                </svg>
-                                Copy
-                            </button>
-                            <button className="chatroom-msg-action-btn" onClick={() => {
-                                setSelectTextContent(activeMessage.content);
-                                dismissMenu();
-                            }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                    <path d="M4 7h16M4 12h10M4 17h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                </svg>
-                                Select Text
-                            </button>
+                            {actionItems.map((item, idx) => (
+                                <motion.button
+                                    key={item.key}
+                                    className="chatroom-msg-action-btn"
+                                    initial={{ opacity: 0, x: -8 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: 0.03 * idx, duration: 0.15 }}
+                                    onClick={item.action}
+                                >
+                                    {item.icon}
+                                    {item.label}
+                                </motion.button>
+                            ))}
                         </motion.div>
                     );
                 })()}
@@ -3358,11 +3404,11 @@ function MessageBubble({
     const rid = message.id.slice(-6); // unique suffix for SVG gradient IDs
     // Emoji set used for reaction pill icon lookup (action menu emojis rendered at ChatRoom level)
     const emojis = [
-        { id: "like", icon: <ThumbsUp size={20} strokeWidth={2.5} color="#D48806" /> },
-        { id: "love", icon: <Heart size={20} strokeWidth={2.5} color="#FF4D4F" /> },
-        { id: "haha", icon: <Laugh size={20} strokeWidth={2.5} color="#FAAD14" /> },
-        { id: "wow", icon: <Sparkles size={20} strokeWidth={2.5} color="#FFC53D" /> },
-        { id: "sad", icon: <Frown size={20} strokeWidth={2.5} color="#4BC0C8" /> }
+        { id: "like", icon: "👍" },
+        { id: "love", icon: "❤️" },
+        { id: "haha", icon: "😂" },
+        { id: "wow", icon: "😮" },
+        { id: "sad", icon: "😢" }
     ];
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const longPressTriggered = useRef(false);
@@ -3628,7 +3674,7 @@ function MessageBubble({
                                             boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
                                         }}
                                     >
-                                        <span style={{ display: "flex", alignItems: "center", width: "16px", height: "16px" }}>
+                                        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", lineHeight: 1 }}>
                                             {emojis.find(e => e.id === emoji)?.icon || emoji}
                                         </span>
                                         {users.length > 1 && (

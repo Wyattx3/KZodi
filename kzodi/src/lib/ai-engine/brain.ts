@@ -523,6 +523,8 @@ STICKER RULES:
 
 REACTIONS:
 - React to messages with [[REACT:message_id:reaction_type]] (like, love, haha, wow, sad).
+- ALWAYS include the exact target message_id. Never omit it, never leave it blank, and never use [[REACT:like]] or [[REACT::like]].
+- If the chat history shows a [MessageID: ...] marker for the message you are reacting to, copy that exact ID into the tag.
 - React naturally, every 3-5 messages. Don't force reactions.
 - ALWAYS write text. Reaction alone is NEVER acceptable.
 

@@ -3408,21 +3408,25 @@ body {
   align-items: center;
   justify-content: flex-start;
   width: 100%;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 11px 14px;
   border: none;
   background: transparent;
-  color: #9CA3AF;
-  font-size: 11px;
-  font-weight: 600;
+  color: #4A3728;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  border-radius: 8px;
-  transition: all 0.15s ease;
+  border-radius: 0;
+  transition: background 0.12s ease;
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+}
+
+.chatroom-msg-action-btn:last-child {
+  border-bottom: none;
 }
 
 .chatroom-msg-action-btn:active {
-  background: #F3F4F6;
-  color: #4A3728;
+  background: rgba(0,0,0,0.06);
 }
 
 /* Typing indicator â€” Light */
@@ -5798,8 +5802,8 @@ body {
 /* ── Story Grid ─────────────────────────────────── */
 .se-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px 10px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px 8px;
   padding: 4px 16px 100px;
 }
 
@@ -6529,14 +6533,271 @@ body {
   .se-featured-img {
     height: 180px;
   }
+
+  .se-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (min-width: 641px) {
-  .se-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
   .sp-overview-grid {
     grid-template-columns: repeat(3, 1fr);
   }
+}
+
+/* ── Search Result Row (Novel-app Style) ─────────── */
+.se-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 16px 100px;
+}
+
+.se-search-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.se-search-row:active {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.se-search-row-cover {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.se-search-row-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.se-search-row-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.se-search-row-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #FAFAFA;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.se-search-row-synopsis {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.se-search-row-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.se-search-row-genre {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.se-search-row-meta {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.25);
+  font-weight: 600;
+}
+
+.se-search-row-skeleton {
+  pointer-events: none;
+}
+
+.se-search-row-skeleton .se-search-row-cover,
+.se-search-row-skeleton .se-search-row-body {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+  background-size: 200% 100%;
+  animation: pulse 1.5s infinite;
+  border-radius: 10px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MY LIBRARY — Story Cards (Light Theme, Novel-app Style)
+   ═══════════════════════════════════════════════════════════════ */
+.my-stories-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 16px;
+  background: #FFFFFF;
+  border: 1px solid rgba(74, 55, 40, 0.06);
+  color: #9CA3AF;
+  font-size: 13px;
+}
+
+.my-stories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.my-story-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 34px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 16px;
+  background: #FFFFFF;
+  border: 1px solid rgba(74, 55, 40, 0.07);
+  box-shadow: 0 2px 8px rgba(74, 55, 40, 0.04);
+  cursor: pointer;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.my-story-row:active {
+  box-shadow: 0 1px 4px rgba(74, 55, 40, 0.08);
+  border-color: rgba(74, 55, 40, 0.12);
+}
+
+.my-story-cover {
+  width: 64px;
+  height: 84px;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.my-story-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.my-story-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #E8D5A3, #C7A17A);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.my-story-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.my-story-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #2B1C13;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.my-story-synopsis {
+  margin: 0;
+  font-size: 12px;
+  color: #8E7A67;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.my-story-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.my-story-status {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.my-story-status.published {
+  background: rgba(74, 222, 128, 0.15);
+  color: #16a34a;
+}
+
+.my-story-status.draft {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+}
+
+.my-story-genre {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(74, 55, 40, 0.06);
+  color: #8E7A67;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.my-story-edit-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(74, 55, 40, 0.08);
+  background: rgba(255, 250, 243, 0.9);
+  color: #8E7A67;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+
+.my-story-edit-btn:active {
+  background: #FFE566;
+  color: #4A3728;
 }

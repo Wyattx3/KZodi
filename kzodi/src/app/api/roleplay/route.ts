@@ -217,6 +217,41 @@ function sanitizeStickers(content: string, characterName: string): string {
     return cleaned;
 }
 
+interface PreservedReactionDirective {
+    placeholder: string;
+    rawTag: string;
+}
+
+function protectReactionDirectives(content: string): {
+    content: string;
+    directives: PreservedReactionDirective[];
+} {
+    const directives: PreservedReactionDirective[] = [];
+    let index = 0;
+
+    const protectedContent = content.replace(/\[\[\s*REACT\s*[:\s]\s*(.*?)\s*\]+/gi, (match) => {
+        const placeholder = `__KAKOEI_REACT_${index}__`;
+        directives.push({ placeholder, rawTag: match.trim() });
+        index += 1;
+        return placeholder;
+    });
+
+    return { content: protectedContent, directives };
+}
+
+function restoreReactionDirectives(
+    content: string,
+    directives: PreservedReactionDirective[]
+): string {
+    let restored = content;
+
+    for (const directive of directives) {
+        restored = restored.replace(directive.placeholder, directive.rawTag);
+    }
+
+    return restored;
+}
+
 // ─── Clean AI response text ──────────────────────────────────────────────────
 
 function cleanResponseText(rawContent: string, characterName: string): string {
@@ -658,7 +693,11 @@ IMPORTANT RULES:
                 }
             );
 
-            const content = cleanResponseText(storyResult.content || "", characterName);
+            const protectedStoryContent = protectReactionDirectives(storyResult.content || "");
+            const content = restoreReactionDirectives(
+                cleanResponseText(protectedStoryContent.content, characterName),
+                protectedStoryContent.directives
+            );
 
             return NextResponse.json({
                 reply: content,
@@ -676,7 +715,9 @@ IMPORTANT RULES:
         const engineOutput = await processMessage(engineInput);
 
         // ─── Post-Process Reply ──────────────────────────────────────
-        let content = cleanResponseText(engineOutput.reply, characterName);
+        const protectedReply = protectReactionDirectives(engineOutput.reply);
+
+        let content = cleanResponseText(protectedReply.content, characterName);
         content = sanitizeStickers(content, characterName);
 
         // Enforce short messages at code level (regardless of what the model outputs)
@@ -684,11 +725,15 @@ IMPORTANT RULES:
             responseLanguage === "Burmese (Zawgyi)" ||
             responseLanguage === "Mix (Burmese + English)";
         content = enforceShortMessages(content, isBurmeseResponse);
+        content = restoreReactionDirectives(content, protectedReply.directives);
 
         const cooldownResult = await applyBehaviorCooldowns({
             userId,
             characterId: effectiveCharacterId,
             characterPersonality,
+            aiEmotion: engineOutput.cognitiveState.heart.currentEmotion,
+            aiEmotionIntensity: engineOutput.cognitiveState.heart.intensity,
+            userEmotion: engineOutput.cognitiveState.heart.userEmotion,
             userEmotionIntensity: engineOutput.cognitiveState.heart.userEmotionIntensity,
             content,
             shouldReplyToId: engineOutput.cognitiveState.brain.shouldReplyToId
@@ -697,13 +742,10 @@ IMPORTANT RULES:
         content = cooldownResult.content;
         const finalReplyToId = cooldownResult.shouldReplyToId;
 
-        // Strip [[REACT:...]] tags from the final reply text.
-        // These are AI directives for reactions; they should not appear in the chat UI.
-        // The client-side (ChatRoom.tsx processAiResponse) also strips them, but this acts as
-        // a defense-in-depth to catch any format the client regex might miss.
+        // Keep in-band [[REACT:...]] directives for the client to parse and apply.
+        // Display-only sanitization happens client-side and memory sanitization happens below.
         // NOTE: [[REPLY:...]] tags are NOT stripped here — the frontend processAiResponse
         // needs them to extract replyToId before removing them.
-        content = content.replace(/\[\[\s*REACT[^\]]*\]\]/gi, "").trim();
 
         // ─── Save to Memory ──────────────────────────────────────────
         if (content && message) {
@@ -756,8 +798,10 @@ IMPORTANT RULES:
         });
     } catch (error) {
         console.error("Roleplay error:", error);
+        // Return ignore so the frontend releases the typing lock silently.
+        // Returning a "..." reply creates a phantom bubble in the chat.
         return NextResponse.json(
-            { reply: "..." },
+            { reply: null, action: "ignore" },
             { status: 200 }
         );
     }

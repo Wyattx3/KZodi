@@ -25,6 +25,9 @@ const BASE_COOLDOWNS = {
     quoteReplies: { min: 6, max: 10 }
 };
 
+const HIGH_REACTIVITY_AI_EMOTIONS = ["happy", "excited", "flirty", "playful", "tender", "relieved", "nostalgic"];
+const EMPATHY_TRIGGER_USER_EMOTIONS = ["sad", "angry", "upset", "lonely", "worried", "frustrated", "guilty"];
+
 function pickCooldown(min: number, max: number, multiplier: number): number {
     const scaledMin = Math.round(min * multiplier);
     const scaledMax = Math.round(max * multiplier);
@@ -67,13 +70,22 @@ export async function applyBehaviorCooldowns(params: {
     userId: string,
     characterId: string,
     characterPersonality: string,
+    aiEmotion: string,
+    aiEmotionIntensity: number,
+    userEmotion: string,
     userEmotionIntensity: number,
     content: string,
     shouldReplyToId: string,
 }): Promise<{ content: string, shouldReplyToId: string }> {
     let { content, shouldReplyToId } = params;
 
-    if (params.userEmotionIntensity > 0.7) {
+    const shouldBypassAll =
+        params.userEmotionIntensity > 0.7 ||
+        params.aiEmotionIntensity > 0.6 ||
+        HIGH_REACTIVITY_AI_EMOTIONS.includes(params.aiEmotion) ||
+        EMPATHY_TRIGGER_USER_EMOTIONS.includes(params.userEmotion);
+
+    if (shouldBypassAll) {
         await Promise.all([
             bypassCooldown(params.userId, params.characterId, 'reactions'),
             bypassCooldown(params.userId, params.characterId, 'stickers'),

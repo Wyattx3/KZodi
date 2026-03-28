@@ -219,34 +219,65 @@ export default function StoryExplorePage() {
                             <span className="se-section-count">{stories.length}</span>
                         </div>
 
-                        {/* Story grid */}
-                        <div className="se-grid">
-                            {stories.map((story, index) => {
-                                const badge = getHeatBadge(story, index);
-                                return (
+                        {/* Story grid or search results */}
+                        {search ? (
+                            /* Novel-app style search results list */
+                            <div className="se-search-results">
+                                {stories.map((story) => (
                                     <motion.div
                                         key={story.id}
-                                        className="se-card"
+                                        className="se-search-row"
                                         onClick={() => router.push(`/story/preview/${story.id}`)}
-                                        whileTap={{ scale: 0.96 }}
+                                        whileTap={{ scale: 0.98 }}
                                     >
-                                        <div className="se-card-cover">
+                                        <div className="se-search-row-cover">
                                             <img
                                                 src={getSafeImage(story.image, story.name)}
                                                 alt={story.name}
-                                                className="se-card-img"
+                                                className="se-search-row-img"
                                             />
-                                            {badge && <span className={`se-badge se-badge-${badge.toLowerCase()}`}>{badge}</span>}
-                                            <span className="se-card-genre">{story.genre || "Story"}</span>
                                         </div>
-                                        <div className="se-card-info">
-                                            <h3 className="se-card-title">{story.name}</h3>
-                                            <p className="se-card-meta">{getMetaLine(story)}</p>
+                                        <div className="se-search-row-body">
+                                            <h3 className="se-search-row-title">{story.name}</h3>
+                                            <p className="se-search-row-synopsis">{getSynopsis(story)}</p>
+                                            <div className="se-search-row-tags">
+                                                <span className="se-search-row-genre">{story.genre || "Story"}</span>
+                                                <span className="se-search-row-meta">{getMetaLine(story)}</span>
+                                            </div>
                                         </div>
                                     </motion.div>
-                                );
-                            })}
-                        </div>
+                                ))}
+                            </div>
+                        ) : (
+                            /* Regular 3-column grid */
+                            <div className="se-grid">
+                                {stories.map((story, index) => {
+                                    const badge = getHeatBadge(story, index);
+                                    return (
+                                        <motion.div
+                                            key={story.id}
+                                            className="se-card"
+                                            onClick={() => router.push(`/story/preview/${story.id}`)}
+                                            whileTap={{ scale: 0.96 }}
+                                        >
+                                            <div className="se-card-cover">
+                                                <img
+                                                    src={getSafeImage(story.image, story.name)}
+                                                    alt={story.name}
+                                                    className="se-card-img"
+                                                />
+                                                {badge && <span className={`se-badge se-badge-${badge.toLowerCase()}`}>{badge}</span>}
+                                                <span className="se-card-genre">{story.genre || "Story"}</span>
+                                            </div>
+                                            <div className="se-card-info">
+                                                <h3 className="se-card-title">{story.name}</h3>
+                                                <p className="se-card-meta">{getMetaLine(story)}</p>
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </>
                 )}
             </div>

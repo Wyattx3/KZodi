@@ -307,72 +307,56 @@ const LibraryView = ({
                 </h3>
 
                 {stories.length === 0 ? (
-                    <div
-                        style={{
-                            borderRadius: "22px",
-                            background: "#FFFFFF",
-                            border: "1px solid #F3F4F6",
-                            padding: "20px",
-                            color: "#9CA3AF",
-                            fontSize: "14px",
-                        }}
-                    >
-                        Your saved stories will appear here.
+                    <div className="my-stories-empty">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.3 }}>
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5V4.5A2.5 2.5 0 0 1 6.5 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        <span>Your saved stories will appear here.</span>
                     </div>
                 ) : (
-                    <div className="explore-grid">
+                    <div className="my-stories-list">
                         {stories.map((story) => (
                             <motion.div
                                 key={story.id}
-                                className="explore-card"
+                                className="my-story-row"
                                 whileTap={{ scale: 0.98 }}
                             >
-                                <div className="explore-card-img-wrap">
+                                <div className="my-story-cover">
                                     {story.image ? (
-                                        <img src={story.image} alt={story.name} className="explore-card-img" />
+                                        <img src={story.image} alt={story.name} className="my-story-cover-img" />
                                     ) : (
-                                        <div
-                                            className="explore-card-img"
-                                            style={{ background: "linear-gradient(135deg, #EED6BA, #C7A17A)" }}
-                                        />
-                                    )}
-                                    <div className="explore-card-img-overlay" />
-                                    <div className="explore-card-float-tag">
-                                        <span>{story.genre || story.storyData?.genre || "Story"}</span>
-                                    </div>
-                                    <button
-                                        className="explore-card-info-btn"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onEditStoryClick(story);
-                                        }}
-                                        aria-label="Edit story"
-                                    >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                        </svg>
-                                    </button>
-                                </div>
-                                <div className="explore-card-body">
-                                    <div className="explore-card-kicker">Your Story</div>
-                                    <div className="explore-card-name-row">
-                                        <div className="explore-card-title-group">
-                                            <h3 className="explore-card-name">
-                                                {story.name}
-                                            </h3>
+                                        <div className="my-story-cover-placeholder">
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5V4.5A2.5 2.5 0 0 1 6.5 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
                                         </div>
-                                    </div>
-                                    <p className="explore-card-desc">{story.synopsis || story.storyData?.synopsis || "No synopsis yet."}</p>
-                                    <div className="explore-card-footer">
-                                        <span className="explore-card-meta-chip">
+                                    )}
+                                </div>
+                                <div className="my-story-info">
+                                    <h3 className="my-story-title">{story.name}</h3>
+                                    <p className="my-story-synopsis">{story.synopsis || story.storyData?.synopsis || "No synopsis yet."}</p>
+                                    <div className="my-story-tags">
+                                        <span className={`my-story-status ${story.is_published ? "published" : "draft"}`}>
                                             {story.is_published ? "Published" : "Draft"}
                                         </span>
-                                        <span className="explore-card-personality">
-                                            {story.genre || story.storyData?.genre || "Story"}
-                                        </span>
+                                        <span className="my-story-genre">{story.genre || story.storyData?.genre || "Story"}</span>
                                     </div>
                                 </div>
+                                <button
+                                    className="my-story-edit-btn"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onEditStoryClick(story);
+                                    }}
+                                    aria-label="Edit story"
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                    </svg>
+                                </button>
                             </motion.div>
                         ))}
                     </div>
