@@ -2,28 +2,25 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useChatStore, type ChatMessage, type Conversation } from "@/lib/chatStore";
+import { useChatStore, type ChatMessage } from "@/lib/chatStore";
 import StoryRoom from "@/components/story/StoryRoom";
-
-interface ServerConversation {
-    characterId: string;
-    lastMessage?: string;
-    lastTimestamp?: number;
-    conversationType?: string;
-    groupName?: string | null;
-    groupImage?: string | null;
-    groupMemberIds?: string[] | null;
-    worldData?: Conversation["worldData"];
-    storyData?: Conversation["storyData"];
-    creatorId?: string | null;
-}
+import { fetchServerStoryConversation } from "@/lib/storyConversation";
 
 export default function StoryPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
     const [storyId, setStoryId] = useState<string | null>(null);
     const [hasHydrated, setHasHydrated] = useState(() => useChatStore.persist.hasHydrated());
     const [loadState, setLoadState] = useState<"idle" | "loading" | "failed">("idle");
+    const [hasAttemptedServerHydration, setHasAttemptedServerHydration] = useState(false);
     const conversation = useChatStore((state) => (storyId ? state.conversations[storyId] : undefined));
+    const localStoryConversation = conversation?.conversationType === "story" ? conversation : undefined;
+    const shouldHydrateOptimisticLocalStory =
+        localStoryConversation?._pendingSync === true ||
+        typeof localStoryConversation?._syncFailedAt === "number";
+    const shouldHydrateFromServer =
+        !localStoryConversation ||
+        shouldHydrateOptimisticLocalStory ||
+        localStoryConversation.messages.length === 0;
 
     useEffect(() => {
         params.then((resolved) => setStoryId(resolved.id));
@@ -46,15 +43,33 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
     }, []);
 
     useEffect(() => {
-        if (!storyId) {
+        setHasAttemptedServerHydration(false);
+        setLoadState("idle");
+    }, [storyId]);
+
+    useEffect(() => {
+        if (!storyId || !hasHydrated || !shouldHydrateFromServer) {
             return;
         }
 
-        if (!hasHydrated) {
+        setHasAttemptedServerHydration(false);
+    }, [
+        hasHydrated,
+        localStoryConversation?.messages.length,
+        localStoryConversation?._pendingSync,
+        localStoryConversation?._syncFailedAt,
+        shouldHydrateFromServer,
+        storyId,
+    ]);
+
+    useEffect(() => {
+        if (!storyId || !hasHydrated) {
             return;
         }
 
-        if (conversation?.conversationType === "story") {
+        const shouldLoadFromServer = !hasAttemptedServerHydration && shouldHydrateFromServer;
+
+        if (!shouldLoadFromServer) {
             if (loadState === "loading") {
                 setLoadState("idle");
             }
@@ -71,19 +86,12 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
             setLoadState("loading");
 
             try {
-                const conversationsResponse = await fetch("/api/conversations");
-                if (!conversationsResponse.ok) {
-                    throw new Error(`Conversation lookup failed with ${conversationsResponse.status}`);
-                }
-
-                const data = await conversationsResponse.json();
-                const serverConversation = ((data?.conversations || []) as ServerConversation[]).find(
-                    (entry) => entry.characterId === storyId && entry.conversationType === "story"
-                );
+                const serverConversation = await fetchServerStoryConversation(storyId);
 
                 if (!serverConversation) {
                     if (!isCancelled) {
-                        setLoadState("failed");
+                        setHasAttemptedServerHydration(true);
+                        setLoadState(localStoryConversation ? "idle" : "failed");
                     }
                     return;
                 }
@@ -104,7 +112,9 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
                     _syncFailedAt: undefined,
                 });
 
-                const messagesResponse = await fetch(`/api/messages?conversationId=${storyId}`);
+                const messagesResponse = await fetch(`/api/messages?conversationId=${storyId}`, {
+                    cache: "no-store",
+                });
                 if (messagesResponse.ok) {
                     const messagesData = await messagesResponse.json();
                     if (!isCancelled) {
@@ -113,12 +123,14 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
                 }
 
                 if (!isCancelled) {
+                    setHasAttemptedServerHydration(true);
                     setLoadState("idle");
                 }
             } catch (error) {
                 console.error("Failed to load story conversation", error);
                 if (!isCancelled) {
-                    setLoadState("failed");
+                    setHasAttemptedServerHydration(true);
+                    setLoadState(localStoryConversation ? "idle" : "failed");
                 }
             }
         };
@@ -128,27 +140,27 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
         return () => {
             isCancelled = true;
         };
-    }, [conversation?.conversationType, hasHydrated, loadState, storyId]);
+    }, [hasHydrated, hasAttemptedServerHydration, loadState, localStoryConversation, shouldHydrateFromServer, storyId]);
 
     useEffect(() => {
         if (!storyId || !hasHydrated) {
             return;
         }
 
-        if (conversation?.conversationType === "story") {
+        if (localStoryConversation) {
             return;
         }
 
         if (loadState === "failed") {
             router.replace("/chat");
         }
-    }, [conversation, hasHydrated, loadState, router, storyId]);
+    }, [hasHydrated, loadState, localStoryConversation, router, storyId]);
 
-    if (!storyId || !hasHydrated || loadState === "loading") {
+    if (!storyId || !hasHydrated || (!localStoryConversation && loadState === "loading")) {
         return <div className="min-h-[100dvh]" style={{ backgroundColor: "#0E0C0A" }} />;
     }
 
-    if (!conversation || conversation.conversationType !== "story") {
+    if (!localStoryConversation) {
         return <div className="min-h-[100dvh]" style={{ backgroundColor: "#0E0C0A" }} />;
     }
 

@@ -24,32 +24,6 @@ interface StoryFragment {
 }
 
 const DEFAULT_QUICK_ACTIONS = ["Continue", "Ask a question", "Look around"];
-const STORY_CHARACTER_CARD_PRESETS = [
-    {
-        imageRatio: "4 / 5",
-        fallbackGradient: "linear-gradient(160deg, #24170F 0%, #6F4B28 52%, #D1AC73 100%)",
-        overlay: "linear-gradient(180deg, rgba(9,7,5,0.08) 0%, rgba(9,7,5,0.22) 42%, rgba(9,7,5,0.92) 100%)",
-        halo: "rgba(214, 162, 96, 0.26)",
-    },
-    {
-        imageRatio: "1 / 1",
-        fallbackGradient: "linear-gradient(160deg, #1E1714 0%, #574033 50%, #B68D67 100%)",
-        overlay: "linear-gradient(180deg, rgba(12,8,6,0.04) 0%, rgba(12,8,6,0.18) 38%, rgba(12,8,6,0.9) 100%)",
-        halo: "rgba(161, 111, 87, 0.24)",
-    },
-    {
-        imageRatio: "3 / 4",
-        fallbackGradient: "linear-gradient(160deg, #1B1410 0%, #3F2D21 45%, #8B6B44 100%)",
-        overlay: "linear-gradient(180deg, rgba(9,6,5,0.05) 0%, rgba(9,6,5,0.16) 40%, rgba(9,6,5,0.88) 100%)",
-        halo: "rgba(132, 102, 74, 0.24)",
-    },
-    {
-        imageRatio: "5 / 6",
-        fallbackGradient: "linear-gradient(160deg, #231912 0%, #6B4735 48%, #C69A68 100%)",
-        overlay: "linear-gradient(180deg, rgba(10,7,5,0.04) 0%, rgba(10,7,5,0.16) 34%, rgba(10,7,5,0.9) 100%)",
-        halo: "rgba(188, 140, 94, 0.24)",
-    },
-] as const;
 
 interface StoryCharacterCardProps {
     name: string;
@@ -60,7 +34,6 @@ interface StoryCharacterCardProps {
     statsLabel?: string | null;
     selected: boolean;
     mode: "creator" | "kakoei";
-    index: number;
     onSelect: () => void;
 }
 
@@ -113,144 +86,85 @@ function StoryCharacterCard({
     statsLabel,
     selected,
     mode,
-    index,
     onSelect,
 }: StoryCharacterCardProps) {
-    const preset = STORY_CHARACTER_CARD_PRESETS[index % STORY_CHARACTER_CARD_PRESETS.length];
     const chips = getCharacterCardChips(personality, mode === "kakoei" ? categoryLabel : undefined);
     const topLabel = mode === "creator" ? "Story Cast" : "Kakoei";
-    const eyebrow = mode === "creator" ? "Creator POV" : categoryLabel || "Character";
     const footerText = selected
-        ? "Selected for this story"
+        ? "Selected"
         : mode === "creator"
-            ? "Tap to step into this role"
-            : "Tap to bring into this world";
-    const cardBodyBackground = selected
-        ? "linear-gradient(180deg, rgba(255,248,236,0.92) 0%, rgba(255,250,242,0.98) 22%, #FFFDF8 52%)"
-        : "linear-gradient(180deg, rgba(255,249,239,0.84) 0%, rgba(255,252,246,0.96) 24%, #FFFCF7 54%)";
+            ? "Play as this role"
+            : "Bring into this world";
 
     return (
         <button
             type="button"
             onClick={onSelect}
-            className="story-character-masonry-item group w-full overflow-hidden rounded-[22px] border text-left align-top transition-transform duration-200 hover:-translate-y-1 active:scale-[0.99] sm:rounded-[26px]"
-            style={{
-                borderColor: selected ? "#E8D5A3" : "rgba(232,213,163,0.14)",
-                background: selected ? "linear-gradient(180deg, rgba(232,213,163,0.14), rgba(12,10,8,0.96))" : "rgba(12,10,8,0.92)",
-                color: "#F7E7C1",
-                boxShadow: selected ? `0 22px 60px ${preset.halo}` : "0 16px 40px rgba(0,0,0,0.24)",
-            }}
+            className={`w-full overflow-hidden rounded-[18px] border text-left flex flex-col transition-all duration-200 ${
+                selected ? "border-[#E8D5A3] bg-[#1A1612]" : "border-[rgba(232,213,163,0.12)] bg-[#100D0B] hover:bg-[#1A1612]"
+            }`}
         >
-            <div className="relative overflow-hidden rounded-[inherit]">
-                <div className="pointer-events-none absolute -right-10 top-[44%] h-28 w-28 rounded-full blur-3xl" style={{ background: preset.halo }} />
-
-                <div
-                    className="relative overflow-hidden"
+            <div className="flex items-start gap-4 p-4">
+                <div 
+                    className="w-[72px] h-[72px] sm:w-[84px] sm:h-[84px] shrink-0 rounded-xl relative overflow-hidden"
                     style={{
-                        aspectRatio: preset.imageRatio,
-                        background: image ? `center / cover no-repeat url(${image})` : preset.fallbackGradient,
+                        background: image ? `center / cover no-repeat url(${image})` : "linear-gradient(135deg, #1E160F, #5C4326)",
                     }}
                 >
-                    <div className="absolute inset-0" style={{ background: preset.overlay }} />
-
-                    <div
-                        className="absolute left-3 top-3 inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] backdrop-blur-md"
-                        style={{
-                            borderColor: "rgba(247,231,193,0.18)",
-                            background: "rgba(14,12,10,0.42)",
-                            color: "#F7E7C1",
-                        }}
-                    >
+                    {selected && (
+                        <div className="absolute top-1.5 right-1.5 bg-[#E8D5A3] text-[#0E0C0A] text-[9px] uppercase font-bold tracking-widest px-[5px] py-[2px] rounded-full">
+                            ✓
+                        </div>
+                    )}
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.15em] mb-1.5" style={{ color: "rgba(232,213,163,0.5)" }}>
                         {topLabel}
                     </div>
-
-                    <div
-                        className="absolute right-3 top-3 inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] backdrop-blur-md"
-                        style={{
-                            borderColor: selected ? "rgba(232,213,163,0.36)" : "rgba(247,231,193,0.14)",
-                            background: selected ? "rgba(232,213,163,0.2)" : "rgba(14,12,10,0.36)",
-                            color: selected ? "#F7E7C1" : "rgba(247,231,193,0.76)",
-                        }}
-                    >
-                        {selected ? "Selected" : String(index + 1).padStart(2, "0")}
+                    <div className="font-serif text-[18px] sm:text-[20px] leading-tight mb-2 truncate" style={{ color: "#F7E7C1" }}>
+                        {name}
                     </div>
-
-                    <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.22em]" style={{ color: "rgba(247,231,193,0.74)" }}>
-                            {eyebrow}
-                        </div>
-                    </div>
-                </div>
-
-                <div
-                    className="relative -mt-6 flex flex-col gap-3 rounded-t-[24px] p-4 sm:-mt-7 sm:gap-3.5 sm:rounded-t-[28px] sm:p-5"
-                    style={{
-                        background: cardBodyBackground,
-                        color: "#3B2A1A",
-                        boxShadow: "0 -14px 32px rgba(255,248,236,0.42)",
-                    }}
-                >
-                    <div
-                        className="pointer-events-none absolute inset-x-0 -top-10 h-12"
-                        style={{
-                            background: "linear-gradient(180deg, rgba(255,252,246,0) 0%, rgba(255,250,242,0.46) 46%, rgba(255,250,242,0.96) 100%)",
-                        }}
-                    />
-
-                    <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "rgba(84,60,38,0.58)" }}>
-                            {topLabel}
-                        </div>
-                        <div className="mt-2 font-serif text-[24px] leading-[1.05] sm:text-[28px]" style={{ color: "#3B2A1A" }}>
-                            {name}
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                        {(chips.length > 0 ? chips : [mode === "creator" ? "Original Cast" : categoryLabel || "Kakoei"]).map((chip) => (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                        {(chips.length > 0 ? chips : [mode === "creator" ? "Original" : categoryLabel || "Kakoei"]).slice(0, 2).map((chip) => (
                             <span
                                 key={`${name}-${chip}`}
-                                className="rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] sm:text-[11px]"
+                                className="px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider rounded-md border"
                                 style={{
-                                    borderColor: "rgba(168,127,82,0.18)",
-                                    background: "rgba(232,213,163,0.24)",
-                                    color: "#8A5F36",
+                                    borderColor: "rgba(232,213,163,0.1)",
+                                    background: "rgba(232,213,163,0.05)",
+                                    color: "rgba(232,213,163,0.7)",
                                 }}
                             >
                                 {chip}
                             </span>
                         ))}
                     </div>
-
-                    <div
-                        className="text-[13px] leading-6 sm:text-[14px]"
+                    <div 
+                        className="text-[13px] leading-relaxed" 
                         style={{
-                            color: "rgba(74,55,40,0.72)",
+                            color: "rgba(247,231,193,0.6)",
                             display: "-webkit-box",
-                            WebkitLineClamp: mode === "creator" ? 4 : 3,
+                            WebkitLineClamp: 2,
                             WebkitBoxOrient: "vertical",
                             overflow: "hidden",
                         }}
                     >
                         {description}
                     </div>
-
-                    <div className="flex items-center justify-between gap-3 pt-1 text-[11px] font-semibold uppercase tracking-[0.16em]">
-                        <span style={{ color: selected ? "#5A4026" : "rgba(74,55,40,0.64)" }}>{footerText}</span>
-                        {statsLabel ? (
-                            <span
-                                className="rounded-full border px-2.5 py-1"
-                                style={{
-                                    borderColor: "rgba(168,127,82,0.18)",
-                                    background: "rgba(232,213,163,0.28)",
-                                    color: "#8A5F36",
-                                }}
-                            >
-                                {statsLabel}
-                            </span>
-                        ) : null}
-                    </div>
                 </div>
+            </div>
+
+            <div 
+                className="px-4 py-3 flex items-center justify-between text-[11px] font-medium tracking-wide border-t"
+                style={{
+                    borderColor: "rgba(232,213,163,0.06)",
+                    background: "rgba(20,16,12,0.4)",
+                    color: selected ? "#E8D5A3" : "rgba(232,213,163,0.4)"
+                }}
+            >
+                <span>{footerText}</span>
+                {statsLabel && <span>{statsLabel}</span>}
             </div>
         </button>
     );
@@ -491,370 +405,243 @@ function CharacterSelectionScreen({
 
         setSelectionMode(null);
     };
-
     return (
-        <div
-            className="min-h-[100dvh] h-[100dvh] overflow-hidden px-4 py-4 sm:px-5 sm:py-6 md:px-8"
-            style={{
-                backgroundColor: "#0E0C0A",
-                color: "#F7E7C1",
-            }}
-        >
-            <div className="mx-auto flex h-full w-full max-w-[760px] flex-col gap-4 sm:gap-6">
-                <div className="relative z-20">
-                    <div
-                        className="flex items-center gap-3 rounded-[18px] border px-3 py-3 sm:gap-4 sm:rounded-[22px] sm:px-4 sm:py-4"
-                        style={{
-                            borderColor: "rgba(232,213,163,0.12)",
-                            background: "rgba(14,12,10,0.9)",
-                            backdropFilter: "blur(16px)",
-                            WebkitBackdropFilter: "blur(16px)",
-                        }}
-                    >
-                        <button
-                            type="button"
-                            onClick={handleSelectionBack}
-                            className="flex h-[38px] w-[38px] items-center justify-center rounded-full border sm:h-[42px] sm:w-[42px]"
-                            style={{
-                                borderColor: "rgba(232,213,163,0.16)",
-                                background: "rgba(20,16,12,0.92)",
-                                color: "#F7E7C1",
-                                flexShrink: 0,
-                            }}
-                            aria-label={isOverviewScreen ? "Back to chats" : "Back to selection methods"}
-                        >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                                <path d="M15 4L7 12L15 20" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                        </button>
-                        <div className="min-w-0 flex-1">
-                            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] sm:text-[11px] sm:tracking-[0.2em]" style={{ color: "rgba(232,213,163,0.68)" }}>
-                                {isOverviewScreen ? "Story Setup" : "Character Setup"}
-                            </div>
-                            <div className="truncate font-serif text-[20px] leading-tight sm:text-[24px]">
-                                {isOverviewScreen ? title : activeSelectionOption?.title}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div ref={containerRef} className="no-scrollbar min-h-0 flex-1 overflow-y-auto pb-4 sm:pb-6">
-                    <div className="flex flex-col gap-4 sm:gap-5">
-                <div
-                    className="overflow-hidden rounded-[24px] border sm:rounded-[28px]"
-                    style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
+        <div className="min-h-[100dvh] h-[100dvh] flex flex-col bg-[#0E0C0A] text-[#F7E7C1] font-sans">
+            {/* Header */}
+            <header className="flex items-center gap-3 px-4 py-4 shrink-0 border-b border-[rgba(232,213,163,0.08)] bg-[#0A0806]">
+                <button
+                    type="button"
+                    onClick={handleSelectionBack}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.08)] transition-colors"
+                    aria-label={isOverviewScreen ? "Back to chats" : "Back to selection methods"}
                 >
-                    <div className="grid gap-0 md:grid-cols-[180px_1fr]">
-                        <div
-                            className="h-[156px] md:h-auto md:min-h-[220px]"
-                            style={{
-                                background: coverImage
-                                    ? `center / cover no-repeat url(${coverImage})`
-                                    : "linear-gradient(135deg, #2A1E13, #8B6B44)",
-                            }}
-                        />
-                        <div className="flex flex-col gap-2.5 p-4 sm:gap-3 sm:p-6">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] sm:text-[12px] sm:tracking-[0.2em]" style={{ color: "#E8D5A3", opacity: 0.72 }}>
-                                Story Preview
-                            </div>
-                            <h1 className="m-0 font-serif text-[26px] leading-tight sm:text-[32px]">{title}</h1>
-                            <div className="text-[13px] sm:text-[14px]" style={{ color: "rgba(247,231,193,0.72)" }}>
-                                {`${genre || "Story"} | ${creatorLabel || "Creator"}`}
-                            </div>
-                            <p className="m-0 max-w-[440px] text-[14px] leading-6 sm:text-[15px] sm:leading-7" style={{ color: "rgba(247,231,193,0.82)" }}>
-                                {isOverviewScreen
-                                    ? "Choose how you want to step into this world before the first scene begins."
-                                    : "You are now on a dedicated character setup screen. Finish this path, then begin the story."}
-                            </p>
-                            {!isOverviewScreen && activeSelectionOption && (
-                                <div
-                                    className="mt-1 inline-flex w-fit items-center rounded-full border px-3.5 py-1.5 text-[11px] font-semibold sm:mt-2 sm:px-4 sm:py-2 sm:text-[12px]"
-                                    style={{
-                                        borderColor: "rgba(232,213,163,0.18)",
-                                        background: "rgba(232,213,163,0.08)",
-                                        color: "#E8D5A3",
-                                    }}
-                                >
-                                    {activeSelectionOption.subtitle}
-                                </div>
-                            )}
-                        </div>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                </button>
+                <div className="min-w-0 flex-1">
+                    <div className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+                        {isOverviewScreen ? "Story Setup" : "Character Setup"}
+                    </div>
+                    <div className="truncate font-serif text-[18px] leading-tight">
+                        {isOverviewScreen ? title : activeSelectionOption?.title}
                     </div>
                 </div>
+            </header>
 
-                <AnimatePresence mode="wait" initial={false}>
-                    {isOverviewScreen ? (
-                        <motion.div
-                            key="selection-overview"
-                            initial={{ opacity: 0, x: -24 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -24 }}
-                            transition={{ duration: 0.22, ease: "easeOut" }}
-                            className="flex flex-col gap-4 sm:gap-5"
-                        >
-                            <div className="grid gap-3 sm:gap-4 md:grid-cols-3">
+            {/* Scrollable Content */}
+            <div ref={containerRef} className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
+                <div className="mx-auto w-full max-w-[640px] flex flex-col gap-6">
+                    {/* Story Preview Block */}
+                    <div className="flex items-start gap-4 p-4 rounded-2xl bg-[rgba(255,255,255,0.02)] border border-[rgba(232,213,163,0.08)]">
+                        {coverImage ? (
+                            <div
+                                className="w-16 h-24 shrink-0 rounded-lg bg-neutral-800"
+                                style={{ background: `center / cover no-repeat url(${coverImage})` }}
+                            />
+                        ) : (
+                            <div className="w-16 h-24 shrink-0 rounded-lg bg-neutral-800" style={{ background: "linear-gradient(135deg, #1E160F, #5C4326)" }} />
+                        )}
+                        <div className="flex flex-col gap-1.5 min-w-0 flex-1 py-1">
+                            <h1 className="m-0 font-serif text-[20px] sm:text-[22px] leading-tight truncate">{title}</h1>
+                            <div className="text-[13px] text-neutral-400 truncate">
+                                {`${genre || "Story"} • ${creatorLabel || "Creator"}`}
+                            </div>
+                            <p className="m-0 text-[13px] leading-relaxed text-neutral-500 mt-1 line-clamp-2">
+                                {isOverviewScreen
+                                    ? "Choose how you want to step into this world."
+                                    : activeSelectionOption?.subtitle}
+                            </p>
+                        </div>
+                    </div>
+
+                    <AnimatePresence mode="wait" initial={false}>
+                        {isOverviewScreen ? (
+                            <motion.div
+                                key="selection-overview"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                transition={{ duration: 0.2 }}
+                                className="flex flex-col gap-3"
+                            >
                                 {selectionOptions.map((option) => (
                                     <button
                                         key={option.id}
                                         type="button"
                                         onClick={() => setSelectionMode(option.id)}
-                                        className="rounded-[20px] border p-4 text-left transition-colors sm:rounded-[24px] sm:p-5"
-                                        style={{
-                                            borderColor: "rgba(232,213,163,0.14)",
-                                            background: "rgba(20,16,12,0.9)",
-                                            color: "#F7E7C1",
-                                        }}
+                                        className="flex items-center justify-between gap-4 rounded-2xl border border-[rgba(232,213,163,0.08)] bg-[rgba(255,255,255,0.02)] hover:bg-[rgba(255,255,255,0.04)] p-4 text-left transition-colors"
                                     >
-                                        <div
-                                            className="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-[0.18em]"
-                                            style={{
-                                                borderColor: "rgba(232,213,163,0.18)",
-                                                background: "rgba(232,213,163,0.08)",
-                                                color: "#E8D5A3",
-                                            }}
-                                        >
-                                            {option.kicker}
+                                        <div>
+                                            <div className="text-[15px] font-semibold text-[#E8D5A3]">{option.title}</div>
+                                            <div className="mt-1 text-[13px] text-neutral-400">
+                                                {option.subtitle}
+                                            </div>
                                         </div>
-                                        <div className="mt-3 text-[15px] font-semibold sm:text-[16px]">{option.title}</div>
-                                        <div className="mt-1.5 text-[13px] leading-6" style={{ color: "rgba(247,231,193,0.64)" }}>
-                                            {option.subtitle}
-                                        </div>
-                                        <div className="mt-4 flex items-center gap-2 text-[11px] font-semibold sm:mt-5 sm:text-[12px]" style={{ color: "#E8D5A3" }}>
-                                            Continue to setup
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                                <path d="M9 5L16 12L9 19" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-                                            </svg>
-                                        </div>
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-neutral-600 shrink-0">
+                                            <path d="M9 5L16 12L9 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
                                     </button>
                                 ))}
-                            </div>
-                            <div
-                                className="rounded-[20px] border px-4 py-4 text-[13px] leading-6 sm:rounded-[24px] sm:px-5 sm:py-5"
-                                style={{
-                                    borderColor: "rgba(232,213,163,0.14)",
-                                    background: "rgba(20,16,12,0.9)",
-                                    color: "rgba(247,231,193,0.72)",
-                                }}
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key={`selection-${selectionMode}`}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                transition={{ duration: 0.2 }}
+                                className="flex flex-col gap-6"
                             >
-                                Pick a path first and we will move you into a focused setup screen instead of making you work lower down on this page.
-                            </div>
-                        </motion.div>
-                    ) : (
-                        <motion.div
-                            key={`selection-${selectionMode}`}
-                            initial={{ opacity: 0, x: 24 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -24 }}
-                            transition={{ duration: 0.22, ease: "easeOut" }}
-                            className="flex flex-col gap-4 sm:gap-5"
-                        >
-                            <div
-                                className="flex flex-col items-start gap-3 rounded-[20px] border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:rounded-[24px] sm:px-5"
-                                style={{
-                                    borderColor: "rgba(232,213,163,0.18)",
-                                    background: "rgba(20,16,12,0.9)",
-                                }}
-                            >
-                                <div>
-                                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] sm:text-[12px] sm:tracking-[0.18em]" style={{ color: "rgba(232,213,163,0.68)" }}>
-                                        Current Path
-                                    </div>
-                                    <div className="mt-1 text-[15px] font-semibold sm:text-[16px]">{activeSelectionOption?.title}</div>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectionMode(null)}
-                                    className="w-full rounded-full border px-4 py-2 text-[13px] font-semibold sm:w-auto"
-                                    style={{
-                                        borderColor: "rgba(232,213,163,0.18)",
-                                        background: "rgba(12,10,8,0.92)",
-                                        color: "#F7E7C1",
-                                    }}
-                                >
-                                    Change Method
-                                </button>
-                            </div>
-
-                        {selectionMode === "custom" && (
-                            <div
-                                className="flex flex-col gap-4 rounded-[22px] border p-4 sm:rounded-[28px] sm:p-6"
-                                style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
-                            >
-                                <div className="grid gap-4 md:grid-cols-[120px_1fr]">
-                                    <input
-                                        ref={customImageInputRef}
-                                        type="file"
-                                        accept="image/*"
-                                        style={{ display: "none" }}
-                                        onChange={(event) => {
-                                            const file = event.target.files?.[0];
-                                            if (!file) {
-                                                return;
-                                            }
-                                            const reader = new FileReader();
-                                            reader.onload = (loadEvent) => {
-                                                const result = loadEvent.target?.result;
-                                                if (typeof result === "string") {
-                                                    setCustomImage(result);
-                                                }
-                                            };
-                                            reader.readAsDataURL(file);
-                                            event.target.value = "";
-                                        }}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => customImageInputRef.current?.click()}
-                                        className="rounded-[18px] border text-[13px] font-semibold sm:rounded-[20px] sm:text-[14px]"
-                                        style={{
-                                            height: "132px",
-                                            borderColor: "rgba(232,213,163,0.18)",
-                                            background: customImage
-                                                ? `center / cover no-repeat url(${customImage})`
-                                                : "linear-gradient(135deg, #1E160F, #5C4326)",
-                                            color: "#F7E7C1",
-                                        }}
-                                    >
-                                        {!customImage && "Upload image"}
-                                    </button>
-                                    <div className="flex flex-col gap-3 sm:gap-4">
-                                        <input
-                                            type="text"
-                                            value={customName}
-                                            onChange={(event) => setCustomName(event.target.value)}
-                                            placeholder="Character name"
-                                            className="rounded-[16px] border px-4 py-3.5 text-[14px] outline-none sm:rounded-[18px] sm:py-4 sm:text-[15px]"
-                                            style={{
-                                                borderColor: "rgba(232,213,163,0.16)",
-                                                background: "rgba(12,10,8,0.9)",
-                                                color: "#F7E7C1",
-                                            }}
-                                        />
+                                {selectionMode === "custom" && (
+                                    <div className="flex flex-col gap-4">
+                                        <div className="flex gap-4 items-end">
+                                            <div className="flex-1 flex flex-col gap-4">
+                                                <input
+                                                    type="text"
+                                                    value={customName}
+                                                    onChange={(event) => setCustomName(event.target.value)}
+                                                    placeholder="Character name"
+                                                    className="w-full rounded-xl border border-[rgba(232,213,163,0.12)] bg-[#14120F] px-4 py-3.5 text-[15px] outline-none focus:border-[#E8D5A3] transition-colors placeholder:text-neutral-600"
+                                                />
+                                            </div>
+                                            <div className="shrink-0 relative">
+                                                <input
+                                                    ref={customImageInputRef}
+                                                    type="file"
+                                                    accept="image/*"
+                                                    style={{ display: "none" }}
+                                                    onChange={(event) => {
+                                                        const file = event.target.files?.[0];
+                                                        if (!file) return;
+                                                        const reader = new FileReader();
+                                                        reader.onload = (loadEvent) => {
+                                                            const result = loadEvent.target?.result;
+                                                            if (typeof result === "string") setCustomImage(result);
+                                                        };
+                                                        reader.readAsDataURL(file);
+                                                        event.target.value = "";
+                                                    }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => customImageInputRef.current?.click()}
+                                                    className="w-[52px] h-[52px] rounded-full border border-[rgba(232,213,163,0.12)] bg-[#14120F] flex items-center justify-center overflow-hidden hover:bg-[rgba(255,255,255,0.05)] transition-colors relative group"
+                                                >
+                                                    {customImage ? (
+                                                        <div className="w-full h-full" style={{ background: `center / cover no-repeat url(${customImage})` }} />
+                                                    ) : (
+                                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-neutral-500">
+                                                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
                                         <textarea
                                             value={customDescription}
                                             onChange={(event) => setCustomDescription(event.target.value)}
                                             placeholder="Appearance, backstory, and what drives this character"
-                                            className="min-h-[110px] rounded-[16px] border px-4 py-3.5 text-[14px] leading-6 outline-none sm:rounded-[18px] sm:py-4 sm:text-[15px]"
-                                            style={{
-                                                borderColor: "rgba(232,213,163,0.16)",
-                                                background: "rgba(12,10,8,0.9)",
-                                                color: "#F7E7C1",
-                                            }}
+                                            className="min-h-[140px] w-full resize-none rounded-2xl border border-[rgba(232,213,163,0.12)] bg-[#14120F] px-4 py-4 text-[14px] leading-relaxed outline-none focus:border-[#E8D5A3] transition-colors placeholder:text-neutral-600"
                                         />
                                     </div>
-                                </div>
-                            </div>
-                        )}
+                                )}
 
-                        {selectionMode === "creator" && (
-                            <div
-                                className="flex flex-col gap-4 rounded-[22px] border p-4 sm:rounded-[28px] sm:p-6"
-                                style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
-                            >
-                                {creatorCharacters.length === 0 ? (
-                                    <div className="rounded-[18px] border px-4 py-5 text-[13px] sm:rounded-[20px] sm:px-5 sm:py-6 sm:text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
-                                        No characters available.
+                                {selectionMode === "creator" && (
+                                    <div className="flex flex-col gap-3">
+                                        {creatorCharacters.length === 0 ? (
+                                            <div className="rounded-2xl border border-[rgba(232,213,163,0.08)] bg-[rgba(255,255,255,0.02)] p-6 text-center text-[14px] text-neutral-500">
+                                                No characters available.
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col gap-3">
+                                                {creatorCharacters.map((character, index) => (
+                                                    <StoryCharacterCard
+                                                        key={character.id}
+                                                        name={character.name}
+                                                        description={character.description}
+                                                        image={character.image}
+                                                        personality={character.personality}
+                                                        selected={selectedCreatorCharacterId === character.id}
+                                                        mode="creator"
+                                                        onSelect={() => setSelectedCreatorCharacterId(character.id)}
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="story-character-masonry">
-                                        {creatorCharacters.map((character, index) => (
-                                            <StoryCharacterCard
-                                                key={character.id}
-                                                name={character.name}
-                                                description={character.description}
-                                                image={character.image}
-                                                personality={character.personality}
-                                                selected={selectedCreatorCharacterId === character.id}
-                                                mode="creator"
-                                                index={index}
-                                                onSelect={() => setSelectedCreatorCharacterId(character.id)}
+                                )}
+
+                                {selectionMode === "kakoei" && (
+                                    <div className="flex flex-col gap-4">
+                                        <div className="relative">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500">
+                                                <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                            </svg>
+                                            <input
+                                                type="text"
+                                                value={kakoeiSearch}
+                                                onChange={(event) => setKakoeiSearch(event.target.value)}
+                                                placeholder="Search Kakoei..."
+                                                className="w-full rounded-full border border-[rgba(232,213,163,0.12)] bg-[#14120F] pl-11 pr-4 py-3 text-[14px] outline-none focus:border-[#E8D5A3] transition-colors placeholder:text-neutral-600"
                                             />
-                                        ))}
+                                        </div>
+
+                                        {loadingCharacters && (
+                                            <div className="py-8 text-center text-[14px] text-neutral-500 italic">
+                                                Searching...
+                                            </div>
+                                        )}
+
+                                        {!loadingCharacters && availableCharacters.length === 0 && (
+                                            <div className="rounded-2xl border border-[rgba(232,213,163,0.08)] bg-[rgba(255,255,255,0.02)] p-6 text-center text-[14px] text-neutral-500">
+                                                No characters found.
+                                            </div>
+                                        )}
+
+                                        <div className="flex flex-col gap-3">
+                                            {availableCharacters.map((character, index) => {
+                                                const chatterLabel = formatCompactCount(character.chatterCount ?? character.totalUsers);
+                                                const likeLabel = formatCompactCount(character.likesCount ?? character.likes);
+                                                const statsLabel = chatterLabel
+                                                    ? `${chatterLabel} chats`
+                                                    : likeLabel
+                                                        ? `${likeLabel} likes`
+                                                        : null;
+
+                                                return (
+                                                    <StoryCharacterCard
+                                                        key={character.id}
+                                                        name={character.name}
+                                                        description={character.description}
+                                                        image={character.image}
+                                                        personality={character.personality}
+                                                        categoryLabel={character.tag}
+                                                        statsLabel={statsLabel}
+                                                        selected={selectedKakoeiCharacterId === character.id}
+                                                        mode="kakoei"
+                                                        onSelect={() => setSelectedKakoeiCharacterId(character.id)}
+                                                    />
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 )}
-                            </div>
-                        )}
 
-                        {selectionMode === "kakoei" && (
-                            <div
-                                className="flex flex-col gap-4 rounded-[22px] border p-4 sm:rounded-[28px] sm:p-6"
-                                style={{ borderColor: "rgba(232,213,163,0.16)", background: "rgba(20,16,12,0.92)" }}
-                            >
-                                <input
-                                    type="text"
-                                    value={kakoeiSearch}
-                                    onChange={(event) => setKakoeiSearch(event.target.value)}
-                                    placeholder="Search Kakoei characters..."
-                                    className="rounded-[16px] border px-4 py-3.5 text-[14px] outline-none sm:rounded-[18px] sm:py-4 sm:text-[15px]"
-                                    style={{
-                                        borderColor: "rgba(232,213,163,0.16)",
-                                        background: "rgba(12,10,8,0.9)",
-                                        color: "#F7E7C1",
-                                    }}
-                                />
-
-                                {loadingCharacters && (
-                                    <div className="rounded-[18px] border px-4 py-5 text-center text-[13px] sm:rounded-[20px] sm:px-5 sm:py-6 sm:text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
-                                        Loading characters...
-                                    </div>
-                                )}
-
-                                {!loadingCharacters && availableCharacters.length === 0 && (
-                                    <div className="rounded-[18px] border px-4 py-5 text-center text-[13px] sm:rounded-[20px] sm:px-5 sm:py-6 sm:text-[14px]" style={{ borderColor: "rgba(232,213,163,0.14)", color: "rgba(247,231,193,0.64)" }}>
-                                        No characters available.
-                                    </div>
-                                )}
-
-                                <div className="story-character-masonry">
-                                    {availableCharacters.map((character, index) => {
-                                        const chatterLabel = formatCompactCount(character.chatterCount ?? character.totalUsers);
-                                        const likeLabel = formatCompactCount(character.likesCount ?? character.likes);
-                                        const statsLabel = chatterLabel
-                                            ? `${chatterLabel} chats`
-                                            : likeLabel
-                                                ? `${likeLabel} likes`
-                                                : null;
-
-                                        return (
-                                            <StoryCharacterCard
-                                                key={character.id}
-                                                name={character.name}
-                                                description={character.description}
-                                                image={character.image}
-                                                personality={character.personality}
-                                                categoryLabel={character.tag}
-                                                statsLabel={statsLabel}
-                                                selected={selectedKakoeiCharacterId === character.id}
-                                                mode="kakoei"
-                                                index={index}
-                                                onSelect={() => setSelectedKakoeiCharacterId(character.id)}
-                                            />
-                                        );
-                                    })}
+                                <div className="mt-4 pt-4 border-t border-[rgba(232,213,163,0.08)]">
+                                    <button
+                                        type="button"
+                                        onClick={persistSelection}
+                                        disabled={!canBegin}
+                                        className="w-full rounded-full bg-[#E8D5A3] px-6 py-3.5 text-[15px] font-semibold text-[#0E0C0A] transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#D1AC73] active:scale-[0.98]"
+                                        style={{ opacity: canBegin ? 1 : 0.5 }}
+                                    >
+                                        Begin Story
+                                    </button>
                                 </div>
-                            </div>
+                            </motion.div>
                         )}
-
-                        <div className="flex justify-stretch sm:justify-end">
-                            <button
-                                type="button"
-                                onClick={persistSelection}
-                                disabled={!canBegin}
-                                className="w-full rounded-full px-6 py-3 text-[14px] font-semibold transition-opacity sm:w-auto sm:text-[15px]"
-                                style={{
-                                    background: canBegin ? "#E8D5A3" : "rgba(232,213,163,0.24)",
-                                    color: "#0E0C0A",
-                                    cursor: canBegin ? "pointer" : "not-allowed",
-                                    opacity: canBegin ? 1 : 0.7,
-                                }}
-                            >
-                                Begin Story -&gt;
-                            </button>
-                        </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-                    </div>
+                    </AnimatePresence>
                 </div>
             </div>
         </div>

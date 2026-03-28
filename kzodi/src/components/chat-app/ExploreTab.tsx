@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SOURCE_CATEGORIES, type Character } from "@/data/characters";
+import { useRouter } from "next/navigation";
 
 const CATEGORIES = ["All", ...SOURCE_CATEGORIES] as const;
 type ExploreCategory = (typeof CATEGORIES)[number];
 import { App } from '@capacitor/app';
 import { useChatStore } from "@/lib/chatStore";
+import { buildCreateStoryData } from "@/lib/storyData";
 
 const getSafeImage = (image?: string | null, seedName?: string) => {
     if (image && image.trim() !== '') return image;
@@ -276,16 +278,10 @@ function getSearchResultCopy(character: Character) {
 }
 
 export default function ExploreTab({ onSelectCharacter, onSelectGroup }: ExploreTabProps) {
+    const router = useRouter();
     const [activeCategory, setActiveCategory] = useState<ExploreCategory>("All");
     const [search, setSearch] = useState("");
     const [searchMode, setSearchMode] = useState(false);
-    const [storyLibraryMode, setStoryLibraryMode] = useState(false);
-    const [storyGenre, setStoryGenre] = useState("All");
-    const [storySearchMode, setStorySearchMode] = useState(false);
-    const [storyPreviewItem, setStoryPreviewItem] = useState<any | null>(null);
-    const [storyItems, setStoryItems] = useState<any[]>([]);
-    const [storyLoading, setStoryLoading] = useState(false);
-    const [storySearch, setStorySearch] = useState("");
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [selectedPreview, setSelectedPreview] = useState<Character | null>(null);
@@ -401,69 +397,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
         }
     };
 
-    const fetchStoryLibrary = useCallback(async () => {
-        setStoryLoading(true);
-        try {
-            const fetchUrl = `/api/stories?genre=${encodeURIComponent(storyGenre)}&search=${encodeURIComponent(storySearch)}&limit=50&offset=0`;
-            const res = await fetch(fetchUrl);
-            if (res.ok) {
-                const data = await res.json();
-                setStoryItems(Array.isArray(data.items) ? data.items : []);
-            } else {
-                setStoryItems([]);
-            }
-        } catch (error) {
-            console.error("Failed to fetch story library:", error);
-            setStoryItems([]);
-        } finally {
-            setStoryLoading(false);
-        }
-    }, [storyGenre, storySearch]);
 
-    useEffect(() => {
-        if (!storyLibraryMode) {
-            return;
-        }
-
-        fetchStoryLibrary();
-    }, [fetchStoryLibrary, storyLibraryMode]);
-
-    const storyPreviewDetails = useMemo(() => {
-        if (!storyPreviewItem) {
-            return null;
-        }
-
-        const parsedStoryData = safeParseJSON(storyPreviewItem.story_data) || {};
-        const worldRules = parsedStoryData.worldRules || {};
-        const worldLabel = getStoryWorldLabel(storyPreviewItem);
-        const toneLabel = getStoryToneLabel(storyPreviewItem) || getFirstNonEmptyString(parsedStoryData.tone);
-        const contentRating = STORY_CONTENT_RATING_LABELS[parsedStoryData.contentRating] || "";
-        const playerMode = parsedStoryData.allowUserCharacterCustomization ? "Custom lead" : "Preset lead";
-        const cast = getStoryCast(storyPreviewItem);
-
-        return {
-            synopsis: getStorySynopsis(storyPreviewItem),
-            worldLabel,
-            toneLabel,
-            hook: getStoryHook(storyPreviewItem),
-            tags: [worldLabel, toneLabel].filter(Boolean).slice(0, 2),
-            overview: [
-                { label: "Genre", value: storyPreviewItem.genre || "Story" },
-                toneLabel ? { label: "Tone", value: toneLabel } : null,
-                contentRating ? { label: "Rating", value: contentRating } : null,
-                { label: "Lead", value: playerMode },
-                worldRules.worldType ? { label: "World", value: worldRules.worldType } : null,
-                worldRules.timePeriod ? { label: "Era", value: worldRules.timePeriod } : null,
-            ].filter((item): item is StoryDetailField => Boolean(item)),
-            worldRules: [
-                worldRules.timePeriod ? { label: "Time Period", value: worldRules.timePeriod } : null,
-                worldRules.worldType ? { label: "World Type", value: worldRules.worldType } : null,
-                worldRules.specialRules ? { label: "Special Rules", value: worldRules.specialRules } : null,
-                worldRules.forbiddenTopics ? { label: "Boundaries", value: worldRules.forbiddenTopics } : null,
-            ].filter((item): item is StoryDetailField => Boolean(item)),
-            cast,
-        };
-    }, [storyPreviewItem]);
 
     useEffect(() => {
         setCurrentOffset(0);
@@ -757,16 +691,45 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
             return;
         }
         if (char.source === "story" && onSelectGroup) {
-            // Show the pre-play character setup modal instead of directly opening
             const store = useChatStore.getState();
             const existingConvo = store.conversations[char.id];
-            // Pre-fill with existing player values if available
+            const existingStoryConvo = existingConvo?.conversationType === "story" ? existingConvo : undefined;
+            const allowCustomization = char.storyData?.allowUserCharacterCustomization === true;
+
+            if (existingStoryConvo) {
+                onSelectGroup(char.id);
+                return;
+            }
+
+            if (!allowCustomization) {
+                const storyId = store.createStory(
+                    char.name,
+                    char.image,
+                    buildCreateStoryData(
+                        char.storyData,
+                        {
+                            synopsis: char.storyData?.synopsis || char.description || "",
+                            genre: char.storyData?.genre || char.tag || "",
+                            isPublished: char.storyData?.isPublished ?? true,
+                            castIds: char.storyData?.castIds || []
+                        },
+                        {
+                            playerCharacterName: char.storyData?.playerCharacterName || "",
+                            playerCharacterDescription: char.storyData?.playerCharacterDescription || ""
+                        }
+                    ),
+                    char.worldData,
+                    char.id,
+                    char.creatorId
+                );
+                onSelectGroup(storyId);
+                return;
+            }
+
             setPlayerName(
-                existingConvo?.storyData?.playerCharacterName ||
                 char.storyData?.playerCharacterName || ""
             );
             setPlayerDesc(
-                existingConvo?.storyData?.playerCharacterDescription ||
                 char.storyData?.playerCharacterDescription || ""
             );
             setStorySetupChar(char);
@@ -784,24 +747,27 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
 
         const store = useChatStore.getState();
         const existingConvo = store.conversations[char.id];
+        const existingStoryConvo = existingConvo?.conversationType === "story" ? existingConvo : undefined;
 
-        if (existingConvo) {
+        if (existingStoryConvo) {
             // Existing conversation found — persist updated story metadata to the backend
             // Prefer reusing createStory with the explicit id so sync is consistent
             store.createStory(
                 char.name,
                 char.image,
                 {
-                    synopsis: char.storyData?.synopsis || char.description || existingConvo.storyData?.synopsis || "",
-                    genre: char.storyData?.genre || char.tag || existingConvo.storyData?.genre || "",
-                    isPublished: true,
+                    ...existingStoryConvo.storyData,
+                    ...char.storyData,
+                    synopsis: char.storyData?.synopsis || char.description || existingStoryConvo.storyData?.synopsis || "",
+                    genre: char.storyData?.genre || char.tag || existingStoryConvo.storyData?.genre || "",
+                    isPublished: char.storyData?.isPublished ?? existingStoryConvo.storyData?.isPublished ?? true,
                     playerCharacterName: finalName,
                     playerCharacterDescription: finalDesc,
-                    castIds: char.storyData?.castIds || existingConvo.storyData?.castIds || []
+                    castIds: char.storyData?.castIds || existingStoryConvo.storyData?.castIds || []
                 },
-                char.worldData ?? existingConvo.worldData,
+                char.worldData ?? existingStoryConvo.worldData,
                 char.id,
-                char.creatorId ?? existingConvo.creatorId
+                char.creatorId ?? existingStoryConvo.creatorId
             );
             onSelectGroup(char.id);
         } else {
@@ -809,14 +775,19 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
             const storyId = store.createStory(
                 char.name,
                 char.image,
-                {
-                    synopsis: char.storyData?.synopsis || char.description || "",
-                    genre: char.storyData?.genre || char.tag || "",
-                    isPublished: true,
-                    playerCharacterName: finalName,
-                    playerCharacterDescription: finalDesc,
-                    castIds: char.storyData?.castIds || []
-                },
+                buildCreateStoryData(
+                    char.storyData,
+                    {
+                        synopsis: char.storyData?.synopsis || char.description || "",
+                        genre: char.storyData?.genre || char.tag || "",
+                        isPublished: char.storyData?.isPublished ?? true,
+                        castIds: char.storyData?.castIds || []
+                    },
+                    {
+                        playerCharacterName: finalName,
+                        playerCharacterDescription: finalDesc
+                    }
+                ),
                 char.worldData,
                 char.id,
                 char.creatorId
@@ -827,360 +798,10 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
         setStorySetupChar(null);
     };
 
-    const closeStoryLibrary = useCallback(() => {
-        setStoryLibraryMode(false);
-        setStorySearchMode(false);
-        setStoryPreviewItem(null);
-        setStorySearch("");
-    }, []);
 
-    const handleStoryLibraryCardClick = useCallback((story: any) => {
-        setStorySearchMode(false);
-        setStoryPreviewItem(story);
-    }, []);
-
-    const handleStoryLibraryStart = useCallback((story: any, e: React.MouseEvent | React.TouchEvent) => {
-        setStoryPreviewItem(null);
-        handleCardClick(mapStoryToCharacter(story), e);
-    }, [handleCardClick]);
 
     return (
         <div className="explore-container">
-            <AnimatePresence>
-                {storyLibraryMode && (
-                    <>
-                        <motion.div
-                            className="story-lib-overlay"
-                            variants={storyOverlayVariants}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                        >
-                            <motion.div
-                                className="story-lib-overlay-icon"
-                                initial={{ scale: 0.88, opacity: 0 }}
-                                animate={{ scale: [0.88, 1.04, 1], opacity: 1, transition: { duration: 0.3 } }}
-                            >
-                                <svg width="42" height="42" viewBox="0 0 24 24" fill="none">
-                                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="#FAFAF8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M6.5 2H20V22H6.5A2.5 2.5 0 0 1 4 19.5V4.5A2.5 2.5 0 0 1 6.5 2Z" stroke="#FAFAF8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                            </motion.div>
-                        </motion.div>
-
-                        <motion.div
-                            className="story-lib-container"
-                            variants={storyLibraryVariants}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                        >
-                            <div className="story-lib-header">
-                                <button type="button" className="story-lib-back-btn" onClick={closeStoryLibrary} aria-label="Back to explore">
-                                    <span aria-hidden="true">←</span>
-                                    <span>Back</span>
-                                </button>
-                                <div className="story-lib-header-copy">
-                                    <span className="story-lib-header-kicker">Curated Shelf</span>
-                                    <span className="story-lib-header-title">Story Library</span>
-                                </div>
-                            </div>
-
-                            <div className="story-lib-search" onClick={() => setStorySearchMode(true)}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                                    <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                </svg>
-                                <span>{storySearch || "Search titles, genres, worlds"}</span>
-                            </div>
-
-                            <div className="story-lib-genre-chips no-scrollbar">
-                                {STORY_GENRES.map((genre) => (
-                                    <button
-                                        key={genre}
-                                        type="button"
-                                        className={`story-genre-chip ${storyGenre === genre ? "active" : ""}`}
-                                        onClick={() => setStoryGenre(genre)}
-                                    >
-                                        {genre}
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div className="story-lib-section-head">
-                                <div>
-                                    <div className="story-lib-section-kicker">{storyGenre === "All" ? "Editor Picks" : storyGenre}</div>
-                                    <div className="story-lib-section-title">{storyItems.length} stories on the shelf</div>
-                                </div>
-                            </div>
-
-                            <div className="story-lib-grid no-scrollbar">
-                                {storyLoading ? (
-                                    Array.from({ length: 9 }).map((_, index) => (
-                                        <div key={`story-skeleton-${index}`} className="story-novel-card story-novel-card-skeleton">
-                                            <div className="story-novel-card-cover story-novel-card-cover-skeleton" />
-                                            <div className="story-novel-card-body">
-                                                <div className="story-novel-card-book-title story-novel-card-headline-skeleton" />
-                                                <div className="story-novel-card-meta story-novel-card-kicker-skeleton" />
-                                            </div>
-                                        </div>
-                                    ))
-                                ) : (
-                                    storyItems.map((story, index) => {
-                                        const heatBadge = getStoryHeatBadge(story, index);
-                                        return (
-                                            <motion.div
-                                                key={story.id}
-                                                className="story-novel-card"
-                                                onClick={() => handleStoryLibraryCardClick(story)}
-                                                whileTap={{ scale: 0.97 }}
-                                            >
-                                                <div className="story-novel-card-cover">
-                                                    <img src={getSafeImage(story.image, story.name)} alt={story.name} className="story-novel-card-image" />
-                                                    <span className="story-novel-card-genre-badge">{story.genre || "Story"}</span>
-                                                    {heatBadge && (
-                                                        <span className="story-hot-badge">{heatBadge}</span>
-                                                    )}
-                                                </div>
-                                                <div className="story-novel-card-body">
-                                                    <div className="story-novel-card-book-title">{story.name}</div>
-                                                    <div className="story-novel-card-meta">{getStoryMetaLine(story) || story.genre || "Story"}</div>
-                                                </div>
-                                            </motion.div>
-                                        );
-                                    })
-                                )}
-                            </div>
-
-                            <AnimatePresence>
-                                {storySearchMode && (
-                                    <motion.div
-                                        className="story-lib-search-overlay"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        exit={{ opacity: 0 }}
-                                    >
-                                        <div className="story-lib-search-overlay-top">
-                                            <div className="story-lib-search-shell">
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                                                    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                                                    <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                                </svg>
-                                                <input
-                                                    type="text"
-                                                    className="story-lib-search-input"
-                                                    placeholder="Search story library"
-                                                    value={storySearch}
-                                                    onChange={(event) => setStorySearch(event.target.value)}
-                                                    autoFocus
-                                                />
-                                            </div>
-                                            <button
-                                                type="button"
-                                                className="story-lib-search-cancel"
-                                                onClick={() => {
-                                                    setStorySearchMode(false);
-                                                    setStorySearch("");
-                                                }}
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-
-                                        <div className="story-lib-search-results no-scrollbar">
-                                            {storyLoading ? (
-                                                Array.from({ length: 6 }).map((_, index) => (
-                                                    <div key={`story-row-skeleton-${index}`} className="story-search-row story-search-row-skeleton" />
-                                                ))
-                                            ) : storyItems.length > 0 ? (
-                                                storyItems.map((story, index) => {
-                                                    const heatBadge = getStoryHeatBadge(story, index);
-                                                    return (
-                                                        <motion.div
-                                                            key={`${story.id}-search`}
-                                                            className="story-search-row"
-                                                            onClick={() => handleStoryLibraryCardClick(story)}
-                                                            whileTap={{ scale: 0.985 }}
-                                                        >
-                                                            <div className="story-search-row-cover-wrap">
-                                                                <img src={getSafeImage(story.image, story.name)} alt={story.name} className="story-search-row-cover" />
-                                                                {heatBadge && (
-                                                                    <span className="story-hot-badge story-search-hot-badge">{heatBadge}</span>
-                                                                )}
-                                                            </div>
-                                                            <div className="story-search-row-content">
-                                                                <div className="story-search-row-head">
-                                                                    <div className="story-search-row-title">{story.name}</div>
-                                                                    <span className="story-novel-card-genre-badge story-search-genre-badge">
-                                                                        {story.genre || "Story"}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="story-search-row-kicker">{getStoryMetaLine(story)}</div>
-                                                                <div className="story-search-row-synopsis">
-                                                                    {getStorySynopsis(story)}
-                                                                </div>
-                                                            </div>
-                                                        </motion.div>
-                                                    );
-                                                })
-                                            ) : (
-                                                <div className="story-search-empty">
-                                                    No stories found for that search yet.
-                                                </div>
-                                            )}
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-
-                            <AnimatePresence>
-                                {storyPreviewItem && storyPreviewDetails && (
-                                    <motion.div
-                                        className="story-detail-page"
-                                        variants={storyDetailVariants}
-                                        initial="initial"
-                                        animate="animate"
-                                        exit="exit"
-                                    >
-                                        <div className="story-detail-header">
-                                            <button
-                                                type="button"
-                                                className="story-lib-back-btn story-detail-header-back"
-                                                onClick={() => setStoryPreviewItem(null)}
-                                                aria-label="Back to story library"
-                                            >
-                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                </svg>
-                                            </button>
-                                            <div className="story-detail-header-copy">
-                                                <div className="story-detail-header-titleline">Story Preview</div>
-                                            </div>
-                                        </div>
-                                        <div className="story-detail-scroll no-scrollbar">
-                                            <div className="story-detail-hero">
-                                                <img
-                                                    src={getSafeImage(storyPreviewItem.image, storyPreviewItem.name)}
-                                                    alt={storyPreviewItem.name}
-                                                    className="story-detail-cover"
-                                                />
-                                                <div className="story-detail-hero-fade" />
-                                                <div className="story-detail-hero-content">
-                                                    <h2 className="story-detail-title">{storyPreviewItem.name}</h2>
-                                                    <p className="story-detail-subtitle">
-                                                        {[storyPreviewDetails.worldLabel, storyPreviewDetails.toneLabel].filter(Boolean).join(" • ") || "An interactive story from the library shelf."}
-                                                    </p>
-                                                    <div className="story-detail-meta-line">
-                                                        {[storyPreviewItem.genre || "Story", storyPreviewDetails.toneLabel, storyPreviewDetails.worldLabel].filter(Boolean).join(" / ")}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="story-detail-sheet">
-                                                <div className="story-detail-sheet-head">
-                                                    <div className="story-detail-sheet-kicker">Story Preview</div>
-                                                    <div className="story-detail-sheet-title">{storyPreviewItem.name}</div>
-                                                    <div className="story-detail-sheet-meta">
-                                                        {[storyPreviewItem.genre || "Story", storyPreviewDetails.toneLabel, storyPreviewDetails.worldLabel].filter(Boolean).join(" / ")}
-                                                    </div>
-                                                </div>
-
-                                                {storyPreviewDetails.tags.length > 0 && (
-                                                    <div className="story-detail-tag-row">
-                                                        {storyPreviewDetails.tags.map((tag) => (
-                                                            <span key={tag} className="story-detail-tag">
-                                                                {tag}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                <button
-                                                    type="button"
-                                                    className="story-detail-start-btn"
-                                                    onClick={(event) => handleStoryLibraryStart(storyPreviewItem, event)}
-                                                >
-                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                                        <path d="M8 5v14l11-7z" />
-                                                    </svg>
-                                                    Start story
-                                                </button>
-
-                                                {storyPreviewDetails.overview.length > 0 && (
-                                                    <div className="story-detail-meta-grid">
-                                                        {storyPreviewDetails.overview.map((item) => (
-                                                            <div key={item.label} className="story-detail-meta-card">
-                                                                <div className="story-detail-meta-label">{item.label}</div>
-                                                                <div className="story-detail-meta-value">{item.value}</div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                <div className="story-detail-section">
-                                                    <div className="story-detail-section-label">Synopsis</div>
-                                                    <p className="story-detail-copy">{storyPreviewDetails.synopsis}</p>
-                                                </div>
-
-                                                {storyPreviewDetails.hook && (
-                                                    <div className="story-detail-section">
-                                                        <div className="story-detail-section-label">Story Hook</div>
-                                                        <p className="story-detail-copy">{storyPreviewDetails.hook}</p>
-                                                    </div>
-                                                )}
-
-                                                {storyPreviewDetails.worldRules.length > 0 && (
-                                                    <div className="story-detail-section">
-                                                        <div className="story-detail-section-label">World Rules</div>
-                                                        <div className="story-detail-world-list">
-                                                            {storyPreviewDetails.worldRules.map((item) => (
-                                                                <div key={item.label} className="story-detail-world-item">
-                                                                    <div className="story-detail-world-item-label">{item.label}</div>
-                                                                    <div className="story-detail-world-item-value">{item.value}</div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className="story-detail-section">
-                                                    <div className="story-detail-section-label">Character Cast</div>
-                                                    {storyPreviewDetails.cast.length > 0 ? (
-                                                        <div className="story-detail-cast-grid">
-                                                            {storyPreviewDetails.cast.map((member) => (
-                                                                <div key={member.name} className="story-detail-cast-card">
-                                                                    <img
-                                                                        src={getSafeImage(member.image, member.name)}
-                                                                        alt={member.name}
-                                                                        className="story-detail-cast-avatar"
-                                                                    />
-                                                                    <div className="story-detail-cast-info">
-                                                                        <div className="story-detail-cast-name-row">
-                                                                            <div className="story-detail-cast-name">{member.name}</div>
-                                                                            <span className="story-detail-cast-role">{member.roleLabel}</span>
-                                                                        </div>
-                                                                        <div className="story-detail-cast-copy">
-                                                                            {member.description || "A key presence inside this story world."}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    ) : (
-                                                        <p className="story-detail-empty">
-                                                            No cast profile has been added yet, but the story world is ready to explore.
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
 
             <AnimatePresence mode="wait">
                 {searchMode ? (
@@ -1445,7 +1066,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                     <motion.button
                                         className="story-mode-btn"
-                                        onClick={() => setStoryLibraryMode(true)}
+                                        onClick={() => router.push("/story/explore")}
                                         whileTap={{ scale: 0.92 }}
                                         aria-label="Story Library"
                                     >

@@ -10,11 +10,12 @@ const CONV_CACHE_TTL = 30; // seconds
  * Returns a list of all conversation IDs and metadata for the current user.
  * Used to populate the sidebar conversation list from the database.
  */
-export async function GET() {
+export async function GET(req: Request) {
     try {
         const session = await auth();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const userId = (session?.user as any)?.id;
+        const { searchParams } = new URL(req.url);
+        const bypassCache = searchParams.get("fresh") === "1";
 
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,12 +23,14 @@ export async function GET() {
 
         // ─── Redis Cache Layer ─────────────────────────────────────────
         const cacheKey = `convos:${userId}`;
-        try {
-            const cached = await valkey.get(cacheKey);
-            if (cached) {
-                return NextResponse.json(JSON.parse(cached));
-            }
-        } catch (e) { /* cache miss, continue to DB */ }
+        if (!bypassCache) {
+            try {
+                const cached = await valkey.get(cacheKey);
+                if (cached) {
+                    return NextResponse.json(JSON.parse(cached));
+                }
+            } catch (e) { /* cache miss, continue to DB */ }
+        }
 
         await ensureSchema();
 

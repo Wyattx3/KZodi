@@ -702,6 +702,9 @@ export default function StoryCreateModal({ onClose, onCreated, initialData }: St
                                 onClick={handleBack}
                                 type="button"
                                 style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
                                     width: "38px",
                                     height: "38px",
                                     borderRadius: "50%",
