@@ -842,8 +842,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const chatroomRef = useRef<HTMLDivElement>(null);
     const viewportSyncFrameRef = useRef<number | null>(null);
     const lastViewportMetricsRef = useRef<{ height: number | null; offsetTop: number | null }>({ height: null, offsetTop: null });
-    const initialChatroomInlineStylesRef = useRef<{ height: string; transform: string } | null>(null);
+    const initialChatroomInlineStylesRef = useRef<{ viewportHeight: string } | null>(null);
     const restingViewportHeightRef = useRef<number | null>(null);
+    const touchGestureRef = useRef<{ x: number; y: number; target: HTMLElement | null } | null>(null);
     const [viewportHeight, setViewportHeight] = useState<number | string>("100dvh");
     const isIOS = useMemo(() => {
         if (typeof navigator === "undefined") return false;
@@ -2221,7 +2222,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     };
 
     // Keep viewport writes on a single path:
-    // - iOS uses direct DOM mutation to stay in sync with visualViewport.
+    // - iOS only updates the room height so sticky chrome stays stable during keyboard motion.
     // - Android uses React state to size the room.
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -2232,8 +2233,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
         if (isIOS && !initialChatroomInlineStylesRef.current) {
             initialChatroomInlineStylesRef.current = {
-                height: chatroomEl.style.height,
-                transform: chatroomEl.style.transform,
+                viewportHeight: chatroomEl.style.getPropertyValue("--chatroom-viewport-height"),
             };
         }
 
@@ -2242,8 +2242,11 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             if (!target) return;
 
             const initialStyles = initialChatroomInlineStylesRef.current;
-            target.style.height = initialStyles?.height ?? "";
-            target.style.transform = initialStyles?.transform ?? "";
+            if (initialStyles?.viewportHeight) {
+                target.style.setProperty("--chatroom-viewport-height", initialStyles.viewportHeight);
+            } else {
+                target.style.removeProperty("--chatroom-viewport-height");
+            }
         };
 
         const syncViewport = () => {
@@ -2272,15 +2275,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     return;
                 }
 
-                const nextHeightValue = `${nextHeight}px`;
-                const nextTransformValue = nextOffsetTop > 0 ? `translateY(${nextOffsetTop}px)` : "";
-
-                if (chatroomEl.style.height !== nextHeightValue) {
-                    chatroomEl.style.height = nextHeightValue;
-                }
-
-                if (chatroomEl.style.transform !== nextTransformValue) {
-                    chatroomEl.style.transform = nextTransformValue;
+                const nextHeightValue = `${nextHeight + Math.max(nextOffsetTop, 0)}px`;
+                if (chatroomEl.style.getPropertyValue("--chatroom-viewport-height") !== nextHeightValue) {
+                    chatroomEl.style.setProperty("--chatroom-viewport-height", nextHeightValue);
                 }
 
                 return;
@@ -2303,11 +2300,15 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             });
         };
 
+        window.addEventListener("resize", scheduleViewportSync);
         if (visualViewport) {
             visualViewport.addEventListener("resize", scheduleViewportSync);
+            visualViewport.addEventListener("scroll", scheduleViewportSync);
             scheduleViewportSync();
         } else if (!isIOS) {
             setViewportHeight(window.innerHeight);
+        } else {
+            scheduleViewportSync();
         }
 
         return () => {
@@ -2316,8 +2317,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 viewportSyncFrameRef.current = null;
             }
 
+            window.removeEventListener("resize", scheduleViewportSync);
             if (visualViewport) {
                 visualViewport.removeEventListener("resize", scheduleViewportSync);
+                visualViewport.removeEventListener("scroll", scheduleViewportSync);
             }
 
             if (isIOS) {
@@ -2346,36 +2349,118 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             "[contenteditable=\"true\"]",
             "[role=\"textbox\"]",
         ].join(", ");
-        const scrollableSelector = [
+        const editableSelector = [
+            "textarea",
+            "input",
+            "[contenteditable=\"\"]",
+            "[contenteditable=\"true\"]",
+            "[role=\"textbox\"]",
+        ].join(", ");
+        const allowedScrollSelector = [
             ".chatroom-messages-area",
             ".chatroom-info-drawer",
             ".sticker-drawer",
             ".profile-page",
             ".profile-body",
         ].join(", ");
+        const guardedSurfaceSelector = [
+            ".chatroom-header",
+            ".chatroom-input-bar",
+        ].join(", ");
+
+        const resetTouchGesture = () => {
+            touchGestureRef.current = null;
+        };
+
+        const isKeyboardGestureGuardActive = () => {
+            const visualViewport = window.visualViewport;
+            const activeElement = document.activeElement;
+            const hasFocusedInput =
+                activeElement instanceof HTMLElement &&
+                activeElement.closest(".chatroom") === chatroomEl &&
+                !!activeElement.closest(editableSelector);
+
+            if (!visualViewport || !hasFocusedInput) {
+                return false;
+            }
+
+            const restingHeight = restingViewportHeightRef.current ?? window.innerHeight;
+            return Math.round(visualViewport.offsetTop) > 0 || Math.round(visualViewport.height) < restingHeight - 60;
+        };
+
+        const hasAllowedScrollAncestor = (element: HTMLElement) => {
+            for (let node: HTMLElement | null = element; node && node !== chatroomEl; node = node.parentElement) {
+                if (node.matches(allowedScrollSelector)) {
+                    return true;
+                }
+
+                const overflowY = window.getComputedStyle(node).overflowY;
+                if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight + 1) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        const handleTouchStart = (e: TouchEvent) => {
+            const touch = e.touches[0];
+            if (!touch) return;
+
+            touchGestureRef.current = {
+                x: touch.clientX,
+                y: touch.clientY,
+                target: e.target instanceof HTMLElement ? e.target : null,
+            };
+        };
 
         const handleTouchMove = (e: TouchEvent) => {
             const target = e.target;
             if (!(target instanceof HTMLElement)) return;
 
             if (target.closest(interactiveSelector)) return;
-            if (target.closest(scrollableSelector)) return;
+            if (hasAllowedScrollAncestor(target)) return;
+
+            const gesture = touchGestureRef.current;
+            const touch = e.touches[0];
+            if (!gesture || !touch) return;
+
+            const gestureTarget = gesture.target ?? target;
+            if (!gestureTarget.closest(guardedSurfaceSelector)) return;
+
+            const deltaX = Math.abs(touch.clientX - gesture.x);
+            const deltaY = Math.abs(touch.clientY - gesture.y);
+            if (deltaY <= deltaX || deltaY < 6) return;
+            if (!isKeyboardGestureGuardActive()) return;
 
             e.preventDefault();
         };
 
+        chatroomEl.addEventListener("touchstart", handleTouchStart, { passive: true });
         chatroomEl.addEventListener("touchmove", handleTouchMove, { passive: false });
+        chatroomEl.addEventListener("touchend", resetTouchGesture);
+        chatroomEl.addEventListener("touchcancel", resetTouchGesture);
 
         return () => {
+            chatroomEl.removeEventListener("touchstart", handleTouchStart);
             chatroomEl.removeEventListener("touchmove", handleTouchMove);
+            chatroomEl.removeEventListener("touchend", resetTouchGesture);
+            chatroomEl.removeEventListener("touchcancel", resetTouchGesture);
+            resetTouchGesture();
         };
     }, [isIOS]);
+
+    const chatroomViewportStyle = isIOS
+        ? undefined
+        : ({
+            ["--chatroom-viewport-height" as "--chatroom-viewport-height"]: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight,
+        } as React.CSSProperties);
 
     return (
         <div
             ref={chatroomRef}
             className={`chatroom ${conversationTheme}`}
-            style={isIOS ? undefined : { height: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight }}
+            style={chatroomViewportStyle}
         >
             <div className="chatroom-bg-pattern" />
             {/* ── Header ─────────────────────────── */}

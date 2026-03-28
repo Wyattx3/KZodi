@@ -3017,8 +3017,7 @@ body {
   position: absolute;
   inset: 0;
   width: 100%;
-  height: 100%; /* Better for mobile keyboard resize than 100dvh */
-  /* fallback */
+  height: var(--chatroom-viewport-height, 100%);
   display: flex;
   flex-direction: column;
   background: var(--chatroom-bg, #FFFDF5) !important;
@@ -3588,6 +3587,8 @@ body {
   resize: none;
   max-height: 105px;
   line-height: 1.4;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
