@@ -840,7 +840,15 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [showStandardMenu, setShowStandardMenu] = useState(!isTrueAstrologer);
     const [input, setInput] = useState("");
     const chatroomRef = useRef<HTMLDivElement>(null);
+    const viewportSyncFrameRef = useRef<number | null>(null);
+    const lastViewportMetricsRef = useRef<{ height: number | null; offsetTop: number | null }>({ height: null, offsetTop: null });
+    const initialChatroomInlineStylesRef = useRef<{ height: string; transform: string } | null>(null);
+    const restingViewportHeightRef = useRef<number | null>(null);
     const [viewportHeight, setViewportHeight] = useState<number | string>("100dvh");
+    const isIOS = useMemo(() => {
+        if (typeof navigator === "undefined") return false;
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    }, []);
     const [isTyping, setIsTyping] = useState(false);
     const [isFetchingMessages, setIsFetchingMessages] = useState(true);
     const [typingMemberName, setTypingMemberName] = useState<string | null>(null);
@@ -2212,63 +2220,154 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         }
     };
 
-    // Calculate if it's iOS once on mount
-    const [isIOS, setIsIOS] = useState(false);
-    useEffect(() => {
-        setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
-    }, []);
-
-    // Extremely robust Android keyboard fix
+    // Keep viewport writes on a single path:
+    // - iOS uses direct DOM mutation to stay in sync with visualViewport.
+    // - Android uses React state to size the room.
     useEffect(() => {
         if (typeof window === "undefined") return;
+        const chatroomEl = chatroomRef.current;
+        const visualViewport = window.visualViewport;
 
-        const handleResize = () => {
-            if (!window.visualViewport) return;
-            
-            if (isIOS) {
-                // HIGH PERFORMANCE 60fps iOS FIX: Direct DOM mutation avoids React render cycle lag.
-                // Mutating transform: translateY() forces the fixed chatroom to slide down perfectly with the visual viewport offset!
-                if (chatroomRef.current) {
-                    chatroomRef.current.style.height = `${window.visualViewport.height}px`;
-                    chatroomRef.current.style.transform = `translateY(${window.visualViewport.offsetTop}px)`;
-                }
-            } else {
-                // On Android, visualViewport height tells us exactly how much space is left above keyboard.
-                setViewportHeight(window.visualViewport.height);
-                window.scrollTo(0, 0); // categorically prevent visual viewport drift on Android
-            }
+        if (!chatroomEl) return;
+
+        if (isIOS && !initialChatroomInlineStylesRef.current) {
+            initialChatroomInlineStylesRef.current = {
+                height: chatroomEl.style.height,
+                transform: chatroomEl.style.transform,
+            };
+        }
+
+        const restoreChatroomViewportStyles = () => {
+            const target = chatroomRef.current;
+            if (!target) return;
+
+            const initialStyles = initialChatroomInlineStylesRef.current;
+            target.style.height = initialStyles?.height ?? "";
+            target.style.transform = initialStyles?.transform ?? "";
         };
 
-        // Lock the body to strictly prevent native scrolling up
-        const originalOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
+        const syncViewport = () => {
+            const nextHeight = Math.round(visualViewport?.height ?? window.innerHeight);
+            const nextOffsetTop = Math.round(visualViewport?.offsetTop ?? 0);
+            const lastMetrics = lastViewportMetricsRef.current;
+
+            if (lastMetrics.height === nextHeight && lastMetrics.offsetTop === nextOffsetTop) {
+                return;
+            }
+
+            lastViewportMetricsRef.current = { height: nextHeight, offsetTop: nextOffsetTop };
+
+            if (isIOS) {
+                if (nextOffsetTop === 0) {
+                    if (restingViewportHeightRef.current === null || nextHeight >= restingViewportHeightRef.current) {
+                        restingViewportHeightRef.current = nextHeight;
+                    }
+                }
+
+                const restingHeight = restingViewportHeightRef.current ?? nextHeight;
+                const isViewportSettled = nextOffsetTop === 0 && nextHeight >= restingHeight - 1;
+
+                if (isViewportSettled) {
+                    restoreChatroomViewportStyles();
+                    return;
+                }
+
+                const nextHeightValue = `${nextHeight}px`;
+                const nextTransformValue = nextOffsetTop > 0 ? `translateY(${nextOffsetTop}px)` : "";
+
+                if (chatroomEl.style.height !== nextHeightValue) {
+                    chatroomEl.style.height = nextHeightValue;
+                }
+
+                if (chatroomEl.style.transform !== nextTransformValue) {
+                    chatroomEl.style.transform = nextTransformValue;
+                }
+
+                return;
+            }
+
+            setViewportHeight((currentHeight) => {
+                if (typeof currentHeight === "number" && currentHeight === nextHeight) {
+                    return currentHeight;
+                }
+                return nextHeight;
+            });
+        };
+
+        const scheduleViewportSync = () => {
+            if (viewportSyncFrameRef.current !== null) return;
+
+            viewportSyncFrameRef.current = window.requestAnimationFrame(() => {
+                viewportSyncFrameRef.current = null;
+                syncViewport();
+            });
+        };
+
+        if (visualViewport) {
+            visualViewport.addEventListener("resize", scheduleViewportSync);
+            scheduleViewportSync();
+        } else if (!isIOS) {
+            setViewportHeight(window.innerHeight);
+        }
+
+        return () => {
+            if (viewportSyncFrameRef.current !== null) {
+                window.cancelAnimationFrame(viewportSyncFrameRef.current);
+                viewportSyncFrameRef.current = null;
+            }
+
+            if (visualViewport) {
+                visualViewport.removeEventListener("resize", scheduleViewportSync);
+            }
+
+            if (isIOS) {
+                restoreChatroomViewportStyles();
+            }
+
+            lastViewportMetricsRef.current = { height: null, offsetTop: null };
+            restingViewportHeightRef.current = null;
+        };
+    }, [isIOS]);
+
+    useEffect(() => {
+        if (typeof window === "undefined" || !isIOS) return;
+
+        const chatroomEl = chatroomRef.current;
+        if (!chatroomEl) return;
+
+        const interactiveSelector = [
+            "textarea",
+            "input",
+            "select",
+            "button",
+            "a",
+            "label",
+            "[contenteditable=\"\"]",
+            "[contenteditable=\"true\"]",
+            "[role=\"textbox\"]",
+        ].join(", ");
+        const scrollableSelector = [
+            ".chatroom-messages-area",
+            ".chatroom-info-drawer",
+            ".sticker-drawer",
+            ".profile-page",
+            ".profile-body",
+        ].join(", ");
 
         const handleTouchMove = (e: TouchEvent) => {
-            const target = e.target as HTMLElement;
-            // Only block touch-drag if inside the chatroom container
-            if (!target.closest('.chatroom')) return;
-            // Allow scrolling inside known scrollable children
-            if (target.closest('.chatroom-messages-area') || target.closest('.chatroom-info-drawer') || target.closest('.sticker-drawer') || target.closest('.profile-page')) return;
-            // Block everything else inside chatroom to prevent rubber-banding
+            const target = e.target;
+            if (!(target instanceof HTMLElement)) return;
+
+            if (target.closest(interactiveSelector)) return;
+            if (target.closest(scrollableSelector)) return;
+
             e.preventDefault();
         };
 
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener("resize", handleResize);
-            window.visualViewport.addEventListener("scroll", handleResize);
-            handleResize(); // Init
-        }
-
-        // Must be passive: false to allow preventDefault
-        document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
+        chatroomEl.addEventListener("touchmove", handleTouchMove, { passive: false });
 
         return () => {
-            document.body.style.overflow = originalOverflow;
-            document.body.removeEventListener('touchmove', handleTouchMove);
-            if (window.visualViewport) {
-                window.visualViewport.removeEventListener("resize", handleResize);
-                window.visualViewport.removeEventListener("scroll", handleResize);
-            }
+            chatroomEl.removeEventListener("touchmove", handleTouchMove);
         };
     }, [isIOS]);
 
@@ -2276,9 +2375,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         <div
             ref={chatroomRef}
             className={`chatroom ${conversationTheme}`}
-            style={{ 
-                height: isIOS ? '100%' : (typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight)
-             }}
+            style={isIOS ? undefined : { height: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight }}
         >
             <div className="chatroom-bg-pattern" />
             {/* ── Header ─────────────────────────── */}

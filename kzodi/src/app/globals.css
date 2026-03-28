@@ -32,7 +32,6 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overscroll-behavior: none;
   }
 
   body {
@@ -40,7 +39,6 @@
     background-color: #EEEDEA;
     color: var(--color-warm-black);
     min-height: 100dvh;
-    overscroll-behavior: none;
   }
 
   ::-webkit-scrollbar {
@@ -823,11 +821,14 @@ body {
   margin: 0;
   padding: 0;
   background: #FAFAFA;
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100%;
-  overflow: hidden;
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -844,11 +845,15 @@ body {
   width: 100%;
   max-width: var(--app-max-width);
   margin: 0 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100vh;
   height: 100dvh;
   display: flex;
   flex-direction: column;
   background: #FFFDF5;
   overflow: hidden;
+  overscroll-behavior: none;
   position: relative;
   color: #4A3728;
   box-shadow: 0 0 100px rgba(0, 0, 0, 0.08);
@@ -906,6 +911,7 @@ body {
   bottom: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
   z-index: 5;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
@@ -3008,7 +3014,7 @@ body {
    Chat Room â€” Light Kawaii
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .chatroom {
-  position: fixed;
+  position: absolute;
   inset: 0;
   width: 100%;
   height: 100%; /* Better for mobile keyboard resize than 100dvh */
@@ -3017,8 +3023,9 @@ body {
   flex-direction: column;
   background: var(--chatroom-bg, #FFFDF5) !important;
   overflow: hidden;
+  overscroll-behavior: none;
   z-index: 100;
-  touch-action: none; /* Prevent entire page from being dragged up */
+  touch-action: manipulation;
 }
 
 /* Chatroom Themes */
@@ -3061,7 +3068,7 @@ body {
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   z-index: 50;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
-  touch-action: none;
+  touch-action: manipulation;
 }
 
 .chatroom-back {
@@ -3209,6 +3216,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   will-change: transform;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
@@ -3522,7 +3530,12 @@ body {
   -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   z-index: 50;
-  touch-action: none;
+  touch-action: manipulation;
+}
+
+.sticker-drawer {
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .chatroom-input-wrap {
@@ -3650,6 +3663,8 @@ body {
   border-radius: 32px 32px 0 0;
   padding: 24px;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.1);
   animation: slideUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -3881,12 +3896,13 @@ body {
   position: absolute;
   inset: 0;
   width: 100%;
-  height: 100dvh;
+  height: 100%;
   background: #FFFDF5;
   display: flex;
   flex-direction: column;
   z-index: 2147483647;
   overflow: hidden;
+  overscroll-behavior: contain;
   font-family: var(--font-body);
 }
 
@@ -4039,6 +4055,8 @@ body {
 .profile-body {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 0 20px 100px;
   display: flex;
   flex-direction: column;
