@@ -6,6 +6,7 @@ import { useChatStore } from "@/lib/chatStore";
 import type { Character } from "@/data/characters";
 import { buildCreateStoryData } from "@/lib/storyData";
 import { fetchServerStoryConversation } from "@/lib/storyConversation";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 function safeParseJSON(v: any) {
     if (typeof v !== "string") return v;
@@ -40,9 +41,14 @@ const getSafeImage = (image?: string | null, seedName?: string) => {
 
 export default function StoryPreviewPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
+    const rootRef = React.useRef<HTMLDivElement>(null);
     const [storyId, setStoryId] = useState<string | null>(null);
     const [story, setStory] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef,
+        scrollableSelectors: [".sp-scroll"],
+    });
 
     useEffect(() => {
         params.then(r => setStoryId(r.id));
@@ -189,7 +195,7 @@ export default function StoryPreviewPage({ params }: { params: Promise<{ id: str
 
     if (loading) {
         return (
-            <div className="sp-root">
+            <div ref={rootRef} className="sp-root" style={viewportStyle}>
                 <div className="sp-loading">
                     <div className="sp-loading-spinner" />
                 </div>
@@ -199,7 +205,7 @@ export default function StoryPreviewPage({ params }: { params: Promise<{ id: str
 
     if (!story) {
         return (
-            <div className="sp-root">
+            <div ref={rootRef} className="sp-root" style={viewportStyle}>
                 <header className="sp-header">
                     <button className="sp-back-btn" onClick={() => router.back()}>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -218,7 +224,7 @@ export default function StoryPreviewPage({ params }: { params: Promise<{ id: str
     }
 
     return (
-        <div className="sp-root">
+        <div ref={rootRef} className="sp-root" style={viewportStyle}>
             {/* Scroll content */}
             <div className="sp-scroll no-scrollbar">
                 {/* Hero cover */}

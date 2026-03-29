@@ -6,6 +6,7 @@ import CreateCharacterForm from "./CreateCharacterForm";
 import AutoSetupForm from "./AutoSetupForm";
 import StoryCreateModal from "./StoryCreateModal";
 import type { Character } from "@/data/characters";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 interface LibraryStory {
     id: string;
@@ -428,15 +429,26 @@ const SetupView = ({
     onSuccess: (char: Character) => void,
     onBack: () => void
 }) => {
+    const rootRef = React.useRef<HTMLDivElement>(null);
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef,
+        scrollableSelectors: [".create-setup-scroll-surface"],
+    });
+
     return (
         <motion.div
+            ref={rootRef}
             initial={{ y: "10vh", opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: "10vh", opacity: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             style={{
+                ...viewportStyle,
                 position: "fixed",
-                inset: 0,
+                top: "var(--ios-viewport-top, 0px)",
+                left: 0,
+                right: 0,
+                height: "var(--ios-viewport-height, 100dvh)",
                 zIndex: 1000,
                 background: "#FFFDF5",
                 display: "flex",
@@ -446,7 +458,7 @@ const SetupView = ({
             }}
         >
             <div
-                className="no-scrollbar"
+                className="no-scrollbar create-setup-scroll-surface"
                 style={{
                     width: "100%",
                     maxWidth: "600px",

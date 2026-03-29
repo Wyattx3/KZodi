@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, LayoutGroup } from "framer-motion";
 import ExploreTab from "./ExploreTab";
 import ChatsTab from "./ChatsTab";
@@ -10,6 +10,7 @@ import { CHARACTERS, type Character } from "@/data/characters";
 import { useChatStore } from "@/lib/chatStore";
 import { useSearchParams, useRouter } from "next/navigation";
 import { App } from '@capacitor/app';
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 type Tab = "explore" | "chats" | "create" | "profile";
 
@@ -58,6 +59,7 @@ const mapStoryRecord = (story: any) => {
 export default function ChatApp() {
     const searchParams = useSearchParams();
     const router = useRouter();
+    const appShellRef = useRef<HTMLDivElement>(null);
     const [mounted, setMounted] = useState(false);
     const [activeTab, setActiveTab] = useState<Tab>(() => getTabFromSearchParam(searchParams.get("tab")) || "explore");
     const [activeCharacter, setActiveCharacter] = useState<Character | null>(null);
@@ -741,10 +743,6 @@ export default function ChatApp() {
         return map;
     }, [allCharacters, myCharacters]);
 
-    if (!mounted) {
-        return <div className="chat-app" style={{ background: "#FFFDF5" }} />;
-    }
-
     let effectiveCharacter = activeCharacter;
     if (!effectiveCharacter && activeGroupId) {
         const convo = useChatStore.getState().conversations[activeGroupId];
@@ -764,8 +762,18 @@ export default function ChatApp() {
         }
     }
 
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef: appShellRef,
+        enabled: !effectiveCharacter,
+        scrollableSelectors: [".chat-app-content"],
+    });
+
+    if (!mounted) {
+        return <div ref={appShellRef} className="chat-app" style={{ ...viewportStyle, background: "#FFFDF5" }} />;
+    }
+
     return (
-        <div className="chat-app">
+        <div ref={appShellRef} className="chat-app" style={viewportStyle}>
             {effectiveCharacter ? (
                 <div
                     key={`chatroom-${effectiveCharacter.id}`}

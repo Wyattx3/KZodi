@@ -418,11 +418,8 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         style={{
-                            position: "fixed",
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
+                            position: "absolute",
+                            inset: 0,
                             backgroundColor: "transparent",
                             zIndex: 1000,
                             display: "flex",
@@ -524,11 +521,8 @@ export default function CharacterProfile({ character, onBack, messageCount }: Ch
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         style={{
-                            position: "fixed",
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
+                            position: "absolute",
+                            inset: 0,
                             backgroundColor: "rgba(0, 0, 0, 0.5)",
                             backdropFilter: "blur(4px)",
                             zIndex: 1000,

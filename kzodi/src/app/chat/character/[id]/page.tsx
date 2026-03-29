@@ -1,16 +1,22 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { type Character } from "@/data/characters";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 export default function SharedCharacterPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
+    const rootRef = useRef<HTMLDivElement>(null);
     const [character, setCharacter] = useState<Character | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [charId, setCharId] = useState<string | null>(null);
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef,
+        scrollableSelectors: [".profile-body"],
+    });
 
     useEffect(() => {
         params.then(p => setCharId(p.id));
@@ -52,7 +58,23 @@ export default function SharedCharacterPage({ params }: { params: Promise<{ id: 
 
     if (loading) {
         return (
-            <div style={{ height: '100dvh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#FFFDF5', color: '#4A3728' }}>
+            <div
+                ref={rootRef}
+                style={{
+                    ...viewportStyle,
+                    width: '100%',
+                    height: 'var(--ios-viewport-height, 100dvh)',
+                    minHeight: 'var(--ios-viewport-height, 100dvh)',
+                    position: 'relative',
+                    top: 'var(--ios-viewport-top, 0px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: '#FFFDF5',
+                    color: '#4A3728',
+                }}
+            >
                 <div className="explore-card-online" style={{ width: "32px", height: "32px", marginBottom: '16px' }}>
                     <span className="online-dot-sm" style={{ width: "32px", height: "32px", animation: "pulse 1.5s infinite" }} />
                 </div>
@@ -63,7 +85,25 @@ export default function SharedCharacterPage({ params }: { params: Promise<{ id: 
 
     if (error || !character) {
         return (
-            <div style={{ height: '100dvh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#FFFDF5', color: '#4A3728', padding: '24px', textAlign: 'center' }}>
+            <div
+                ref={rootRef}
+                style={{
+                    ...viewportStyle,
+                    width: '100%',
+                    height: 'var(--ios-viewport-height, 100dvh)',
+                    minHeight: 'var(--ios-viewport-height, 100dvh)',
+                    position: 'relative',
+                    top: 'var(--ios-viewport-top, 0px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: '#FFFDF5',
+                    color: '#4A3728',
+                    padding: '24px',
+                    textAlign: 'center',
+                }}
+            >
                 <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '16px', color: '#EF4444' }}>
                     <circle cx="12" cy="12" r="10" />
                     <line x1="15" y1="9" x2="9" y2="15" />
@@ -79,7 +119,7 @@ export default function SharedCharacterPage({ params }: { params: Promise<{ id: 
     }
 
     return (
-        <div className="profile-page" style={{ height: '100dvh', background: '#FFFDF5' }}>
+        <div ref={rootRef} className="profile-page" style={{ ...viewportStyle, background: '#FFFDF5' }}>
             <div className="profile-hero" style={{ backgroundImage: `url(${character.image})`, height: '45dvh', minHeight: '380px', position: 'relative' }}>
                 <div className="profile-hero-overlay" />
 

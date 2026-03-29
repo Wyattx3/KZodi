@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm';
 import { getZodiacSign } from "@/lib/zodiac";
 import SpecialistSetup from "./SpecialistSetups";
 import VoiceRecorder from "./VoiceRecorder";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 const EMPTY_GROUP_MEMBER_IDS: string[] = [];
 
@@ -840,17 +841,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [showStandardMenu, setShowStandardMenu] = useState(!isTrueAstrologer);
     const [input, setInput] = useState("");
     const chatroomRef = useRef<HTMLDivElement>(null);
-    const viewportSyncFrameRef = useRef<number | null>(null);
-    const lastViewportMetricsRef = useRef<{ height: number | null; offsetTop: number | null }>({ height: null, offsetTop: null });
-    const initialChatroomInlineStylesRef = useRef<{ viewportHeight: string } | null>(null);
-    const restingViewportHeightRef = useRef<number | null>(null);
-    const touchGestureRef = useRef<{ x: number; y: number; target: HTMLElement | null } | null>(null);
-    const [viewportHeight, setViewportHeight] = useState<number | string>("100dvh");
-    const [viewportTop, setViewportTop] = useState<number>(0);
-    const isIOS = useMemo(() => {
-        if (typeof navigator === "undefined") return false;
-        return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    }, []);
+    const { isIOS, viewportStyle: chatroomViewportStyle } = useIOSViewportContainment({
+        rootRef: chatroomRef,
+        scrollableSelectors: [".chatroom-messages-area", ".profile-body", ".sticker-drawer", ".chatroom-info-drawer"],
+    });
     const [isTyping, setIsTyping] = useState(false);
     const [isFetchingMessages, setIsFetchingMessages] = useState(true);
     const [typingMemberName, setTypingMemberName] = useState<string | null>(null);
@@ -2222,99 +2216,40 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         }
     };
 
-    // iOS Keyboard Smooth Viewport Sync
-    // - Locks the global document body to prevent native Safari Layout Viewport shifting.
-    // - Simply syncs VisualViewport height to resize the chat container gracefully.
     useEffect(() => {
-        if (typeof window === "undefined") return;
+        if (!isIOS || typeof window === "undefined") return;
+
+        const resetLayoutViewport = () => {
+            window.scrollTo(0, 0);
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            document.scrollingElement?.scrollTo?.(0, 0);
+        };
+
         const visualViewport = window.visualViewport;
-
-        if (isIOS) {
-            document.body.classList.add("ios-chat-lock");
-        }
-
-        const syncViewport = () => {
-            const nextHeight = Math.round(visualViewport?.height ?? window.innerHeight);
-            const nextTop = Math.round(visualViewport?.offsetTop ?? 0);
-            
-            setViewportHeight((currentHeight) => {
-                if (typeof currentHeight === "number" && currentHeight === nextHeight) {
-                    return currentHeight;
-                }
-                return nextHeight;
-            });
-
-            setViewportTop((currentTop) => {
-                if (currentTop === nextTop) return currentTop;
-                return nextTop;
+        const scheduleReset = () => {
+            window.requestAnimationFrame(() => {
+                resetLayoutViewport();
             });
         };
 
-        const scheduleViewportSync = () => {
-            if (viewportSyncFrameRef.current !== null) return;
-            viewportSyncFrameRef.current = window.requestAnimationFrame(() => {
-                viewportSyncFrameRef.current = null;
-                syncViewport();
-            });
-        };
-
-        window.addEventListener("resize", scheduleViewportSync);
-        if (visualViewport) {
-            visualViewport.addEventListener("resize", scheduleViewportSync);
-            visualViewport.addEventListener("scroll", scheduleViewportSync);
-            scheduleViewportSync();
-        } else {
-            setViewportHeight(window.innerHeight);
-        }
+        visualViewport?.addEventListener("resize", scheduleReset);
+        visualViewport?.addEventListener("scroll", scheduleReset);
+        window.addEventListener("focusin", scheduleReset);
+        window.addEventListener("focusout", scheduleReset);
 
         return () => {
-            if (viewportSyncFrameRef.current !== null) {
-                window.cancelAnimationFrame(viewportSyncFrameRef.current);
-                viewportSyncFrameRef.current = null;
-            }
-
-            window.removeEventListener("resize", scheduleViewportSync);
-            if (visualViewport) {
-                visualViewport.removeEventListener("resize", scheduleViewportSync);
-                visualViewport.removeEventListener("scroll", scheduleViewportSync);
-            }
-
-            if (isIOS) {
-                document.body.classList.remove("ios-chat-lock");
-            }
+            visualViewport?.removeEventListener("resize", scheduleReset);
+            visualViewport?.removeEventListener("scroll", scheduleReset);
+            window.removeEventListener("focusin", scheduleReset);
+            window.removeEventListener("focusout", scheduleReset);
         };
     }, [isIOS]);
-
-    // Explicitly block touchmove on non-scrollable iOS surfaces.
-    // iOS Safari ignores `position: fixed` or `overscroll-behavior: none` 
-    // when a text input is focused, allowing the user to drag the whole layout viewport.
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        const chatroomEl = chatroomRef.current;
-        if (!chatroomEl) return;
-
-        const handleTouchMove = (e: TouchEvent) => {
-            // Allow scrolling inside message areas and drawers
-            if ((e.target as Element).closest(".chatroom-messages-area, .profile-body, .sticker-drawer")) {
-                return;
-            }
-            // For the header, input bar, or background, completely block panning
-            e.preventDefault();
-        };
-
-        chatroomEl.addEventListener("touchmove", handleTouchMove, { passive: false });
-        return () => chatroomEl.removeEventListener("touchmove", handleTouchMove);
-    }, [isIOS]);
-
-    const chatroomViewportStyle = {
-        ["--chatroom-viewport-height" as "--chatroom-viewport-height"]: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight,
-        ["--chatroom-viewport-top" as "--chatroom-viewport-top"]: `${viewportTop}px`,
-    } as React.CSSProperties;
 
     return (
         <div
             ref={chatroomRef}
-            className={`chatroom ${conversationTheme}`}
+            className={`chatroom ${conversationTheme}${isIOS ? " chatroom-ios" : ""}`}
             style={chatroomViewportStyle}
         >
             <div className="chatroom-bg-pattern" />

@@ -39,13 +39,17 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    height: 100%;
+    overflow: hidden;
   }
 
   body {
     font-family: var(--font-body);
     background-color: #EEEDEA;
     color: var(--color-warm-black);
-    min-height: 100dvh;
+    min-height: 100%;
+    height: 100%;
+    overflow: hidden;
   }
 
   ::-webkit-scrollbar {
@@ -821,6 +825,8 @@
     var(--chat-nav-tallest) + var(--chat-nav-offset) + var(--chat-nav-buffer)
     + env(safe-area-inset-bottom, 0px)
   );
+  --ios-viewport-height: 100dvh;
+  --ios-viewport-top: 0px;
 }
 
 html,
@@ -830,12 +836,22 @@ body {
   background: #FAFAFA;
   width: 100%;
   min-height: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
-  min-height: 100vh;
-  min-height: 100dvh;
   overflow-x: hidden;
+}
+
+.app-root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -852,16 +868,15 @@ body {
   width: 100%;
   max-width: var(--app-max-width);
   margin: 0 auto;
-  min-height: 100vh;
-  min-height: 100dvh;
-  height: 100vh;
-  height: 100dvh;
+  min-height: var(--ios-viewport-height, 100%);
+  height: var(--ios-viewport-height, 100%);
   display: flex;
   flex-direction: column;
   background: #FFFDF5;
   overflow: hidden;
   overscroll-behavior: none;
   position: relative;
+  top: var(--ios-viewport-top, 0px);
   color: #4A3728;
   box-shadow: 0 0 100px rgba(0, 0, 0, 0.08);
   border-left: 1px solid rgba(0, 0, 0, 0.03);
@@ -3026,6 +3041,7 @@ body {
     iOS Keyboard Smooth Fixes: 
     Locks the body completely to stop Layout Viewport pushing 
 */
+body.ios-scroll-lock,
 body.ios-chat-lock {
   position: fixed !important;
   inset: 0 !important;
@@ -3040,9 +3056,9 @@ body.ios-chat-lock {
   position: absolute;
   left: 0;
   right: 0;
-  top: var(--chatroom-viewport-top, 0px);
+  top: var(--ios-viewport-top, 0px);
   width: 100%;
-  height: var(--chatroom-viewport-height, 100%);
+  height: var(--ios-viewport-height, 100%);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -3235,6 +3251,7 @@ body.ios-chat-lock {
 .chatroom-messages-area {
   position: relative;
   flex: 1;
+  min-height: 0;
   width: 100%;
   height: 0;
   /* Ensures flex container can scroll */
@@ -3556,6 +3573,11 @@ body.ios-chat-lock {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   z-index: 50;
   touch-action: manipulation;
+}
+
+.chatroom.chatroom-ios .chatroom-header,
+.chatroom.chatroom-ios .chatroom-input-bar {
+  position: relative;
 }
 
 .sticker-drawer {
@@ -3921,9 +3943,12 @@ body.ios-chat-lock {
 
 .profile-page {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: var(--ios-viewport-top, 0px);
   width: 100%;
-  height: 100%;
+  height: var(--ios-viewport-height, 100%);
+  min-height: var(--ios-viewport-height, 100%);
   background: #FFFDF5;
   display: flex;
   flex-direction: column;
@@ -5586,7 +5611,11 @@ body.ios-chat-lock {
    ═══════════════════════════════════════════════════════════════ */
 .story-explore-root {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: var(--ios-viewport-top, 0px);
+  height: var(--ios-viewport-height, 100%);
+  min-height: var(--ios-viewport-height, 100%);
   background: #0A0A0C;
   display: flex;
   flex-direction: column;
@@ -6001,7 +6030,11 @@ body.ios-chat-lock {
    ═══════════════════════════════════════════════════════════════ */
 .sp-root {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: var(--ios-viewport-top, 0px);
+  height: var(--ios-viewport-height, 100%);
+  min-height: var(--ios-viewport-height, 100%);
   background: #0A0A0C;
   display: flex;
   flex-direction: column;
@@ -6076,6 +6109,12 @@ body.ios-chat-lock {
 .sp-scroll {
   flex: 1;
   overflow-y: auto;
+}
+
+.story-room-root {
+  top: var(--ios-viewport-top, 0px);
+  height: var(--ios-viewport-height, 100%);
+  min-height: var(--ios-viewport-height, 100%);
 }
 
 /* ── Hero ── */

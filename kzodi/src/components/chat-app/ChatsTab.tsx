@@ -2,6 +2,7 @@
 import React from "react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useChatStore, type Conversation } from "@/lib/chatStore";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 import { CHARACTERS, type Character } from "@/data/characters";
 import WorldBuildingModal from "./WorldBuildingModal";
 
@@ -39,6 +40,11 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
     const [groupImage, setGroupImage] = React.useState("");
     const [searchQ, setSearchQ] = React.useState("");
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const rootRef = React.useRef<HTMLDivElement>(null);
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef,
+        scrollableSelectors: [".group-create-scroll-surface"],
+    });
 
     // Only show characters that have existing conversations (chat list contacts)
     const availableChars = React.useMemo(() => {
@@ -80,13 +86,21 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
 
     return (
         <motion.div
+            ref={rootRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             style={{
-                position: "fixed", inset: 0, zIndex: 1000,
+                ...viewportStyle,
+                position: "fixed",
+                inset: "auto 0 0 0",
+                top: "var(--ios-viewport-top, 0px)",
+                height: "var(--ios-viewport-height, 100dvh)",
+                zIndex: 1000,
                 background: "rgba(0,0,0,0.4)", backdropFilter: "blur(6px)",
-                display: "flex", alignItems: "flex-end", justifyContent: "center"
+                display: "flex", alignItems: "flex-end", justifyContent: "center",
+                paddingTop: "max(12px, env(safe-area-inset-top))",
+                paddingBottom: "env(safe-area-inset-bottom)"
             }}
             onClick={onClose}
         >
@@ -98,7 +112,8 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
                 onClick={e => e.stopPropagation()}
                 style={{
                     width: "100%", maxWidth: "480px",
-                    height: "85vh",
+                    height: "85%",
+                    maxHeight: "100%",
                     background: "#FFFDF5",
                     borderRadius: "24px 24px 0 0",
                     display: "flex", flexDirection: "column",
@@ -246,7 +261,7 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
                         </div>
 
                         {/* Contact list */}
-                        <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 20px" }}>
+                        <div className="group-create-scroll-surface no-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "0 8px 20px" }}>
                             {filteredChars.length === 0 && (
                                 <div style={{
                                     padding: "40px 20px", textAlign: "center",
@@ -308,7 +323,7 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
                     </>
                 ) : (
                     /* Step 2: Group Name */
-                    <div style={{ flex: 1, padding: "24px 20px", display: "flex", flexDirection: "column", gap: "24px" }}>
+                    <div className="group-create-scroll-surface no-scrollbar" style={{ flex: 1, padding: "24px 20px", display: "flex", flexDirection: "column", gap: "24px", overflowY: "auto" }}>
                         {/* Group avatar preview & upload */}
                         <div style={{ display: "flex", justifyContent: "center", flexDirection: "column", alignItems: "center", gap: "12px" }}>
                             <input

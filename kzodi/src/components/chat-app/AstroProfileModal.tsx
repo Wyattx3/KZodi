@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Save, Calendar, Clock, Brain } from "lucide-react";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 interface AstroProfileModalProps {
     isOpen: boolean;
@@ -10,10 +11,16 @@ interface AstroProfileModalProps {
 }
 
 export default function AstroProfileModal({ isOpen, onClose, onSave }: AstroProfileModalProps) {
+    const rootRef = React.useRef<HTMLDivElement>(null);
     const [date, setDate] = useState("");
     const [time, setTime] = useState("");
     const [mbti, setMbti] = useState("");
     const [isSaving, setIsSaving] = useState(false);
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef,
+        enabled: isOpen,
+        scrollableSelectors: [".astro-profile-scroll-surface"],
+    });
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -28,7 +35,18 @@ export default function AstroProfileModal({ isOpen, onClose, onSave }: AstroProf
     return (
         <AnimatePresence>
             {isOpen && (
-                <>
+                <div
+                    ref={rootRef}
+                    style={{
+                        ...viewportStyle,
+                        position: "fixed",
+                        top: "var(--ios-viewport-top, 0px)",
+                        left: 0,
+                        right: 0,
+                        height: "var(--ios-viewport-height, 100dvh)",
+                        zIndex: 999,
+                    }}
+                >
                     {/* Backdrop */}
                     <motion.div
                         initial={{ opacity: 0 }}
@@ -36,11 +54,10 @@ export default function AstroProfileModal({ isOpen, onClose, onSave }: AstroProf
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         style={{
-                            position: "fixed",
-                            top: 0, left: 0, right: 0, bottom: 0,
+                            position: "absolute",
+                            inset: 0,
                             background: "rgba(17, 24, 39, 0.4)",
                             backdropFilter: "blur(4px)",
-                            zIndex: 999
                         }}
                         onClick={onClose}
                     />
@@ -52,19 +69,18 @@ export default function AstroProfileModal({ isOpen, onClose, onSave }: AstroProf
                         exit={{ y: "100%", opacity: 0.5 }}
                         transition={{ type: "spring", damping: 25, stiffness: 250 }}
                         style={{
-                            position: "fixed",
+                            position: "absolute",
                             bottom: 0, left: 0, right: 0,
                             background: "#ffffff",
                             borderTop: "3px solid #111827",
                             borderTopLeftRadius: "24px",
                             borderTopRightRadius: "24px",
                             padding: "24px",
-                            zIndex: 1000,
                             boxShadow: "0 -10px 40px rgba(0,0,0,0.1)",
                             maxHeight: "85vh",
                             overflowY: "auto"
                         }}
-                        className="no-scrollbar"
+                        className="no-scrollbar astro-profile-scroll-surface"
                     >
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
                             <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 900, color: "#111827", textTransform: "uppercase", letterSpacing: "0.5px" }}>
@@ -187,7 +203,7 @@ export default function AstroProfileModal({ isOpen, onClose, onSave }: AstroProf
                             </button>
                         </form>
                     </motion.div>
-                </>
+                </div>
             )}
         </AnimatePresence>
     );

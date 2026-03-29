@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 const GENRES = ["All", "Fantasy", "Romance", "Mystery", "Action", "Horror", "Sci-Fi", "Slice of Life", "Thriller", "Comedy"] as const;
 
@@ -50,6 +51,7 @@ const getSafeImage = (image?: string | null, seedName?: string) => {
 
 export default function StoryExplorePage() {
     const router = useRouter();
+    const rootRef = useRef<HTMLDivElement>(null);
     const [genre, setGenre] = useState("All");
     const [stories, setStories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -87,9 +89,13 @@ export default function StoryExplorePage() {
 
     // Featured story (first one with image)
     const featured = useMemo(() => stories.find(s => s.image && s.image.trim()), [stories]);
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef,
+        scrollableSelectors: [".se-scroll"],
+    });
 
     return (
-        <div className="story-explore-root">
+        <div ref={rootRef} className="story-explore-root" style={viewportStyle}>
             {/* Top bar */}
             <header className="se-header">
                 <button className="se-back-btn" onClick={() => router.back()} aria-label="Go back">

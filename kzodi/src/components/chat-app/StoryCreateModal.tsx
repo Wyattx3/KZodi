@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useChatStore, type CastMember, type CustomCastCharacter, type StoryData } from "@/lib/chatStore";
 import type { Character } from "@/data/characters";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 interface StoryCreateModalProps {
     onClose: () => void;
@@ -271,6 +272,7 @@ function RoleSelector({
 }
 
 export default function StoryCreateModal({ onClose, onCreated, initialData }: StoryCreateModalProps) {
+    const rootRef = useRef<HTMLDivElement>(null);
     const [step, setStep] = useState<StoryStep>(1);
 
     const [title, setTitle] = useState("");
@@ -648,15 +650,24 @@ export default function StoryCreateModal({ onClose, onCreated, initialData }: St
         };
     const canAddCustomCharacter = Boolean(customCharForm.name.trim() && customCharForm.description.trim() && customCharForm.personality.trim());
     const selectedCastCount = cast.length;
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef,
+        scrollableSelectors: [".story-create-scroll-surface"],
+    });
 
     return (
         <motion.div
+            ref={rootRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             style={{
+                ...viewportStyle,
                 position: "fixed",
-                inset: 0,
+                top: "var(--ios-viewport-top, 0px)",
+                left: 0,
+                right: 0,
+                height: "var(--ios-viewport-height, 100dvh)",
                 zIndex: 1000,
                 background: "#FFFDF5", // Full screen background
                 display: "flex",
@@ -766,7 +777,7 @@ export default function StoryCreateModal({ onClose, onCreated, initialData }: St
                 </div>
 
                 <div
-                    className="no-scrollbar"
+                    className="no-scrollbar story-create-scroll-surface"
                     style={{
                         flex: 1,
                         overflowY: "auto",

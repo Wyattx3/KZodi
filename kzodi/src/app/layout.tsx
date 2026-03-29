@@ -56,7 +56,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <Providers>
-          <main className="min-h-dvh relative bg-cream">
+          <main className="app-root relative bg-cream">
             {children}
           </main>
         </Providers>

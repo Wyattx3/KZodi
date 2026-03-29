@@ -170,7 +170,7 @@ export default function ProfileTab() {
     }, []);
 
     return (
-        <div className="safe-top" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <div className="safe-top" style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
             {/* Sticky Header */}
             <div style={{ flexShrink: 0, position: "sticky", top: 0, zIndex: 60, background: "#FFFDF5", padding: "20px 18px 16px", borderBottom: "1px solid #F3F4F6" }}>
                 <div className="explore-hero">
@@ -531,7 +531,7 @@ export default function ProfileTab() {
 
             {/* Nickname Edit Modal Overlay */}
             {isEditingNickname && (
-                <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+                <div style={{ position: "absolute", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
                     <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }} onClick={() => setIsEditingNickname(false)} />
                     <motion.div 
                         initial={{ scale: 0.9, y: 20, opacity: 0 }} 

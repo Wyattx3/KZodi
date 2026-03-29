@@ -3,6 +3,7 @@ import React, { useRef, useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useChatStore, type Conversation } from "@/lib/chatStore";
 import { Character } from "@/data/characters";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 interface WorldBuildingModalProps {
     charMap: Record<string, Character>;
@@ -46,6 +47,7 @@ const ArrayInput = ({ label, items, setItems }: { label: string, items: string[]
 };
 
 export default function WorldBuildingModal({ charMap, conversations, onClose, onCreated }: WorldBuildingModalProps) {
+    const rootRef = useRef<HTMLDivElement>(null);
     const [step, setStep] = useState<"select" | "info" | "world">("select");
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [groupName, setGroupName] = useState("");
@@ -231,12 +233,23 @@ export default function WorldBuildingModal({ charMap, conversations, onClose, on
         };
         reader.readAsDataURL(file);
     };
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef,
+        scrollableSelectors: [".world-building-scroll-surface"],
+    });
 
     return (
         <motion.div
+            ref={rootRef}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             style={{
-                position: "fixed", inset: 0, zIndex: 1000,
+                ...viewportStyle,
+                position: "fixed",
+                top: "var(--ios-viewport-top, 0px)",
+                left: 0,
+                right: 0,
+                height: "var(--ios-viewport-height, 100dvh)",
+                zIndex: 1000,
                 background: "rgba(0,0,0,0.4)", backdropFilter: "blur(6px)",
                 display: "flex", alignItems: "flex-end", justifyContent: "center"
             }}
@@ -247,7 +260,7 @@ export default function WorldBuildingModal({ charMap, conversations, onClose, on
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 onClick={e => e.stopPropagation()}
                 style={{
-                    width: "100%", maxWidth: "480px", height: "85vh",
+                    width: "100%", maxWidth: "480px", height: "85vh", maxHeight: "100%",
                     background: "#FFFDF5", borderRadius: "24px 24px 0 0",
                     display: "flex", flexDirection: "column", overflow: "hidden"
                 }}
@@ -301,7 +314,7 @@ export default function WorldBuildingModal({ charMap, conversations, onClose, on
                                 <input type="text" placeholder="Search contacts..." value={searchQ} onChange={e => setSearchQ(e.target.value)} style={{ background: "none", border: "none", outline: "none", fontSize: "14px", color: "#4A3728", width: "100%" }} />
                             </div>
                         </div>
-                        <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 20px" }}>
+                        <div className="world-building-scroll-surface" style={{ flex: 1, overflowY: "auto", padding: "0 8px 20px" }}>
                             {filteredChars.map(c => {
                                 const isSelected = selectedIds.includes(c.id);
                                 return (
@@ -334,7 +347,7 @@ export default function WorldBuildingModal({ charMap, conversations, onClose, on
                 )}
 
                 {step === "world" && (
-                    <div style={{ flex: 1, padding: "24px 20px", overflowY: "auto" }}>
+                    <div className="world-building-scroll-surface" style={{ flex: 1, padding: "24px 20px", overflowY: "auto" }}>
                         <div style={{ marginBottom: "16px" }}>
                             <label style={{ fontSize: "13px", fontWeight: 600, color: "#8B8680", marginBottom: "8px", display: "block" }}>LORE / DESCRIPTION</label>
                             <textarea placeholder="Describe the world..." value={lore} onChange={e => setLore(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "1px solid #ddd", minHeight: "100px", outline: "none", resize: "vertical" }} />

@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import TargetStep from "@/components/form/TargetStep";
@@ -16,15 +16,21 @@ import ResultsPage from "@/components/results/ResultsPage";
 import LoadingScreen from "@/components/ui/LoadingScreen";
 import { useAppStore, type BirthLocation } from "@/lib/store";
 import { getZodiacSign } from "@/lib/zodiac";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 type AppView = "flow" | "mbti-test" | "loading" | "results";
 
 export default function PersonalityPage() {
     const store = useAppStore();
     const router = useRouter();
+    const shellRef = useRef<HTMLDivElement>(null);
     const [view, setView] = useState<AppView>("flow");
     const [direction, setDirection] = useState(1);
     const [aiInsights, setAiInsights] = useState<Record<string, unknown> | null>(null);
+    const { viewportStyle } = useIOSViewportContainment({
+        rootRef: shellRef,
+        scrollableSelectors: [".chat-app-content"],
+    });
 
     // Initialize step to 0 when mounted to ensure it starts fresh if they just navigated here
     useEffect(() => {
@@ -337,7 +343,7 @@ export default function PersonalityPage() {
     const currentStepData = steps[store.currentStep] || steps[steps.length - 1] || null;
 
     return (
-        <div className="chat-app" style={{ height: '100dvh', overflow: 'hidden' }}>
+        <div ref={shellRef} className="chat-app" style={viewportStyle}>
             <AnimatePresence mode="wait">
                 {view === "flow" && currentStepData && (
                     <div key="flow" className="chat-app-view">

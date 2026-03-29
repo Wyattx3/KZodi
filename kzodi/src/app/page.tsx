@@ -1,10 +1,11 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import dynamic from "next/dynamic";
 import { AnimatePresence } from "framer-motion";
 import LandingPage from "@/components/landing/LandingPage";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 const ChatLandingPage = dynamic(() => import("@/components/landing/ChatLandingPage"));
 
@@ -12,8 +13,13 @@ function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
+  const shellRef = useRef<HTMLDivElement>(null);
   const [isAppMode, setIsAppMode] = useState(false);
   const view = searchParams.get("view") === "chat-landing" ? "chat-landing" : "landing";
+  const { viewportStyle } = useIOSViewportContainment({
+    rootRef: shellRef,
+    scrollableSelectors: [".chat-app-content"],
+  });
 
   // Auto-redirect to /chat if already logged in, in PWA standalone mode, or in Capacitor native app
   useEffect(() => {
@@ -52,7 +58,7 @@ function HomeContent() {
   };
 
   return (
-    <div className="chat-app" style={{ height: '100dvh', overflow: 'hidden' }}>
+    <div ref={shellRef} className="chat-app" style={viewportStyle}>
       <AnimatePresence mode="wait">
         {effectiveView === "landing" && (
           <LandingPage key="landing" />
