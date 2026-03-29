@@ -67,6 +67,7 @@ export default function ChatApp() {
     const [allCharacters, setAllCharacters] = useState<Character[]>([]);
     const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
     const [isCreateScreenActive, setIsCreateScreenActive] = useState(false);
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     // `isLoadingChats` starts false (persisted fast-path) ONLY when:
     //   1. The store already has conversations, AND
     //   2. ownerUserId is stamped (i.e., the identity has been verified at least once).
@@ -785,7 +786,7 @@ export default function ChatApp() {
                     {/* Tab content — all tabs stay mounted to preserve state/data */}
                     <div className="chat-app-content no-scrollbar" style={{ overflowY: activeTab === "profile" ? "hidden" : undefined }}>
                         <div style={{ width: "100%", display: activeTab === "explore" ? "block" : "none" }}>
-                            <ExploreTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} />
+                            <ExploreTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} onPreviewChange={setIsPreviewOpen} />
                         </div>
                         <div style={{ width: "100%", display: activeTab === "chats" ? "block" : "none" }}>
                             <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} myCharacters={myCharacters} allCharacters={allCharacters} isLoading={isLoadingChats} />
@@ -807,7 +808,7 @@ export default function ChatApp() {
                     </div>
 
                     {/* Premium floating tab layout */}
-                    {!(activeTab === "create" && isCreateScreenActive) && (
+                    {!(activeTab === "create" && isCreateScreenActive) && !isPreviewOpen && (
                         <LayoutGroup>
                             <div className="chat-nav-wrapper">
                             {/* Left FAB: Explore */}

@@ -24,6 +24,7 @@ const getSafeImage = (image?: string | null, seedName?: string) => {
 interface ExploreTabProps {
     onSelectCharacter: (character: Character) => void;
     onSelectGroup?: (groupId: string) => void;
+    onPreviewChange?: (isOpen: boolean) => void;
 }
 
 type StoryDetailField = {
@@ -277,7 +278,7 @@ function getSearchResultCopy(character: Character) {
         .trim();
 }
 
-export default function ExploreTab({ onSelectCharacter, onSelectGroup }: ExploreTabProps) {
+export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreviewChange }: ExploreTabProps) {
     const router = useRouter();
     const [activeCategory, setActiveCategory] = useState<ExploreCategory>("All");
     const [search, setSearch] = useState("");
@@ -287,6 +288,11 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
     const [selectedPreview, setSelectedPreview] = useState<Character | null>(null);
     // Pre-play character setup modal state
     const [storySetupChar, setStorySetupChar] = useState<Character | null>(null);
+
+    // Notify parent when preview/setup dialog opens or closes
+    useEffect(() => {
+        onPreviewChange?.(!!selectedPreview || !!storySetupChar);
+    }, [selectedPreview, storySetupChar, onPreviewChange]);
     const [playerName, setPlayerName] = useState("");
     const [playerDesc, setPlayerDesc] = useState("");
     const [characters, setCharacters] = useState<Character[]>([]);
@@ -1470,14 +1476,15 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
                         onClick={() => setSelectedPreview(null)}
                     >
                         <motion.div
                             className="explore-preview-modal"
-                            initial={{ opacity: 0, y: 60, scale: 0.9 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 40, scale: 0.95 }}
-                            transition={{ type: "spring", damping: 28, stiffness: 340 }}
+                            initial={{ y: "100%" }}
+                            animate={{ y: 0 }}
+                            exit={{ y: "100%" }}
+                            transition={{ type: "tween", duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
                             onClick={(e) => e.stopPropagation()}
                         >
                             <button
@@ -1502,22 +1509,24 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup }: Explore
                                     {selectedPreview.source !== "story" && (
                                         <button
                                             onClick={(e) => handleLike(selectedPreview, e)}
+                                            className="explore-preview-like-btn"
                                             style={{
-                                                marginTop: '8px',
-                                                padding: '8px 16px',
-                                                background: selectedPreview.userHasLiked ? '#FFF0F0' : '#F9FAFB',
-                                                color: selectedPreview.userHasLiked ? '#FF4D4F' : '#6B7280',
-                                                border: selectedPreview.userHasLiked ? '1px solid #FFCCC7' : '1px solid #E5E7EB',
-                                                borderRadius: '20px',
+                                                marginTop: '4px',
+                                                padding: '4px 10px',
+                                                background: selectedPreview.userHasLiked ? '#FEE2E2' : '#F3F4F6',
+                                                color: selectedPreview.userHasLiked ? '#EF4444' : '#6B7280',
+                                                border: 'none',
+                                                borderRadius: '6px',
                                                 cursor: 'pointer',
-                                                fontWeight: 600,
-                                                display: 'flex',
+                                                fontWeight: 500,
+                                                fontSize: '11px',
+                                                display: 'inline-flex',
                                                 alignItems: 'center',
-                                                gap: '6px'
+                                                gap: '4px'
                                             }}
                                         >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill={selectedPreview.userHasLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
-                                            {selectedPreview.userHasLiked ? 'Liked' : 'Like'}
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill={selectedPreview.userHasLiked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+                                            {formatCompactSocialCount(selectedPreview.likes)}
                                         </button>
                                     )}
                                 </div>

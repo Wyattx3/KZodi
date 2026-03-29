@@ -846,6 +846,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const restingViewportHeightRef = useRef<number | null>(null);
     const touchGestureRef = useRef<{ x: number; y: number; target: HTMLElement | null } | null>(null);
     const [viewportHeight, setViewportHeight] = useState<number | string>("100dvh");
+    const [viewportTop, setViewportTop] = useState<number>(0);
     const isIOS = useMemo(() => {
         if (typeof navigator === "undefined") return false;
         return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -2221,79 +2222,36 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         }
     };
 
-    // Keep viewport writes on a single path:
-    // - iOS only updates the room height so sticky chrome stays stable during keyboard motion.
-    // - Android uses React state to size the room.
+    // iOS Keyboard Smooth Viewport Sync
+    // - Locks the global document body to prevent native Safari Layout Viewport shifting.
+    // - Simply syncs VisualViewport height to resize the chat container gracefully.
     useEffect(() => {
         if (typeof window === "undefined") return;
-        const chatroomEl = chatroomRef.current;
         const visualViewport = window.visualViewport;
 
-        if (!chatroomEl) return;
-
-        if (isIOS && !initialChatroomInlineStylesRef.current) {
-            initialChatroomInlineStylesRef.current = {
-                viewportHeight: chatroomEl.style.getPropertyValue("--chatroom-viewport-height"),
-            };
+        if (isIOS) {
+            document.body.classList.add("ios-chat-lock");
         }
-
-        const restoreChatroomViewportStyles = () => {
-            const target = chatroomRef.current;
-            if (!target) return;
-
-            const initialStyles = initialChatroomInlineStylesRef.current;
-            if (initialStyles?.viewportHeight) {
-                target.style.setProperty("--chatroom-viewport-height", initialStyles.viewportHeight);
-            } else {
-                target.style.removeProperty("--chatroom-viewport-height");
-            }
-        };
 
         const syncViewport = () => {
             const nextHeight = Math.round(visualViewport?.height ?? window.innerHeight);
-            const nextOffsetTop = Math.round(visualViewport?.offsetTop ?? 0);
-            const lastMetrics = lastViewportMetricsRef.current;
-
-            if (lastMetrics.height === nextHeight && lastMetrics.offsetTop === nextOffsetTop) {
-                return;
-            }
-
-            lastViewportMetricsRef.current = { height: nextHeight, offsetTop: nextOffsetTop };
-
-            if (isIOS) {
-                if (nextOffsetTop === 0) {
-                    if (restingViewportHeightRef.current === null || nextHeight >= restingViewportHeightRef.current) {
-                        restingViewportHeightRef.current = nextHeight;
-                    }
-                }
-
-                const restingHeight = restingViewportHeightRef.current ?? nextHeight;
-                const isViewportSettled = nextOffsetTop === 0 && nextHeight >= restingHeight - 1;
-
-                if (isViewportSettled) {
-                    restoreChatroomViewportStyles();
-                    return;
-                }
-
-                const nextHeightValue = `${nextHeight + Math.max(nextOffsetTop, 0)}px`;
-                if (chatroomEl.style.getPropertyValue("--chatroom-viewport-height") !== nextHeightValue) {
-                    chatroomEl.style.setProperty("--chatroom-viewport-height", nextHeightValue);
-                }
-
-                return;
-            }
-
+            const nextTop = Math.round(visualViewport?.offsetTop ?? 0);
+            
             setViewportHeight((currentHeight) => {
                 if (typeof currentHeight === "number" && currentHeight === nextHeight) {
                     return currentHeight;
                 }
                 return nextHeight;
             });
+
+            setViewportTop((currentTop) => {
+                if (currentTop === nextTop) return currentTop;
+                return nextTop;
+            });
         };
 
         const scheduleViewportSync = () => {
             if (viewportSyncFrameRef.current !== null) return;
-
             viewportSyncFrameRef.current = window.requestAnimationFrame(() => {
                 viewportSyncFrameRef.current = null;
                 syncViewport();
@@ -2305,10 +2263,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             visualViewport.addEventListener("resize", scheduleViewportSync);
             visualViewport.addEventListener("scroll", scheduleViewportSync);
             scheduleViewportSync();
-        } else if (!isIOS) {
-            setViewportHeight(window.innerHeight);
         } else {
-            scheduleViewportSync();
+            setViewportHeight(window.innerHeight);
         }
 
         return () => {
@@ -2324,137 +2280,36 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             }
 
             if (isIOS) {
-                restoreChatroomViewportStyles();
+                document.body.classList.remove("ios-chat-lock");
             }
-
-            lastViewportMetricsRef.current = { height: null, offsetTop: null };
-            restingViewportHeightRef.current = null;
         };
     }, [isIOS]);
 
+    // Explicitly block touchmove on non-scrollable iOS surfaces.
+    // iOS Safari ignores `position: fixed` or `overscroll-behavior: none` 
+    // when a text input is focused, allowing the user to drag the whole layout viewport.
     useEffect(() => {
-        if (typeof window === "undefined" || !isIOS) return;
-
+        if (typeof window === "undefined") return;
         const chatroomEl = chatroomRef.current;
         if (!chatroomEl) return;
 
-        const interactiveSelector = [
-            "textarea",
-            "input",
-            "select",
-            "button",
-            "a",
-            "label",
-            "[contenteditable=\"\"]",
-            "[contenteditable=\"true\"]",
-            "[role=\"textbox\"]",
-        ].join(", ");
-        const editableSelector = [
-            "textarea",
-            "input",
-            "[contenteditable=\"\"]",
-            "[contenteditable=\"true\"]",
-            "[role=\"textbox\"]",
-        ].join(", ");
-        const allowedScrollSelector = [
-            ".chatroom-messages-area",
-            ".chatroom-info-drawer",
-            ".sticker-drawer",
-            ".profile-page",
-            ".profile-body",
-        ].join(", ");
-        const guardedSurfaceSelector = [
-            ".chatroom-header",
-            ".chatroom-input-bar",
-        ].join(", ");
-
-        const resetTouchGesture = () => {
-            touchGestureRef.current = null;
-        };
-
-        const isKeyboardGestureGuardActive = () => {
-            const visualViewport = window.visualViewport;
-            const activeElement = document.activeElement;
-            const hasFocusedInput =
-                activeElement instanceof HTMLElement &&
-                activeElement.closest(".chatroom") === chatroomEl &&
-                !!activeElement.closest(editableSelector);
-
-            if (!visualViewport || !hasFocusedInput) {
-                return false;
-            }
-
-            const restingHeight = restingViewportHeightRef.current ?? window.innerHeight;
-            return Math.round(visualViewport.offsetTop) > 0 || Math.round(visualViewport.height) < restingHeight - 60;
-        };
-
-        const hasAllowedScrollAncestor = (element: HTMLElement) => {
-            for (let node: HTMLElement | null = element; node && node !== chatroomEl; node = node.parentElement) {
-                if (node.matches(allowedScrollSelector)) {
-                    return true;
-                }
-
-                const overflowY = window.getComputedStyle(node).overflowY;
-                if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight + 1) {
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        const handleTouchStart = (e: TouchEvent) => {
-            const touch = e.touches[0];
-            if (!touch) return;
-
-            touchGestureRef.current = {
-                x: touch.clientX,
-                y: touch.clientY,
-                target: e.target instanceof HTMLElement ? e.target : null,
-            };
-        };
-
         const handleTouchMove = (e: TouchEvent) => {
-            const target = e.target;
-            if (!(target instanceof HTMLElement)) return;
-
-            if (target.closest(interactiveSelector)) return;
-            if (hasAllowedScrollAncestor(target)) return;
-
-            const gesture = touchGestureRef.current;
-            const touch = e.touches[0];
-            if (!gesture || !touch) return;
-
-            const gestureTarget = gesture.target ?? target;
-            if (!gestureTarget.closest(guardedSurfaceSelector)) return;
-
-            const deltaX = Math.abs(touch.clientX - gesture.x);
-            const deltaY = Math.abs(touch.clientY - gesture.y);
-            if (deltaY <= deltaX || deltaY < 6) return;
-            if (!isKeyboardGestureGuardActive()) return;
-
+            // Allow scrolling inside message areas and drawers
+            if ((e.target as Element).closest(".chatroom-messages-area, .profile-body, .sticker-drawer")) {
+                return;
+            }
+            // For the header, input bar, or background, completely block panning
             e.preventDefault();
         };
 
-        chatroomEl.addEventListener("touchstart", handleTouchStart, { passive: true });
         chatroomEl.addEventListener("touchmove", handleTouchMove, { passive: false });
-        chatroomEl.addEventListener("touchend", resetTouchGesture);
-        chatroomEl.addEventListener("touchcancel", resetTouchGesture);
-
-        return () => {
-            chatroomEl.removeEventListener("touchstart", handleTouchStart);
-            chatroomEl.removeEventListener("touchmove", handleTouchMove);
-            chatroomEl.removeEventListener("touchend", resetTouchGesture);
-            chatroomEl.removeEventListener("touchcancel", resetTouchGesture);
-            resetTouchGesture();
-        };
+        return () => chatroomEl.removeEventListener("touchmove", handleTouchMove);
     }, [isIOS]);
 
-    const chatroomViewportStyle = isIOS
-        ? undefined
-        : ({
-            ["--chatroom-viewport-height" as "--chatroom-viewport-height"]: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight,
-        } as React.CSSProperties);
+    const chatroomViewportStyle = {
+        ["--chatroom-viewport-height" as "--chatroom-viewport-height"]: typeof viewportHeight === "number" ? `${viewportHeight}px` : viewportHeight,
+        ["--chatroom-viewport-top" as "--chatroom-viewport-top"]: `${viewportTop}px`,
+    } as React.CSSProperties;
 
     return (
         <div

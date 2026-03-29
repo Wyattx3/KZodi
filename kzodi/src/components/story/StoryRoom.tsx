@@ -689,6 +689,72 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
         Boolean(conversation?.storyData?.playerCharacterName)
     ));
     const storyLogRef = useRef<HTMLDivElement>(null);
+    const storyContainerRef = useRef<HTMLDivElement>(null);
+
+    const isIOS = useMemo(() => {
+        if (typeof navigator === "undefined") return false;
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    }, []);
+
+    useEffect(() => {
+        if (!isIOS || typeof window === "undefined") return;
+        const el = storyContainerRef.current;
+        const vv = window.visualViewport;
+
+        document.body.classList.add("ios-chat-lock");
+
+        const sync = () => {
+            if (!el || !vv) return;
+            const h = Math.round(vv.height);
+            const topOffset = Math.round(vv.offsetTop ?? 0);
+            // Setting height directly on the container.
+            // Offset top downwards by the exact amount Safari pushed the layout viewport up.
+            el.style.height = `${h}px`;
+            el.style.minHeight = `${h}px`;
+            el.style.top = `${topOffset}px`;
+        };
+
+        const schedule = () => requestAnimationFrame(sync);
+
+        if (vv) {
+            vv.addEventListener("resize", schedule);
+            vv.addEventListener("scroll", schedule);
+            sync(); // Initial apply
+        }
+
+        return () => {
+            if (vv) {
+                vv.removeEventListener("resize", schedule);
+                vv.removeEventListener("scroll", schedule);
+            }
+            document.body.classList.remove("ios-chat-lock");
+            if (el) {
+                el.style.height = "";
+                el.style.minHeight = "";
+                el.style.top = "";
+            }
+        };
+    }, [isIOS]);
+
+    // Explicitly block touchmove on non-scrollable iOS surfaces.
+    // iOS Safari ignores `position: fixed` when a text input is focused, allowing rubber-banding.
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const el = storyContainerRef.current;
+        if (!el) return;
+
+        const handleTouchMove = (e: TouchEvent) => {
+            // Allow scrolling inside message area and scrollable settings
+            if ((e.target as Element).closest(".overflow-y-auto")) {
+                return;
+            }
+            e.preventDefault();
+        };
+
+        el.addEventListener("touchmove", handleTouchMove, { passive: false });
+        return () => el.removeEventListener("touchmove", handleTouchMove);
+    }, [isIOS]);
 
     const parsedMessages = useMemo(() => {
         return (conversation?.messages || []).map((message) => ({
@@ -895,6 +961,7 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
 
     return (
         <div 
+            ref={storyContainerRef}
             className="min-h-[100dvh] h-[100dvh] flex flex-col font-sans overflow-hidden relative"
             style={{
                 backgroundColor: bgColor,
