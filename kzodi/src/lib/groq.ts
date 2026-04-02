@@ -284,6 +284,7 @@ export interface GroqChatParams {
   messages: GroqMessage[];
   model?: string;
   fallbackModel?: string;
+  disableProviderFallback?: boolean;
   temperature?: number;
   max_tokens?: number;
   response_format?: { type: string };
@@ -368,7 +369,7 @@ class MultiProviderClient {
     const result = await queue.enqueue(() => this.callWithRetry(params, maxRetries, useCache ? cachePrefix : null));
 
     // Auto-fallback: if primary model returns empty/too-short, try fallback model
-    const fallbackToUse = params.fallbackModel || FALLBACK_MODEL;
+    const fallbackToUse = params.disableProviderFallback ? undefined : (params.fallbackModel || FALLBACK_MODEL);
     if ((!result.content || result.content.length < 10) && model === MODEL && fallbackToUse) {
       console.warn(`[AI] Primary model empty (${result.content.length} chars). Auto-fallback to ${fallbackToUse}...`);
       const fallbackParams = { ...params, model: fallbackToUse };
@@ -390,7 +391,7 @@ class MultiProviderClient {
     const backoffs = [1000, 2000, 4000, 8000];
     const model = params.model || MODELS.CHAT;
     const provider = determineProvider(model);
-    const fallbackToUse = params.fallbackModel || FALLBACK_MODEL;
+    const fallbackToUse = params.disableProviderFallback ? undefined : (params.fallbackModel || FALLBACK_MODEL);
 
     // Estimate tokens
     const inputText = params.messages.map((m) => m.content).join("");
@@ -417,24 +418,36 @@ class MultiProviderClient {
           apiUrl = "https://api.x.ai/v1/chat/completions";
           apiKey = process.env.XAI_API_KEY || "";
           if (!apiKey) {
-            console.warn("[AI] XAI_API_KEY missing, falling back to Groq Kimi");
-            return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
+            if (fallbackToUse) {
+              console.warn("[AI] XAI_API_KEY missing, falling back to Groq Kimi");
+              return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
+            }
+            console.warn("[AI] XAI_API_KEY missing and provider fallback disabled");
+            return { content: "", finish_reason: "missing_api_key", truncated: false, cached: false, provider };
           }
           headers.Authorization = `Bearer ${apiKey}`;
         } else if (provider === PROVIDERS.FIREWORKS) {
           apiUrl = "https://api.fireworks.ai/inference/v1/chat/completions";
           apiKey = process.env.FIREWORKS_API_KEY || "";
           if (!apiKey) {
-            console.warn("[AI] FIREWORKS_API_KEY missing, falling back to Groq Kimi");
-            return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
+            if (fallbackToUse) {
+              console.warn("[AI] FIREWORKS_API_KEY missing, falling back to Groq Kimi");
+              return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
+            }
+            console.warn("[AI] FIREWORKS_API_KEY missing and provider fallback disabled");
+            return { content: "", finish_reason: "missing_api_key", truncated: false, cached: false, provider };
           }
           headers.Authorization = `Bearer ${apiKey}`;
         } else if (provider === PROVIDERS.GEMINI) {
           apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
           apiKey = process.env.GEMINI_API_KEY || "";
           if (!apiKey) {
-             console.warn("[AI] GEMINI_API_KEY missing, falling back to Groq Kimi");
-             return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
+             if (fallbackToUse) {
+               console.warn("[AI] GEMINI_API_KEY missing, falling back to Groq Kimi");
+               return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
+             }
+             console.warn("[AI] GEMINI_API_KEY missing and provider fallback disabled");
+             return { content: "", finish_reason: "missing_api_key", truncated: false, cached: false, provider };
           }
           headers.Authorization = `Bearer ${apiKey}`;
         } else if (provider === PROVIDERS.GROQ) {
@@ -528,7 +541,7 @@ class MultiProviderClient {
             continue;
           }
           // if xAI fails, fallback to Groq Kimi if it was Grok
-          if (provider === PROVIDERS.XAI && model.includes("grok")) {
+          if (provider === PROVIDERS.XAI && model.includes("grok") && fallbackToUse) {
             console.warn(`[AI] xAI failed consistently, falling back to ${fallbackToUse}`);
             return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
           }
@@ -539,7 +552,7 @@ class MultiProviderClient {
           const errText = await res.text();
           console.error(`[AI] Error ${res.status} on ${model}: ${errText.slice(0, 300)}`);
           // ANY error (400, 403, network error, etc.) should fall back to Kimi k2 / LLaMa for these providers
-          if (provider !== PROVIDERS.GROQ) {
+          if (provider !== PROVIDERS.GROQ && fallbackToUse) {
             console.warn(`[AI] ${provider} error ${res.status}, falling back to ${fallbackToUse}`);
             return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
           }
@@ -620,7 +633,7 @@ class MultiProviderClient {
           await sleep(backoffs[attempt] || 4000);
           continue;
         }
-        if (provider === PROVIDERS.XAI || provider === PROVIDERS.OLLAMA || provider === PROVIDERS.FIREWORKS || provider === PROVIDERS.GEMINI) {
+        if ((provider === PROVIDERS.XAI || provider === PROVIDERS.OLLAMA || provider === PROVIDERS.FIREWORKS || provider === PROVIDERS.GEMINI) && fallbackToUse) {
           console.warn(`[AI] ${provider} failed, falling back to ${fallbackToUse}`);
           return this.callWithRetry({ ...params, model: fallbackToUse }, maxRetries, cachePrefix);
         }

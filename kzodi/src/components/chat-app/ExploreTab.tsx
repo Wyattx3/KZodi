@@ -8,6 +8,7 @@ type ExploreCategory = (typeof CATEGORIES)[number];
 import { App } from '@capacitor/app';
 import { useChatStore } from "@/lib/chatStore";
 import { buildCreateStoryData } from "@/lib/storyData";
+import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 const getSafeImage = (image?: string | null, seedName?: string) => {
     if (image && image.trim() !== '') return image;
@@ -25,6 +26,7 @@ interface ExploreTabProps {
     onSelectCharacter: (character: Character) => void;
     onSelectGroup?: (groupId: string) => void;
     onPreviewChange?: (isOpen: boolean) => void;
+    isActive?: boolean;
 }
 
 type StoryDetailField = {
@@ -43,9 +45,59 @@ type StoryPreviewCastMember = {
 const PAGE_SIZE = 50;
 const STORY_GENRES = ["All", "Fantasy", "Romance", "Mystery", "Action", "Horror", "Sci-Fi", "Slice of Life", "Thriller", "Comedy"] as const;
 const SEARCH_HISTORY_STORAGE_KEY = "kzodi.explore.search.history";
+const EXPLORE_QUERY_CACHE_PREFIX = "kzodi.explore.query.v1";
+const EXPLORE_HOME_CACHE_KEY = "kzodi.explore.home.v1";
+const EXPLORE_CACHE_TTL_MS = 1000 * 60 * 5;
 const SEARCH_FALLBACK_TERMS = ["Baji", "Jungkook", "Mafia", "Boyfriend", "Gojo", "Bakugo", "Romance", "Yandere"];
 const STORY_LIBRARY_SPRING = [0.34, 1.56, 0.64, 1] as const;
 const STORY_DETAIL_EASE = [0.22, 1, 0.36, 1] as const;
+
+function getExploreQueryCacheKey(category: string, search: string) {
+    return `${EXPLORE_QUERY_CACHE_PREFIX}:${category}:${search.trim().toLowerCase() || "_"}`;
+}
+
+function getExploreCacheStorage() {
+    if (typeof window === "undefined") return null;
+    try {
+        return window.localStorage;
+    } catch {
+        try {
+            return window.sessionStorage;
+        } catch {
+            return null;
+        }
+    }
+}
+
+function readTimedSessionCache<T>(key: string, maxAgeMs: number): T | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const storage = getExploreCacheStorage();
+        const raw = storage?.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { timestamp?: number; data?: T };
+        if (!parsed?.timestamp || Date.now() - parsed.timestamp > maxAgeMs) {
+            storage?.removeItem(key);
+            return null;
+        }
+        return parsed.data ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function writeTimedSessionCache<T>(key: string, data: T) {
+    if (typeof window === "undefined") return;
+    try {
+        const storage = getExploreCacheStorage();
+        storage?.setItem(key, JSON.stringify({
+            timestamp: Date.now(),
+            data,
+        }));
+    } catch {
+        // Ignore best-effort cache failures.
+    }
+}
 
 const storyOverlayVariants = {
     initial: { opacity: 0, y: "0%" },
@@ -278,13 +330,14 @@ function getSearchResultCopy(character: Character) {
         .trim();
 }
 
-export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreviewChange }: ExploreTabProps) {
+export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreviewChange, isActive = true }: ExploreTabProps) {
     const router = useRouter();
     const [activeCategory, setActiveCategory] = useState<ExploreCategory>("All");
     const [search, setSearch] = useState("");
     const [searchMode, setSearchMode] = useState(false);
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const searchModeRef = useRef<HTMLDivElement>(null);
     const [selectedPreview, setSelectedPreview] = useState<Character | null>(null);
     // Pre-play character setup modal state
     const [storySetupChar, setStorySetupChar] = useState<Character | null>(null);
@@ -314,12 +367,57 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
     const abortControllerRef = useRef<AbortController | null>(null);
     // queryToken: incremented on every category/search change. Lets loadMore detect stale appends.
     const queryTokenRef = useRef(0);
+    const { viewportStyle: searchViewportStyle, keyboardOpen: searchKeyboardOpen } = useIOSViewportContainment({
+        rootRef: searchModeRef,
+        enabled: searchMode,
+        lockBody: false,
+        scrollableSelectors: [".explore-search-scroll"],
+    });
+
+    const focusSearchInput = useCallback(() => {
+        const input = searchInputRef.current;
+        if (!input) return;
+
+        try {
+            input.focus({ preventScroll: true });
+        } catch {
+            input.focus();
+        }
+    }, []);
+
+    const searchModeStyle = useMemo(() => ({
+        ...searchViewportStyle,
+        height: "var(--mobile-viewport-height, var(--ios-viewport-height, 100%))",
+        minHeight: "var(--mobile-viewport-height, var(--ios-viewport-height, 100%))",
+    }), [searchViewportStyle]);
+
+    useEffect(() => {
+        if (isActive) {
+            return;
+        }
+
+        abortControllerRef.current?.abort();
+        setRefreshLoading(false);
+        setIsLoadingMore(false);
+    }, [isActive]);
+
+    useEffect(() => {
+        if (!searchMode) {
+            setRefreshLoading(false);
+        }
+    }, [searchMode]);
+
+    useEffect(() => {
+        return () => {
+            abortControllerRef.current?.abort();
+        };
+    }, []);
 
     // Fetch characters (initial or reset)
-    const fetchCharacters = async (append = false, offset = 0, signal?: AbortSignal, expectedToken?: number) => {
+    const fetchCharacters = async (append = false, offset = 0, signal?: AbortSignal, expectedToken?: number, silent = false) => {
         if (append) {
             setIsLoadingMore(true);
-        } else {
+        } else if (!silent) {
             // Use the full skeleton only on the very first load (no cards, no search query).
             // When the user is searching, keep existing results visible and show the
             // overlay spinner instead — this eliminates the blank flash between keystrokes.
@@ -342,6 +440,11 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
                     setCharacters(prev => [...prev, ...chars]);
                 } else {
                     setCharacters(chars);
+                    writeTimedSessionCache(getExploreQueryCacheKey(activeCategory, search), {
+                        characters: chars,
+                        hasMore: data.hasMore ?? false,
+                        currentOffset: offset + chars.length,
+                    });
                 }
                 setHasMore(data.hasMore ?? false);
                 setCurrentOffset(offset + chars.length);
@@ -384,7 +487,13 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
             const res = await fetch(`/api/characters?category=Specialist&limit=10`);
             if (res.ok) {
                 const data = await res.json();
-                setSpecialCharacters(data.characters || data);
+                const nextSpecialCharacters = data.characters || data;
+                setSpecialCharacters(nextSpecialCharacters);
+                const currentHomeCache = readTimedSessionCache<{ specialCharacters?: Character[]; forYouCharacters?: Character[] }>(EXPLORE_HOME_CACHE_KEY, EXPLORE_CACHE_TTL_MS);
+                writeTimedSessionCache(EXPLORE_HOME_CACHE_KEY, {
+                    specialCharacters: nextSpecialCharacters,
+                    forYouCharacters: currentHomeCache?.forYouCharacters || [],
+                });
             }
         } catch (error) {
             console.error("Failed to fetch special characters:", error);
@@ -397,6 +506,11 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
             if (res.ok) {
                 const data = await res.json();
                 setForYouCharacters(data);
+                const currentHomeCache = readTimedSessionCache<{ specialCharacters?: Character[]; forYouCharacters?: Character[] }>(EXPLORE_HOME_CACHE_KEY, EXPLORE_CACHE_TTL_MS);
+                writeTimedSessionCache(EXPLORE_HOME_CACHE_KEY, {
+                    specialCharacters: currentHomeCache?.specialCharacters || [],
+                    forYouCharacters: Array.isArray(data) ? data : [],
+                });
             }
         } catch (error) {
             console.error("Failed to fetch for-you characters:", error);
@@ -411,12 +525,27 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
         // Bump token to invalidate any in-flight load-more from the previous query
         queryTokenRef.current += 1;
 
+        const cachedQuery = readTimedSessionCache<{
+            characters?: Character[];
+            hasMore?: boolean;
+            currentOffset?: number;
+        }>(getExploreQueryCacheKey(activeCategory, search), EXPLORE_CACHE_TTL_MS);
+        const hasCachedQuery = Array.isArray(cachedQuery?.characters);
+
+        if (hasCachedQuery) {
+            setCharacters(cachedQuery?.characters || []);
+            setHasMore(Boolean(cachedQuery?.hasMore));
+            setCurrentOffset(cachedQuery?.currentOffset ?? (cachedQuery?.characters?.length || 0));
+            setInitialLoading(false);
+            setRefreshLoading(false);
+        }
+
         // Abort any previous in-flight request
         abortControllerRef.current?.abort();
         const controller = new AbortController();
         abortControllerRef.current = controller;
 
-        const runFetch = () => fetchCharacters(false, 0, controller.signal);
+        const runFetch = () => fetchCharacters(false, 0, controller.signal, undefined, hasCachedQuery);
 
         if (search) {
             // Debounce search input to avoid stale races on every keystroke
@@ -428,6 +557,19 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
         }
 
         if (activeCategory === "All" && !search) {
+            const cachedHome = readTimedSessionCache<{
+                specialCharacters?: Character[];
+                forYouCharacters?: Character[];
+            }>(EXPLORE_HOME_CACHE_KEY, EXPLORE_CACHE_TTL_MS);
+
+            if (Array.isArray(cachedHome?.specialCharacters)) {
+                setSpecialCharacters(cachedHome?.specialCharacters || []);
+            }
+
+            if (Array.isArray(cachedHome?.forYouCharacters)) {
+                setForYouCharacters(cachedHome?.forYouCharacters || []);
+            }
+
             fetchSpecialCharacters();
             fetchForYou();
         } else {
@@ -647,9 +789,23 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
         pushRecentSearch(normalized);
 
         window.requestAnimationFrame(() => {
-            searchInputRef.current?.focus();
+            focusSearchInput();
         });
-    }, [pushRecentSearch]);
+    }, [focusSearchInput, pushRecentSearch]);
+
+    useEffect(() => {
+        if (!searchMode || typeof window === "undefined") {
+            return;
+        }
+
+        const frame = window.requestAnimationFrame(() => {
+            focusSearchInput();
+        });
+
+        return () => {
+            window.cancelAnimationFrame(frame);
+        };
+    }, [focusSearchInput, searchMode]);
 
     const handlePreview = (char: Character, e?: React.MouseEvent | React.TouchEvent) => {
         if (e) e.stopPropagation();
@@ -813,7 +969,10 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
                 {searchMode ? (
                     <motion.div
                         key="search-page"
+                        ref={searchModeRef}
                         className="explore-search-mode explore-search-theme"
+                        data-keyboard-open={searchKeyboardOpen ? "true" : "false"}
+                        style={searchModeStyle}
                     >
                         <div className="explore-search-header">
                             <div className="explore-search-topbar">
@@ -834,7 +993,6 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
                                                 pushRecentSearch(search);
                                             }
                                         }}
-                                        autoFocus
                                     />
                                     {search && (
                                         <button
@@ -932,7 +1090,11 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
                                                         key={item.id}
                                                         type="button"
                                                         className="explore-search-trending-card"
-                                                        onClick={() => applySearchTerm(item.name)}
+                                                        onClick={(event) => {
+                                                            pushRecentSearch(item.name);
+                                                            setSearchMode(false);
+                                                            handleCardClick(item, event);
+                                                        }}
                                                     >
                                                         <span className="explore-search-rank">{index + 1}</span>
                                                         <img
@@ -1060,7 +1222,7 @@ export default function ExploreTab({ onSelectCharacter, onSelectGroup, onPreview
                     /* ══════════ EXPLORE PAGE ══════════ */
                     <motion.div
                         key="explore-page"
-                        style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+                        style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}
                     >
                         {/* ── Sticky Header ────────────────────────────────── */}
                         <div className="explore-header-sticky">

@@ -89,7 +89,12 @@ export async function GET(req: NextRequest) {
                 if (cached) {
                     const parsed = JSON.parse(cached);
                     // Inject user-specific liked status on top of cached data
-                    return NextResponse.json(parsed);
+                    return NextResponse.json(parsed, {
+                        headers: {
+                            "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
+                            "X-Character-Cache": "hit",
+                        },
+                    });
                 }
             } catch (e) { /* cache miss, continue to DB */ }
         }
@@ -140,7 +145,14 @@ export async function GET(req: NextRequest) {
             valkey.set(cacheKey, JSON.stringify(responsePayload), 'EX', CHAR_CACHE_TTL).catch(() => {});
         }
 
-        return NextResponse.json(responsePayload);
+        return NextResponse.json(responsePayload, {
+            headers: cacheKey
+                ? {
+                    "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
+                    "X-Character-Cache": "miss",
+                }
+                : undefined,
+        });
     } catch (error) {
         console.error("Failed to fetch characters:", error);
         return NextResponse.json({ error: "Failed to fetch characters" }, { status: 500 });

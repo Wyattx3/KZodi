@@ -3,6 +3,32 @@ import { pool, ensureSchema } from "@/lib/db";
 import { auth } from "@/auth";
 import valkey from "@/lib/redis";
 
+const STORY_LIST_CACHE_VERSION_KEY = "stories:list:version";
+const STORY_LIST_CACHE_PREFIX = "stories:list";
+
+function buildStoryListCacheKey({
+    version,
+    genre,
+    search,
+    limit,
+    offset,
+}: {
+    version: string;
+    genre: string;
+    search: string;
+    limit: number;
+    offset: number;
+}) {
+    return [
+        STORY_LIST_CACHE_PREFIX,
+        version,
+        genre || "all",
+        search || "_",
+        String(limit),
+        String(offset),
+    ].join(":");
+}
+
 export async function GET(req: Request) {
     try {
         await ensureSchema();
@@ -20,6 +46,25 @@ export async function GET(req: Request) {
         if (isNaN(limit) || limit < 1) limit = DEFAULT_LIMIT;
         if (limit > MAX_LIMIT) limit = MAX_LIMIT;
         if (isNaN(offset) || offset < 0) offset = 0;
+
+        let cacheVersion = "0";
+        if (!mine) {
+            try {
+                cacheVersion = (await valkey.get(STORY_LIST_CACHE_VERSION_KEY)) || "0";
+                const cacheKey = buildStoryListCacheKey({ version: cacheVersion, genre, search, limit, offset });
+                const cached = await valkey.get(cacheKey);
+                if (cached) {
+                    return NextResponse.json(JSON.parse(cached), {
+                        headers: {
+                            "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
+                            "X-Story-Cache": "hit",
+                        },
+                    });
+                }
+            } catch (cacheError) {
+                console.warn("Story list cache read failed:", cacheError);
+            }
+        }
 
         // Build query with optional search filter
         let query: string;
@@ -89,10 +134,29 @@ export async function GET(req: Request) {
             image: item.image
         }));
 
-        return NextResponse.json({
+        const payload = {
             items: filteredItems,
             hasMore,
             nextOffset: hasMore ? offset + limit : null,
+        };
+
+        if (!mine) {
+            try {
+                const cacheKey = buildStoryListCacheKey({ version: cacheVersion, genre, search, limit, offset });
+                const ttlSeconds = search ? 60 : 180;
+                await valkey.set(cacheKey, JSON.stringify(payload), "EX", ttlSeconds);
+            } catch (cacheError) {
+                console.warn("Story list cache write failed:", cacheError);
+            }
+        }
+
+        return NextResponse.json(payload, {
+            headers: mine
+                ? { "Cache-Control": "private, no-store" }
+                : {
+                    "Cache-Control": "public, max-age=30, stale-while-revalidate=120",
+                    "X-Story-Cache": "miss",
+                },
         });
     } catch (e) {
         return NextResponse.json({ error: "DB Error" }, { status: 500 });
@@ -191,6 +255,7 @@ export async function POST(req: Request) {
             
             // Invalidate conversation cache so the chat list reflects published state
             valkey.del(`convos:${userId}`).catch(err => console.warn("Failed to clear conv cache", err));
+            valkey.incr(STORY_LIST_CACHE_VERSION_KEY).catch(err => console.warn("Failed to bump story cache version", err));
             
             return NextResponse.json({ success: true, storyId: result.rows[0].id, story: result.rows[0] });
         } catch (e) {

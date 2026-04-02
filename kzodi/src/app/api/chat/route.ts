@@ -80,6 +80,7 @@ Using this information, generate your response. Remember to format the output wi
       {
         messages,
         model: modelToUse,
+        disableProviderFallback: targetLang === "my",
         temperature: 0.8,
         max_tokens: maxTokens,
       },

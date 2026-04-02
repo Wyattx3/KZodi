@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { CHAT_STORE_STORAGE_KEY, enqueuePendingSync, indexedDbStateStorage, type PendingSyncType } from "@/lib/offlineSync";
 
 export interface WorldData {
     lore: string;
@@ -56,7 +57,7 @@ export interface ChatMessage {
     role: "user" | "assistant";
     content: string;
     timestamp: number;
-    status: "sent" | "delivered" | "seen";
+    status: "queued" | "sending" | "failed" | "sent" | "delivered" | "seen";
     replyToId?: string;
     reactions?: Record<string, string[]>;
     attachment?: {
@@ -129,6 +130,7 @@ interface ChatStore {
     setStoryTextColor: (characterId: string, color: string) => void;
     updateStoryScene: (characterId: string, scene: string) => void;
     setCustomName: (characterId: string, customName: string) => void;
+    setMessageStatus: (characterId: string, messageIds: string[], status: ChatMessage["status"]) => void;
     /** Stamp the current signed-in user as the store owner. */
     setOwnerUserId: (id: string | null) => void;
     /** Wipe all conversations and reset the owner — called when a different user is detected. */
@@ -301,7 +303,170 @@ function slimConversationForPersistence(conv: Conversation): Conversation {
 
 export const useChatStore = create<ChatStore>()(
     persist(
-        (set, get) => ({
+        (set, get) => {
+            const setMessageStatusInState = (characterId: string, messageIds: string[], status: ChatMessage["status"]) => {
+                if (messageIds.length === 0) return;
+
+                set((state) => {
+                    const existing = state.conversations[characterId];
+                    if (!existing) return state;
+
+                    const trackedIds = new Set(messageIds);
+                    const nextMessages = existing.messages.map((message) => (
+                        trackedIds.has(message.id)
+                            ? { ...message, status }
+                            : message
+                    ));
+
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: {
+                                ...existing,
+                                messages: nextMessages,
+                            },
+                        },
+                    };
+                });
+            };
+
+            const setConversationSyncMarkers = (characterId: string, patch: Pick<Conversation, "_pendingSync" | "_syncFailedAt">) => {
+                set((state) => {
+                    const existing = state.conversations[characterId];
+                    if (!existing) return state;
+
+                    return {
+                        conversations: {
+                            ...state.conversations,
+                            [characterId]: {
+                                ...existing,
+                                ...patch,
+                            },
+                        },
+                    };
+                });
+            };
+
+            const shouldQueueRequest = () => typeof navigator !== "undefined" && navigator.onLine === false;
+            const nativeFetch = globalThis.fetch.bind(globalThis);
+
+            const inferPendingSyncType = (method: "POST" | "DELETE", body: Record<string, unknown>): PendingSyncType => {
+                if (method === "DELETE") {
+                    return "conversation-delete";
+                }
+
+                const messages = Array.isArray(body.messages) ? body.messages as Array<Record<string, unknown>> : null;
+                if (messages && messages.length > 0) {
+                    if (messages.some((message) => typeof message?.reactions === "object" && message.reactions !== null)) {
+                        return "message-reaction";
+                    }
+                    if (messages.every((message) => message?.status === "seen")) {
+                        return "message-status";
+                    }
+                    return "messages-upsert";
+                }
+
+                return "conversation-metadata";
+            };
+
+            const fetch = async (input: string | URL | Request, init?: RequestInit) => {
+                if (
+                    shouldQueueRequest() &&
+                    typeof input === "string" &&
+                    input === "/api/messages" &&
+                    init?.body &&
+                    (init?.method === "POST" || init?.method === "DELETE")
+                ) {
+                    try {
+                        const parsedBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+                        await enqueuePendingSync({
+                            type: inferPendingSyncType(init.method, parsedBody),
+                            url: "/api/messages",
+                            method: init.method,
+                            body: parsedBody,
+                            conversationId: typeof parsedBody.conversationId === "string" ? parsedBody.conversationId : undefined,
+                        });
+
+                        return new Response(JSON.stringify({ queued: true, success: true }), {
+                            status: 202,
+                            headers: { "Content-Type": "application/json" },
+                        });
+                    } catch {
+                        // Fall through to the native fetch when we cannot serialize the request body safely.
+                    }
+                }
+
+                return nativeFetch(input, init);
+            };
+
+            const syncMessagesApi = async ({
+                type,
+                method,
+                body,
+                conversationId,
+                messageIds,
+                dedupeKey,
+                onQueue,
+                onSuccess,
+                onPermanentFailure,
+            }: {
+                type: PendingSyncType;
+                method: "POST" | "DELETE";
+                body: Record<string, unknown>;
+                conversationId?: string;
+                messageIds?: string[];
+                dedupeKey?: string;
+                onQueue?: () => void;
+                onSuccess?: () => void;
+                onPermanentFailure?: () => void;
+            }) => {
+                if (shouldQueueRequest()) {
+                    await enqueuePendingSync({
+                        type,
+                        url: "/api/messages",
+                        method,
+                        body,
+                        dedupeKey,
+                        conversationId,
+                        messageIds,
+                    });
+                    onQueue?.();
+                    return;
+                }
+
+                try {
+                    const response = await nativeFetch("/api/messages", {
+                        method,
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(body),
+                    });
+
+                    if (!response.ok) {
+                        if ([400, 401, 403, 404, 422].includes(response.status)) {
+                            onPermanentFailure?.();
+                            return;
+                        }
+
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    onSuccess?.();
+                } catch (error) {
+                    await enqueuePendingSync({
+                        type,
+                        url: "/api/messages",
+                        method,
+                        body,
+                        dedupeKey,
+                        conversationId,
+                        messageIds,
+                    });
+                    onQueue?.();
+                    console.error("Deferred chat sync due to temporary failure", error);
+                }
+            };
+
+            return {
             conversations: {},
             activeCharacterId: null,
             ownerUserId: null,
@@ -346,12 +511,13 @@ export const useChatStore = create<ChatStore>()(
                     return { conversations: newConvos };
                 });
 
-                // Sync deletion to backend
-                fetch("/api/messages", {
+                void syncMessagesApi({
+                    type: "conversation-delete",
                     method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ conversationId: characterId })
-                }).catch(err => console.error("Failed to clear conversation in DB", err));
+                    body: { conversationId: characterId },
+                    conversationId: characterId,
+                    dedupeKey: `clear:${characterId}`,
+                });
             },
             deleteConversation: (characterId) => {
                 // Track deletion in localStorage so syncFromDB won't revive the conversation
@@ -368,11 +534,13 @@ export const useChatStore = create<ChatStore>()(
                 });
 
                 // Sync deletion to backend — true delete removes metadata too
-                fetch("/api/messages", {
+                void syncMessagesApi({
+                    type: "conversation-delete",
                     method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ conversationId: characterId, deleteConversation: true })
-                }).catch(err => console.error("Failed to delete conversation in DB", err));
+                    body: { conversationId: characterId, deleteConversation: true },
+                    conversationId: characterId,
+                    dedupeKey: `delete:${characterId}`,
+                });
             },
 
             ensureConversation: (characterId) => {
@@ -591,21 +759,27 @@ export const useChatStore = create<ChatStore>()(
                 });
 
                 const convo = get().conversations[characterId];
-                fetch("/api/messages", {
+                setConversationSyncMarkers(characterId, { _pendingSync: true, _syncFailedAt: undefined });
+                void syncMessagesApi({
+                    type: "conversation-metadata",
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
+                    body: {
                         conversationId: characterId,
                         conversationType: convo?.conversationType || "story",
                         conversationMetadata: buildConversationMetadata(convo),
-                    }),
-                })
-                .then((res) => {
-                    if (res.ok) {
-                        get().upsertConversation(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
-                    }
-                })
-                .catch((err) => console.error("Failed to sync story scene", err));
+                    },
+                    conversationId: characterId,
+                    dedupeKey: `story-scene:${characterId}`,
+                    onQueue: () => {
+                        setConversationSyncMarkers(characterId, { _pendingSync: true, _syncFailedAt: Date.now() });
+                    },
+                    onSuccess: () => {
+                        setConversationSyncMarkers(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
+                    },
+                    onPermanentFailure: () => {
+                        setConversationSyncMarkers(characterId, { _pendingSync: undefined, _syncFailedAt: Date.now() });
+                    },
+                });
             },
 
             setCustomName: (characterId, customName) => {
@@ -627,13 +801,17 @@ export const useChatStore = create<ChatStore>()(
                 });
             },
 
+            setMessageStatus: (characterId, messageIds, status) => {
+                setMessageStatusInState(characterId, messageIds, status);
+            },
+
             sendMessage: (characterId, content, attachment, replyToId) => {
                 const msg: ChatMessage = {
                     id: `${Date.now()}-user-${Math.random().toString(36).substr(2, 6)}`,
                     role: "user",
                     content,
                     timestamp: Date.now(),
-                    status: "sent",
+                    status: shouldQueueRequest() ? "queued" : "sending",
                     attachment,
                     replyToId,
                 };
@@ -657,17 +835,29 @@ export const useChatStore = create<ChatStore>()(
 
                 // Sync new message to backend
                 const convo = get().conversations[characterId];
-                fetch("/api/messages", {
+                const syncedMessage = { ...msg, status: "sent" as const };
+                void syncMessagesApi({
+                    type: "messages-upsert",
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ conversationId: characterId, messages: [msg], conversationType: convo?.conversationType || "personal", conversationMetadata: buildConversationMetadata(convo) })
-                })
-                .then(res => {
-                    if (res.ok) {
-                        get().upsertConversation(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
-                    }
-                })
-                .catch(err => console.error("Failed to sync message", err));
+                    body: {
+                        conversationId: characterId,
+                        messages: [syncedMessage],
+                        conversationType: convo?.conversationType || "personal",
+                        conversationMetadata: buildConversationMetadata(convo),
+                    },
+                    conversationId: characterId,
+                    messageIds: [msg.id],
+                    onQueue: () => {
+                        setMessageStatusInState(characterId, [msg.id], "queued");
+                    },
+                    onSuccess: () => {
+                        setMessageStatusInState(characterId, [msg.id], "sent");
+                        setConversationSyncMarkers(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
+                    },
+                    onPermanentFailure: () => {
+                        setMessageStatusInState(characterId, [msg.id], "failed");
+                    },
+                });
             },
 
             addReply: (characterId, content, attachment, replyToId) => {
@@ -676,7 +866,7 @@ export const useChatStore = create<ChatStore>()(
                     role: "assistant",
                     content,
                     timestamp: Date.now(),
-                    status: "sent",
+                    status: shouldQueueRequest() ? "queued" : "sending",
                     attachment,
                     replyToId,
                 };
@@ -703,17 +893,29 @@ export const useChatStore = create<ChatStore>()(
 
                 // Sync AI reply to backend
                 const convo = get().conversations[characterId];
-                fetch("/api/messages", {
+                const syncedMessage = { ...msg, status: "sent" as const };
+                void syncMessagesApi({
+                    type: "messages-upsert",
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ conversationId: characterId, messages: [msg], conversationType: convo?.conversationType || "personal", conversationMetadata: buildConversationMetadata(convo) })
-                })
-                .then(res => {
-                    if (res.ok) {
-                        get().upsertConversation(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
-                    }
-                })
-                .catch(err => console.error("Failed to sync message", err));
+                    body: {
+                        conversationId: characterId,
+                        messages: [syncedMessage],
+                        conversationType: convo?.conversationType || "personal",
+                        conversationMetadata: buildConversationMetadata(convo),
+                    },
+                    conversationId: characterId,
+                    messageIds: [msg.id],
+                    onQueue: () => {
+                        setMessageStatusInState(characterId, [msg.id], "queued");
+                    },
+                    onSuccess: () => {
+                        setMessageStatusInState(characterId, [msg.id], "sent");
+                        setConversationSyncMarkers(characterId, { _pendingSync: undefined, _syncFailedAt: undefined });
+                    },
+                    onPermanentFailure: () => {
+                        setMessageStatusInState(characterId, [msg.id], "failed");
+                    },
+                });
 
                 // AI replied → mark user's messages as "seen" (the AI has read them)
                 get().markAsSeen(characterId, "user");
@@ -739,11 +941,18 @@ export const useChatStore = create<ChatStore>()(
                     // Sync updated reaction to DB
                     const updatedMsg = newMessages.find(m => m.id === messageId);
                     if (updatedMsg) {
-                        fetch("/api/messages", {
+                        void syncMessagesApi({
+                            type: "message-reaction",
                             method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ conversationId: characterId, messages: [updatedMsg], conversationType: get().conversations[characterId]?.conversationType || "personal" })
-                        }).catch(err => console.error("Failed to sync reaction", err));
+                            body: {
+                                conversationId: characterId,
+                                messages: [{ ...updatedMsg, status: updatedMsg.status === "seen" ? "seen" : "sent" }],
+                                conversationType: get().conversations[characterId]?.conversationType || "personal",
+                            },
+                            conversationId: characterId,
+                            messageIds: [messageId],
+                            dedupeKey: `reaction:${characterId}:${messageId}`,
+                        });
                     }
 
                     return {
@@ -777,11 +986,18 @@ export const useChatStore = create<ChatStore>()(
                     // Sync updated reaction to DB
                     const updatedMsg = newMessages.find(m => m.id === messageId);
                     if (updatedMsg) {
-                        fetch("/api/messages", {
+                        void syncMessagesApi({
+                            type: "message-reaction",
                             method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ conversationId: characterId, messages: [updatedMsg], conversationType: get().conversations[characterId]?.conversationType || "personal" })
-                        }).catch(err => console.error("Failed to sync reaction removal", err));
+                            body: {
+                                conversationId: characterId,
+                                messages: [{ ...updatedMsg, status: updatedMsg.status === "seen" ? "seen" : "sent" }],
+                                conversationType: get().conversations[characterId]?.conversationType || "personal",
+                            },
+                            conversationId: characterId,
+                            messageIds: [messageId],
+                            dedupeKey: `reaction:${characterId}:${messageId}`,
+                        });
                     }
 
                     return {
@@ -812,11 +1028,18 @@ export const useChatStore = create<ChatStore>()(
                     });
 
                     if (msgsToSync.length > 0) {
-                        fetch("/api/messages", {
+                        void syncMessagesApi({
+                            type: "message-status",
                             method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ conversationId: characterId, messages: msgsToSync, conversationType: get().conversations[characterId]?.conversationType || "personal" })
-                        }).catch(err => console.error("Failed to sync seen status", err));
+                            body: {
+                                conversationId: characterId,
+                                messages: msgsToSync.map((message) => ({ ...message, status: "seen" as const })),
+                                conversationType: get().conversations[characterId]?.conversationType || "personal",
+                            },
+                            conversationId: characterId,
+                            messageIds: msgsToSync.map((message) => message.id),
+                            dedupeKey: `seen:${characterId}:${roleToMark}`,
+                        });
                     }
 
                     return {
@@ -905,6 +1128,14 @@ export const useChatStore = create<ChatStore>()(
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify(syncPayload)
                         });
+                        if (res.status === 202) {
+                            set((state) => {
+                                const convo = state.conversations[groupId];
+                                if (!convo) return state;
+                                return { conversations: { ...state.conversations, [groupId]: { ...convo, _pendingSync: true, _syncFailedAt: Date.now() } } };
+                            });
+                            return;
+                        }
                         if (!res.ok) throw new Error(`HTTP ${res.status}`);
                         // Success — clear pending flag
                         set((state) => {
@@ -995,6 +1226,14 @@ export const useChatStore = create<ChatStore>()(
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify(syncPayload)
                         });
+                        if (res.status === 202) {
+                            set((state) => {
+                                const convo = state.conversations[storyId];
+                                if (!convo) return state;
+                                return { conversations: { ...state.conversations, [storyId]: { ...convo, _pendingSync: true, _syncFailedAt: Date.now() } } };
+                            });
+                            return;
+                        }
                         if (!res.ok) throw new Error(`HTTP ${res.status}`);
                         // Success — clear pending flag
                         set((state) => {
@@ -1063,7 +1302,7 @@ export const useChatStore = create<ChatStore>()(
                     role: "user",
                     content,
                     timestamp: Date.now(),
-                    status: "sent",
+                    status: shouldQueueRequest() ? "queued" : "sending",
                     attachment,
                     replyToId,
                     senderId,
@@ -1093,7 +1332,22 @@ export const useChatStore = create<ChatStore>()(
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ conversationId: groupId, messages: [msg], conversationType: convo?.conversationType || "group", conversationMetadata: buildConversationMetadata(convo) })
-                }).catch(err => console.error("Failed to sync group message", err));
+                })
+                .then((res) => {
+                    if (res.status === 202) {
+                        setMessageStatusInState(groupId, [msg.id], "queued");
+                        return;
+                    }
+                    if (res.ok) {
+                        setMessageStatusInState(groupId, [msg.id], "sent");
+                        return;
+                    }
+                    setMessageStatusInState(groupId, [msg.id], "failed");
+                })
+                .catch(err => {
+                    setMessageStatusInState(groupId, [msg.id], "failed");
+                    console.error("Failed to sync group message", err);
+                });
             },
 
             addGroupReply: (groupId, content, senderId, senderName, attachment, replyToId) => {
@@ -1102,7 +1356,7 @@ export const useChatStore = create<ChatStore>()(
                     role: "assistant",
                     content,
                     timestamp: Date.now(),
-                    status: "sent",
+                    status: shouldQueueRequest() ? "queued" : "sending",
                     attachment,
                     replyToId,
                     senderId,
@@ -1132,14 +1386,31 @@ export const useChatStore = create<ChatStore>()(
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ conversationId: groupId, messages: [msg], conversationType: convo?.conversationType || "group", conversationMetadata: buildConversationMetadata(convo) })
-                }).catch(err => console.error("Failed to sync group message", err));
+                })
+                .then((res) => {
+                    if (res.status === 202) {
+                        setMessageStatusInState(groupId, [msg.id], "queued");
+                        return;
+                    }
+                    if (res.ok) {
+                        setMessageStatusInState(groupId, [msg.id], "sent");
+                        return;
+                    }
+                    setMessageStatusInState(groupId, [msg.id], "failed");
+                })
+                .catch(err => {
+                    setMessageStatusInState(groupId, [msg.id], "failed");
+                    console.error("Failed to sync group message", err);
+                });
 
                 // AI replied → mark user's messages as "seen" (the AI has read them)
                 get().markAsSeen(groupId, "user");
             },
-        }),
+            };
+        },
         {
-            name: "kakoei-chat-store",
+            name: CHAT_STORE_STORAGE_KEY,
+            storage: createJSONStorage(() => indexedDbStateStorage),
             // Keep all conversations but aggressively slim persisted payloads
             // so data URLs, attachments, and large world/story blobs do not
             // blow up the 5MB localStorage limit.

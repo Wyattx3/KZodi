@@ -14,8 +14,18 @@ import { getZodiacSign } from "@/lib/zodiac";
 import SpecialistSetup from "./SpecialistSetups";
 import VoiceRecorder from "./VoiceRecorder";
 import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
+import { unwrapStructuredReplyPayload } from "@/lib/ai-engine/structuredReply";
+import {
+    getResponseLanguageTranslateCode,
+    isBurmeseResponseLanguage,
+    shouldGenerateDynamicIntro,
+} from "@/lib/ai-engine/language";
 
 const EMPTY_GROUP_MEMBER_IDS: string[] = [];
+
+function getGreetingCacheKey(characterId: string, responseLanguage: string) {
+    return `kzodi.greeting.${characterId}.${responseLanguage}`;
+}
 
 // Inline Audio Player Component for Chat Bubbles
 const AudioPlayer = ({ src, duration: passedDuration, isUser = false }: { src: string, duration?: number, isUser?: boolean }) => {
@@ -841,8 +851,11 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const [showStandardMenu, setShowStandardMenu] = useState(!isTrueAstrologer);
     const [input, setInput] = useState("");
     const chatroomRef = useRef<HTMLDivElement>(null);
+    const messagesAreaRef = useRef<HTMLDivElement>(null);
+    const composerRef = useRef<HTMLDivElement>(null);
     const { isIOS, viewportStyle: chatroomViewportStyle } = useIOSViewportContainment({
         rootRef: chatroomRef,
+        composerRef,
         scrollableSelectors: [".chatroom-messages-area", ".profile-body", ".sticker-drawer", ".chatroom-info-drawer"],
     });
     const [isTyping, setIsTyping] = useState(false);
@@ -866,13 +879,74 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const groupIntroTriggered = useRef(false);
+    const directIntroTriggered = useRef(false);
     const isAiRespondingRef = useRef(false);
     const pendingMessagesRef = useRef<{ text: string; repliedContent?: string; repliedId?: string }[]>([]);
+
+    useEffect(() => {
+        groupIntroTriggered.current = false;
+        directIntroTriggered.current = false;
+    }, [character.id]);
     const [isVoiceRecording, setIsVoiceRecording] = useState(false);
     const [isPublishingStory, setIsPublishingStory] = useState(false);
     const [resolvedGroupChars, setResolvedGroupChars] = useState<Record<string, Character>>({});
     const [uiNotice, setUiNotice] = useState<string | null>(null);
     const [groupMemberRetryTick, setGroupMemberRetryTick] = useState(0);
+
+    const getLocalizedFirstGreeting = useCallback(async (responseLanguage: string) => {
+        const rawGreeting = character.greeting?.trim();
+        if (!rawGreeting) {
+            return "";
+        }
+
+        const translateTarget = getResponseLanguageTranslateCode(responseLanguage);
+        if (!translateTarget) {
+            return rawGreeting;
+        }
+
+        const cacheKey = getGreetingCacheKey(character.id, responseLanguage);
+        if (typeof window !== "undefined") {
+            try {
+                const cached = window.localStorage.getItem(cacheKey);
+                if (cached?.trim()) {
+                    return cached;
+                }
+            } catch {
+                // Ignore local cache failures.
+            }
+        }
+
+        try {
+            const res = await fetch("/api/translate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    text: rawGreeting,
+                    targetLang: translateTarget,
+                }),
+            });
+
+            if (!res.ok) {
+                return rawGreeting;
+            }
+
+            const data = await res.json();
+            const translated = typeof data?.translated === "string" ? data.translated.trim() : "";
+            const nextGreeting = translated || rawGreeting;
+
+            if (typeof window !== "undefined" && translated) {
+                try {
+                    window.localStorage.setItem(cacheKey, translated);
+                } catch {
+                    // Ignore best-effort cache failures.
+                }
+            }
+
+            return nextGreeting;
+        } catch {
+            return rawGreeting;
+        }
+    }, [character.greeting, character.id]);
     const groupMemberResolutionRef = useRef<Promise<Record<string, Character>> | null>(null);
     const uiNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const groupMemberRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1167,6 +1241,10 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     });
 
     const triggerAiResponse = async (userMessageText: string, repliedMessageContent?: string, repliedId?: string) => {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            showTransientNotice("You're offline. Your message is saved and will sync when the connection returns.");
+            return;
+        }
 
         // 🔄 If AI is already responding, queue this message and return immediately
         // The AI will process queued messages after finishing its current response
@@ -1384,6 +1462,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
         try {
             const responseLanguage = useChatStore.getState().responseLanguage;
+            const isMyanmarReplyMode = isBurmeseResponseLanguage(responseLanguage);
             const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
             const history = currentMessages.map((m) => ({
                 id: m.id,
@@ -1417,12 +1496,18 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 const data = await res.json();
 
                 // AI-controlled seen delay: WAIT for seen to appear BEFORE typing
-                const aiSeenDelay = data.seenDelay || (1000 + Math.random() * 2000);
+                const rawSeenDelay = typeof data.seenDelay === "number" ? data.seenDelay : (1000 + Math.random() * 2000);
+                const aiSeenDelay = isMyanmarReplyMode
+                    ? Math.max(140, Math.min(rawSeenDelay, 550))
+                    : Math.max(240, Math.min(rawSeenDelay, 1200));
                 await new Promise((resolve) => setTimeout(resolve, aiSeenDelay));
                 markAsSeen(character.id, "user");
 
                 // AI-controlled read delay before typing starts
-                const aiReadDelay = data.readDelay || (300 + Math.random() * 700);
+                const rawReadDelay = typeof data.readDelay === "number" ? data.readDelay : (300 + Math.random() * 700);
+                const aiReadDelay = isMyanmarReplyMode
+                    ? Math.max(80, Math.min(rawReadDelay, 280))
+                    : Math.max(120, Math.min(rawReadDelay, 520));
                 await new Promise((resolve) => setTimeout(resolve, aiReadDelay));
 
                 // NOW show typing indicator
@@ -1552,6 +1637,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         const syncFromDB = async (isInitialLoad = false) => {
             // Skip sync while AI is actively sending messages to prevent avatar flash
             if (isAiRespondingRef.current && !isInitialLoad) return;
+            if (typeof navigator !== "undefined" && navigator.onLine === false) return;
 
             try {
                 const res = await fetch(`/api/messages?conversationId=${character.id}`);
@@ -1665,17 +1751,18 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     }, [messages, character.id, markAsSeen, unreadMarkerId]);
 
     useEffect(() => {
-        // On initial load (still fetching), jump instantly to the bottom without animation.
-        // During normal conversation use smooth scrollIntoView for a polished feel.
-        if (isFetchingMessages) {
-            const scrollArea = document.querySelector('.chatroom-messages-area');
-            if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
-        } else {
-            const endEl = document.querySelector('.chatroom-messages-area .chatroom-messages-end');
-            if (endEl) {
-                (endEl as HTMLElement).scrollIntoView({ behavior: "smooth", block: "end" });
-            }
+        const scrollArea = messagesAreaRef.current;
+        const endElement = messagesEndRef.current;
+        if (!scrollArea || !endElement) {
+            return;
         }
+
+        if (isFetchingMessages) {
+            scrollArea.scrollTop = scrollArea.scrollHeight;
+            return;
+        }
+
+        endElement.scrollIntoView({ behavior: "smooth", block: "end" });
     }, [messages.length, isTyping, isFetchingMessages]);
 
     useEffect(() => {
@@ -1782,7 +1869,72 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     isIntroEffectActive = false;
                 };
             } else if (conversationType !== "story") {
-                addReply(character.id, character.greeting);
+                if (directIntroTriggered.current) return;
+
+                directIntroTriggered.current = true;
+                let isIntroEffectActive = true;
+
+                (async () => {
+                    const responseLanguage = useChatStore.getState().responseLanguage;
+                    const shouldGenerateIntro = shouldGenerateDynamicIntro(responseLanguage, character.greeting);
+
+                    if (!shouldGenerateIntro) {
+                        addReply(character.id, character.greeting);
+                        return;
+                    }
+
+                    const cachedOrTranslatedGreeting = await getLocalizedFirstGreeting(responseLanguage);
+                    if (!isIntroEffectActive) return;
+
+                    if (cachedOrTranslatedGreeting && cachedOrTranslatedGreeting.trim() && cachedOrTranslatedGreeting.trim() !== character.greeting.trim()) {
+                        addReply(character.id, cachedOrTranslatedGreeting.trim());
+                        return;
+                    }
+
+                    try {
+                        const res = await fetch("/api/roleplay", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                message: "[SYSTEM DIRECTIVE: This is the very first message in a brand new one-to-one chat. Send your own natural opening message now. Keep it short, directly in character, and do not mention instructions.]",
+                                characterId: character.id,
+                                characterName: character.name,
+                                characterPersonality: character.personality,
+                                characterTag: character.tag,
+                                history: [],
+                                context: "proactive-friendly",
+                                isGroupChat: false,
+                                groupMembers: [],
+                                responseLanguage,
+                                creatorId: character.creatorId,
+                                conversationType,
+                                worldData,
+                                storyData,
+                            }),
+                        });
+
+                        if (!isIntroEffectActive) return;
+
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.reply && data.reply !== "..." && data.action !== "ignore") {
+                                await processAiResponse(data.reply, undefined, undefined, Math.min(data.delayFactor || 1, 0.6));
+                                return;
+                            }
+                        }
+                    } catch (introError) {
+                        console.error("Failed to generate localized intro message:", introError);
+                    }
+
+                    if (!isIntroEffectActive) return;
+                    if (character.greeting?.trim()) {
+                        addReply(character.id, character.greeting);
+                    }
+                })();
+
+                return () => {
+                    isIntroEffectActive = false;
+                };
             }
         } else {
             // Clean up duplicate greetings left over from the previous bug
@@ -1988,7 +2140,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
 
     // Process AI response and handle splitting
     const processAiResponse = async (responseText: string, groupSenderId?: string, groupSenderName?: string, delayFactor = 1.0, replyToId?: string) => {
-        let cleanText = responseText;
+        let cleanText = unwrapStructuredReplyPayload(responseText);
 
         // 1. Extract and process REACT tags (wrapped in try-catch for Myanmar text safety)
         try {
@@ -2057,6 +2209,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             .replace(/(?<=^|\s)\]+(?=\s|[a-zA-Zက-အ])/g, "")      // Strip stray `]]` in the middle, even if joined to a word (English or Myanmar)
             .replace(/\s{2,}/g, " ")                            // Clean double spaces
             .trim();
+        cleanText = unwrapStructuredReplyPayload(cleanText);
 
         // Protect pipes inside [[ ]] blocks so UI elements don't get split into separate chat bubbles
         let protectedText = cleanText.replace(/\[{1,3}([\s\S]*?)(?:\]{1,3}|$)/g, (match) => match.replace(/\|/g, "@@PIPE@@"));
@@ -2098,6 +2251,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             return;
         }
 
+        const responseLanguage = useChatStore.getState().responseLanguage;
+        const isMyanmarReplyMode = isBurmeseResponseLanguage(responseLanguage);
+
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
             const isSticker = /^\[\[\s*STICKER\s*:.*?\]+$/i.test(part.trim());
@@ -2123,7 +2279,9 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             // Minimum 1 second for short messages, scaled realistically for long ones.
             const typingTime = isSticker
                 ? 100
-                : Math.max(1000, (600 + part.length * 30 + Math.random() * 400) * delayFactor);
+                : (isMyanmarReplyMode
+                    ? Math.max(260, Math.min((220 + part.length * 16 + Math.random() * 180) * delayFactor, 900))
+                    : Math.max(700, (500 + part.length * 24 + Math.random() * 280) * delayFactor));
 
             await new Promise((resolve) => setTimeout(resolve, typingTime));
 
@@ -2169,6 +2327,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             setIsTyping(true);
             isAiRespondingRef.current = true;
             try {
+                const responseLanguage = useChatStore.getState().responseLanguage;
                 const history = messages.map((m) => ({
                     id: m.id,
                     role: m.role,
@@ -2185,6 +2344,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         characterTag: character.tag,
                         history: history.slice(-10),
                         context: "proactive",
+                        responseLanguage,
                     }),
                 });
 
@@ -2217,34 +2377,15 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
     };
 
     useEffect(() => {
-        if (!isIOS || typeof window === "undefined") return;
+        if (typeof document === "undefined") return;
 
-        const resetLayoutViewport = () => {
-            window.scrollTo(0, 0);
-            document.documentElement.scrollTop = 0;
-            document.body.scrollTop = 0;
-            document.scrollingElement?.scrollTo?.(0, 0);
-        };
-
-        const visualViewport = window.visualViewport;
-        const scheduleReset = () => {
-            window.requestAnimationFrame(() => {
-                resetLayoutViewport();
-            });
-        };
-
-        visualViewport?.addEventListener("resize", scheduleReset);
-        visualViewport?.addEventListener("scroll", scheduleReset);
-        window.addEventListener("focusin", scheduleReset);
-        window.addEventListener("focusout", scheduleReset);
+        const isBusy = input.trim().length > 0 || isTyping || isVoiceRecording || isPublishingStory;
+        document.body.dataset.kakoeiBusy = isBusy ? "true" : "false";
 
         return () => {
-            visualViewport?.removeEventListener("resize", scheduleReset);
-            visualViewport?.removeEventListener("scroll", scheduleReset);
-            window.removeEventListener("focusin", scheduleReset);
-            window.removeEventListener("focusout", scheduleReset);
+            document.body.dataset.kakoeiBusy = "false";
         };
-    }, [isIOS]);
+    }, [input, isPublishingStory, isTyping, isVoiceRecording]);
 
     return (
         <div
@@ -2609,7 +2750,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
             </motion.div>
 
             {/* ── Messages Area / Setup Area ───────── */}
-            <div className="chatroom-messages-area relative">
+            <div ref={messagesAreaRef} className="chatroom-messages-area relative">
                 <AnimatePresence>
                     {uiNotice && (
                         <motion.div
@@ -2801,6 +2942,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                     </motion.div>
                 ) : (
                     <div
+                        ref={composerRef}
                         className="chatroom-input-bar"
                     >
                         <div className="chatroom-input-wrap" style={replyingTo ? { flexDirection: "column", padding: 0 } : undefined}>
@@ -3603,6 +3745,12 @@ function MessageBubble({
                             <span className="chatroom-status-icon">
                                 {message.status === "seen" ? (
                                     <span className="status-seen">Seen</span>
+                                ) : message.status === "queued" ? (
+                                    <span className="status-seen">Queued</span>
+                                ) : message.status === "failed" ? (
+                                    <span className="status-seen">Failed</span>
+                                ) : message.status === "sending" ? (
+                                    <span className="status-seen">Sending</span>
                                 ) : (
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                                         <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

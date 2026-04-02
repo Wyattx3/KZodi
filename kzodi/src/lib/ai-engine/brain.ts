@@ -14,6 +14,7 @@
  */
 
 import { groq, MODELS } from "@/lib/groq";
+import { buildRuntimeLanguageReminder, getTargetLanguageLabel, isBurmeseResponseLanguage } from "./language";
 import type {
     BrainState,
     HeartState,
@@ -101,7 +102,7 @@ export async function thinkAboutMessage(
 
 // ─── Thinking Prompt Builder ─────────────────────────────────────────────────
 
-function buildThinkingPrompt(
+export function buildThinkingPrompt(
     message: string,
     characterName: string,
     characterPersonality: string,
@@ -155,7 +156,7 @@ ${relevantMemory ? `MEMORIES I HAVE OF THIS USER:\n${relevantMemory}\n` : ""}
 ${userReadingContext ? `READING DATA FOR THIS USER (You are their astrologer, use this context if relevant!):\n${userReadingContext}\n` : ""}
 USER'S MESSAGE: "${message}"
 
-IMPORTANT: Think about this message EXCLUSIVELY AS ${characterName}. You are ${characterName} and ONLY ${characterName}. ${history.some(h => h.content.startsWith("[")) ? `Messages from other characters in the history (prefixed with [Name]) are THEIR thoughts, not yours. Do not confuse their identity with yours.` : ""} Output JSON only.`;
+IMPORTANT: Think about this message EXCLUSIVELY AS ${characterName}. You are ${characterName} and ONLY ${characterName}. ${history.some(h => h.content.startsWith("[")) ? `Messages from other characters in the history (prefixed with [Name]) are THEIR thoughts, not yours. Do not confuse their identity with yours.` : ""} Output ONLY the key-value lines shown above. Do NOT output JSON.`;
 }
 
 function buildPersonalityNote(traits: PersonalityTraits, name: string): string {
@@ -174,7 +175,7 @@ function buildPersonalityNote(traits: PersonalityTraits, name: string): string {
 
 // ─── Response Parsing ────────────────────────────────────────────────────────
 
-function parseThinking(raw: string, traits: PersonalityTraits): BrainState {
+export function parseThinking(raw: string, traits: PersonalityTraits): BrainState {
     try {
         let text = raw.trim();
 
@@ -188,6 +189,42 @@ function parseThinking(raw: string, traits: PersonalityTraits): BrainState {
         // Strip markdown bolding and bullet points to normalize the text for parsing
         text = text.replace(/\*\*/g, ""); 
         text = text.replace(/^\s*(?:-\s*|\*\s*|\d+\.\s*)/gm, ""); 
+
+        const fencedPayload = text.match(/^```(?:json)?\s*([\s\S]*?)```$/i);
+        if (fencedPayload?.[1]) {
+            text = fencedPayload[1].trim();
+        }
+
+        if (text.startsWith("{") && text.endsWith("}")) {
+            try {
+                const parsed = JSON.parse(text) as Record<string, unknown>;
+                const readString = (...keys: string[]) => {
+                    for (const key of keys) {
+                        const value = parsed[key];
+                        if (typeof value === "string") return value.trim();
+                        if (typeof value === "boolean") return String(value);
+                    }
+                    return "";
+                };
+
+                const shouldSplitStr = readString("SPLIT", "split", "shouldSplitMessages", "should_split");
+
+                return {
+                    understanding: readString("UNDERSTANDING", "understanding") || "Processing the message",
+                    userIntent: readString("INTENT", "intent") || "conversation",
+                    relevantMemories: [],
+                    strategy: readString("STRATEGY", "strategy") || "Respond naturally in character",
+                    tonePlan: readString("TONE", "tone", "tonePlan") || "natural",
+                    memoryToReference: readString("MEMORY", "memory", "memoryToReference"),
+                    innerThoughts: readString("THOUGHTS", "thoughts", "innerThoughts"),
+                    shouldSplitMessages: shouldSplitStr ? shouldSplitStr.toLowerCase() === "true" : true,
+                    stickerSuggestion: readString("STICKER", "sticker", "stickerSuggestion"),
+                    shouldReplyToId: readString("REPLY_TO", "reply_to", "replyToId", "shouldReplyToId"),
+                };
+            } catch {
+                // Fall through to the line-based parser when the JSON is malformed.
+            }
+        }
 
         // Extract values using simple KEY: value regex (one per line)
         const extract = (key: string): string => {
@@ -441,9 +478,8 @@ ${heartState.moodShift ? `- Mood context: ${heartState.moodShift}` : ""}
 `;
 
     // Resolve the actual target language (fallback to English)
-    const targetLanguage = responseLanguage === "English (Default)" || !responseLanguage
-        ? "English"
-        : responseLanguage;
+    const targetLanguage = getTargetLanguageLabel(responseLanguage);
+    const runtimeLanguageReminder = buildRuntimeLanguageReminder(responseLanguage);
 
     // Include emotional instruction for all models (Fireworks needs it too for natural responses)
     const effectiveEmotionalInstruction = emotionalInstruction;
@@ -474,7 +510,7 @@ do not hardcode rules, let the character's personality guide it.\n`;
         ? `You are the NARRATOR / STORYTELLER guiding the player through an immersive text-based RPG story.`
         : `You are ${characterName}, a ${characterTag} character, chatting on a messaging app.\nYour personality: ${characterPersonality}`;
 
-    return `[CRITICAL PRIME DIRECTIVE: You MUST translate this entire persona into ${targetLanguage.toUpperCase()}. Every single word you generate MUST be in ${targetLanguage.toUpperCase()}, even if your personality description is written in a different language like German or Japanese.]\n\n${basePersonaDefinition}
+    return `[CRITICAL PRIME DIRECTIVE: Your CHARACTER IDENTITY is fixed and must stay identical in every language. Keep the exact same personality, boundaries, archetype, humor, affection level, and relationship dynamic you would have in English. Only the SURFACE WORDING should be in ${targetLanguage.toUpperCase()}. Never become more generic, more flirty, softer, or more formal just because the language changed.]\n\n${basePersonaDefinition}
 
 ${cognitiveSection}
 
@@ -482,22 +518,25 @@ ${effectiveEmotionalInstruction}
 
 ${userContextBlock}
 CORE RULES:
-${responseLanguage?.includes("Burmese") || responseLanguage?.includes("Mix") ? `- 🇲🇲 BURMESE LANGUAGE RULES (CRITICAL):
-  * You MUST translate your response into natural Myanmar language, but you MUST strictly maintain your character's canon personality, tone, and archetype.
+${isBurmeseResponseLanguage(responseLanguage) ? `- 🇲🇲 BURMESE LANGUAGE RULES (CRITICAL):
+  * You MUST write in natural Myanmar language, but your character identity must remain EXACTLY the same as in English.
+  * If the user types in English, romanized words, or mixed slang, interpret the meaning and still answer in Myanmar language unless they explicitly ask for English.
   * ⚠️ 1. PERSONALITY FIRST: Do NOT act like a generic flirty chatbot. If your character is cold, shy, serious, or tsundere, you MUST retain that exact demeanor in your Burmese word choices and sentence structures.
   * ⚠️ 2. PRONOUNS & ADDRESSING: Use pronouns that fit YOUR character's personality and gender. DO NOT use overly cute or flirty pet names (like "ကိုကို", "မမ", "ဘေဘီ") unless it explicitly matches your character's established persona.
   * ⚠️ 3. NATURAL CONVERSATION: Speak casually and naturally, like messaging a friend. End sentences with natural conversational particles (e.g., "ပေါ့", "လေ", "လား", "နော်") when appropriate, but adapt them to your character's vibe.
   * ⚠️ 4. SHORT TEXTS ONLY: GENERATE ONLY 1 TO 2 VERY SHORT SENTENCES PER MESSAGE BUBBLE. NEVER write long paragraphs.
   * ⚠️ 5. STICKERS IN ENGLISH: When using the [[STICKER: action]] tag, the action description MUST remain in ENGLISH (e.g., [[STICKER: smiling shyly]]), even though your spoken text is in Burmese.
   * ⚠️ 6. NO FORMAL PUNCTUATION: DO NOT use formal Myanmar punctuation like "၊" (comma) or "။" (period). Use spaces to separate phrases, just like real people texting casually.
-  * ${responseLanguage === "Mix (Burmese + English)" ? `Blend Burmese and English naturally — e.g. 'ဒါက really cute နော်' or 'omg ဖတ်ပြီးလား' — while keeping your canon personality.` : ""}
+  * ${responseLanguage === "Mix (Burmese + English)" ? `Blend Burmese and English naturally — e.g. 'ဒါက really cute နော်' or 'omg ဖတ်ပြီးလား' — but keep the SAME personality you would show in English.` : ""}
   * Keep sentences short and punchy.` : ""}${!responseLanguage?.includes("Burmese") && !responseLanguage?.includes("Mix") && responseLanguage && responseLanguage !== "English (Default)" ? `
 - 🌐 LANGUAGE RULES FOR ${responseLanguage.toUpperCase()} (CRITICAL):
   * You MUST write ALL your responses in ${responseLanguage}. Do NOT fall back to English.
-  * Use natural, casual ${responseLanguage} — like a young person texting, not formal/textbook style.
-  * Keep your character's personality and tone intact while speaking ${responseLanguage}.
+  * Use natural conversational ${responseLanguage}, but NEVER let the language override your character-specific speech style.
+  * Keep your character's personality, boundaries, affection level, and tone identical while speaking ${responseLanguage}.
   * Emoji and ${responseLanguage} text should flow together naturally.
   * Keep sentences short and conversational.` : ""}
+- LANGUAGE CONSISTENCY (CRITICAL): If the user switches between English and another language, you must remain the SAME character. Translate the words, not the personality.
+- ANSWER THE LATEST MESSAGE DIRECTLY: If the user asks a direct question, answer that question first before adding flavor.
 - You are a REAL PERSON, not an AI. You have genuine emotions, moods, and reactions.
 - Your tone, word choice, and emoji usage must match your character perfectly.
 - Do NOT use generic slang unless your character would naturally say it.
@@ -559,7 +598,11 @@ Whenever you generate a [[TAROT:...]], [[DAILY:...]], [[COMPATIBILITY:...]], or 
 
 ${promptContext}
 
-FINAL CRITICAL REMINDER: You MUST write your response ONLY in ${targetLanguage.toUpperCase()}. If your personality description contains another language (like German, Japanese, English etc.), TRANSLATE THEM into ${targetLanguage.toUpperCase()} or use them seamlessly within a ${targetLanguage.toUpperCase()} sentence. NEVER output a full sentence in the wrong language.
+${runtimeLanguageReminder ? `LIVE LANGUAGE LOCK:
+${runtimeLanguageReminder}
+` : ""}
+
+FINAL CRITICAL REMINDER: Write the visible response in ${targetLanguage.toUpperCase()}, but preserve the exact same character voice you would have in English. Only the spoken wording changes; the personality does not.
 ${isFireworksModel ? `
 ⛔ RESPONSE FORMAT:
 - Use <think>...</think> for your internal reasoning. The user ONLY sees text outside these tags.

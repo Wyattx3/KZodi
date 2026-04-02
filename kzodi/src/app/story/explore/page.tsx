@@ -6,6 +6,55 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
 
 const GENRES = ["All", "Fantasy", "Romance", "Mystery", "Action", "Horror", "Sci-Fi", "Slice of Life", "Thriller", "Comedy"] as const;
+const STORY_EXPLORE_CACHE_PREFIX = "kzodi.story.explore.v1";
+const STORY_EXPLORE_CACHE_TTL_MS = 1000 * 60 * 5;
+
+function getStoryExploreCacheKey(genre: string, search: string) {
+    return `${STORY_EXPLORE_CACHE_PREFIX}:${genre}:${search.trim().toLowerCase() || "_"}`;
+}
+
+function getStoryExploreCacheStorage() {
+    if (typeof window === "undefined") return null;
+    try {
+        return window.localStorage;
+    } catch {
+        try {
+            return window.sessionStorage;
+        } catch {
+            return null;
+        }
+    }
+}
+
+function readStoryExploreCache<T>(key: string): T | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const storage = getStoryExploreCacheStorage();
+        const raw = storage?.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { timestamp?: number; data?: T };
+        if (!parsed?.timestamp || Date.now() - parsed.timestamp > STORY_EXPLORE_CACHE_TTL_MS) {
+            storage?.removeItem(key);
+            return null;
+        }
+        return parsed.data ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function writeStoryExploreCache<T>(key: string, data: T) {
+    if (typeof window === "undefined") return;
+    try {
+        const storage = getStoryExploreCacheStorage();
+        storage?.setItem(key, JSON.stringify({
+            timestamp: Date.now(),
+            data,
+        }));
+    } catch {
+        // Ignore best-effort cache failures.
+    }
+}
 
 function safeParseJSON(v: any) {
     if (typeof v !== "string") return v;
@@ -52,6 +101,7 @@ const getSafeImage = (image?: string | null, seedName?: string) => {
 export default function StoryExplorePage() {
     const router = useRouter();
     const rootRef = useRef<HTMLDivElement>(null);
+    const fetchAbortRef = useRef<AbortController | null>(null);
     const [genre, setGenre] = useState("All");
     const [stories, setStories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -59,27 +109,60 @@ export default function StoryExplorePage() {
     const [search, setSearch] = useState("");
     const searchRef = useRef<HTMLInputElement>(null);
 
-    const fetchStories = useCallback(async () => {
-        setLoading(true);
+    const fetchStories = useCallback(async (signal?: AbortSignal, silent = false) => {
+        if (!silent) {
+            setLoading(true);
+        }
         try {
             const url = `/api/stories?genre=${encodeURIComponent(genre)}&search=${encodeURIComponent(search)}&limit=50&offset=0`;
-            const res = await fetch(url);
+            const res = await fetch(url, { signal });
             if (res.ok) {
                 const data = await res.json();
-                setStories(Array.isArray(data.items) ? data.items : []);
+                const nextStories = Array.isArray(data.items) ? data.items : [];
+                setStories(nextStories);
+                writeStoryExploreCache(getStoryExploreCacheKey(genre, search), nextStories);
             } else {
+                if (!silent) {
+                    setStories([]);
+                }
+            }
+        } catch (error) {
+            if ((error as Error)?.name === "AbortError") {
+                return;
+            }
+            if (!silent) {
                 setStories([]);
             }
-        } catch {
-            setStories([]);
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) {
+                setLoading(false);
+            }
         }
     }, [genre, search]);
 
     useEffect(() => {
-        fetchStories();
-    }, [fetchStories]);
+        const cacheKey = getStoryExploreCacheKey(genre, search);
+        const cachedStories = readStoryExploreCache<any[]>(cacheKey);
+        const hasCachedStories = Array.isArray(cachedStories);
+
+        if (hasCachedStories) {
+            setStories(cachedStories || []);
+            setLoading(false);
+        }
+
+        fetchAbortRef.current?.abort();
+        const controller = new AbortController();
+        fetchAbortRef.current = controller;
+        const debounceMs = search.trim() ? 220 : 0;
+        const timer = window.setTimeout(() => {
+            void fetchStories(controller.signal, hasCachedStories);
+        }, debounceMs);
+
+        return () => {
+            window.clearTimeout(timer);
+            controller.abort();
+        };
+    }, [fetchStories, genre, search]);
 
     useEffect(() => {
         if (searchOpen) {

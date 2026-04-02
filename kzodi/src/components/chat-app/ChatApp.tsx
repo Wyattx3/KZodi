@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, LayoutGroup } from "framer-motion";
 import ExploreTab from "./ExploreTab";
 import ChatsTab from "./ChatsTab";
@@ -139,6 +139,7 @@ export default function ChatApp() {
             try {
                 const history = convo?.messages || [];
                 const context = isCold ? "proactive-cold" : "proactive-friendly";
+                const responseLanguage = useChatStore.getState().responseLanguage;
 
                 const res = await fetch("/api/roleplay", {
                     method: "POST",
@@ -150,6 +151,7 @@ export default function ChatApp() {
                         characterTag: char.tag,
                         history: history.slice(-5),
                         context,
+                        responseLanguage,
                     }),
                 });
 
@@ -226,6 +228,9 @@ export default function ChatApp() {
     // returned by the server (deleted on another device, belong to a previous
     // account, etc.) are removed so the user only sees their own data.
     const loadConversations = async () => {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            return;
+        }
         try {
             const res = await fetch("/api/conversations");
             if (res.ok) {
@@ -401,6 +406,9 @@ export default function ChatApp() {
 
     // Load User Preferences (Language etc.)
     const loadUserPreferences = async () => {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            return;
+        }
         try {
             const res = await fetch("/api/user/language");
             if (res.ok) {
@@ -416,6 +424,9 @@ export default function ChatApp() {
 
     // Load user's own characters for "Your Characters" tab
     const loadMyCharacters = async () => {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            return;
+        }
         try {
             const res = await fetch("/api/characters?mine=true");
             if (res.ok) {
@@ -428,6 +439,9 @@ export default function ChatApp() {
     };
 
     const loadMyStories = async () => {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            return;
+        }
         try {
             const res = await fetch("/api/stories?mine=true&limit=50&offset=0");
             if (!res.ok) {
@@ -486,6 +500,9 @@ export default function ChatApp() {
 
     // Load all available characters for proactive messaging
     const loadAllCharacters = async () => {
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            return [];
+        }
         try {
             const res = await fetch("/api/characters?limit=200");
             if (res.ok) {
@@ -577,6 +594,7 @@ export default function ChatApp() {
                                     for (const convo of charsToGreet) {
                                         const char = (loadedAllChars as Character[]).find(c => c.id === convo.characterId);
                                         if (!char) continue;
+                                        const responseLanguage = useChatStore.getState().responseLanguage;
 
                                         fetch("/api/roleplay", {
                                             method: "POST",
@@ -588,7 +606,8 @@ export default function ChatApp() {
                                                 characterPersonality: char.personality,
                                                 characterTag: char.tag,
                                                 history: [],
-                                                context: "proactive-friendly"
+                                                context: "proactive-friendly",
+                                                responseLanguage,
                                             })
                                         })
                                         .then(r => r.json())
@@ -696,8 +715,10 @@ export default function ChatApp() {
     useEffect(() => {
         if (!mounted) return;
 
+        let removeBackButtonListener: (() => void) | null = null;
+
         const setupBackButton = async () => {
-            await App.addListener('backButton', () => {
+            const listener = await App.addListener('backButton', () => {
                 // If a chat is open, close it and go back to the tab view
                 if (activeCharacter || activeGroupId) {
                     handleBack();
@@ -706,19 +727,109 @@ export default function ChatApp() {
                     App.minimizeApp();
                 }
             });
+            removeBackButtonListener = () => {
+                void listener.remove();
+            };
         };
 
         setupBackButton();
 
         return () => {
-            App.removeAllListeners();
+            removeBackButtonListener?.();
         };
     }, [mounted, activeCharacter, activeGroupId]);
 
-    const handleSelectCharacter = (char: Character, openProfile = false) => {
-        setShowProfileOnLoad(openProfile);
-        setActiveCharacter(char);
-    };
+    const dismissKeyboardAndOpen = useCallback((open: () => void) => {
+        if (typeof document !== "undefined") {
+            const activeElement = document.activeElement;
+            if (activeElement instanceof HTMLElement) {
+                activeElement.blur();
+            }
+        }
+
+        if (typeof window === "undefined") {
+            open();
+            return;
+        }
+
+        const visualViewport = window.visualViewport;
+        const getKeyboardInset = () => {
+            const layoutHeight = window.innerHeight;
+            const viewportHeight = Math.round(visualViewport?.height ?? layoutHeight);
+            const viewportTop = Math.max(0, Math.round(visualViewport?.offsetTop ?? 0));
+            return Math.max(0, layoutHeight - viewportHeight - viewportTop);
+        };
+
+        const finishOpen = () => {
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                    open();
+                });
+            });
+        };
+
+        if (!visualViewport || getKeyboardInset() <= 4) {
+            finishOpen();
+            return;
+        }
+
+        let frameId: number | null = null;
+        let timeoutId: number | null = null;
+        let settledFrames = 0;
+
+        const cleanup = () => {
+            if (frameId !== null) {
+                window.cancelAnimationFrame(frameId);
+                frameId = null;
+            }
+            if (timeoutId !== null) {
+                window.clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            visualViewport.removeEventListener("resize", scheduleCheck);
+            visualViewport.removeEventListener("scroll", scheduleCheck);
+        };
+
+        const complete = () => {
+            cleanup();
+            finishOpen();
+        };
+
+        const checkViewport = () => {
+            frameId = null;
+            if (getKeyboardInset() <= 4) {
+                settledFrames += 1;
+                if (settledFrames >= 2) {
+                    complete();
+                    return;
+                }
+            } else {
+                settledFrames = 0;
+            }
+
+            frameId = window.requestAnimationFrame(checkViewport);
+        };
+
+        const scheduleCheck = () => {
+            if (frameId !== null) {
+                return;
+            }
+
+            frameId = window.requestAnimationFrame(checkViewport);
+        };
+
+        timeoutId = window.setTimeout(complete, 500);
+        visualViewport.addEventListener("resize", scheduleCheck);
+        visualViewport.addEventListener("scroll", scheduleCheck);
+        scheduleCheck();
+    }, []);
+
+    const handleSelectCharacter = useCallback((char: Character, openProfile = false) => {
+        dismissKeyboardAndOpen(() => {
+            setShowProfileOnLoad(openProfile);
+            setActiveCharacter(char);
+        });
+    }, [dismissKeyboardAndOpen]);
 
     const handleBack = () => {
         setActiveCharacter(null);
@@ -726,15 +837,19 @@ export default function ChatApp() {
         setShowProfileOnLoad(false);
     };
 
-    const handleSelectGroup = (groupId: string) => {
+    const handleSelectGroup = useCallback((groupId: string) => {
         const convo = useChatStore.getState().conversations[groupId];
         if (convo?.conversationType === "story") {
-            router.push(`/story/${groupId}`);
+            dismissKeyboardAndOpen(() => {
+                router.push(`/story/${groupId}`);
+            });
             return;
         }
 
-        setActiveGroupId(groupId);
-    };
+        dismissKeyboardAndOpen(() => {
+            setActiveGroupId(groupId);
+        });
+    }, [dismissKeyboardAndOpen, router]);
 
     const charMap = React.useMemo(() => {
         const map: Record<string, Character> = {};
@@ -762,18 +877,28 @@ export default function ChatApp() {
         }
     }
 
-    const { viewportStyle } = useIOSViewportContainment({
+    const { viewportStyle, keyboardOpen: shellKeyboardOpen } = useIOSViewportContainment({
         rootRef: appShellRef,
         enabled: !effectiveCharacter,
-        scrollableSelectors: [".chat-app-content"],
+        scrollableSelectors: [".explore-scroll-content", ".explore-search-scroll", ".chats-scroll", ".create-scroll-area", ".profile-scroll-area"],
     });
+    const appShellViewportStyle: React.CSSProperties = effectiveCharacter
+        ? ({
+            ["--mobile-viewport-height" as "--mobile-viewport-height"]: "100dvh",
+            ["--mobile-viewport-top" as "--mobile-viewport-top"]: "0px",
+            ["--mobile-keyboard-inset" as "--mobile-keyboard-inset"]: "0px",
+            ["--mobile-composer-height" as "--mobile-composer-height"]: "0px",
+            ["--ios-viewport-height" as "--ios-viewport-height"]: "100dvh",
+            ["--ios-viewport-top" as "--ios-viewport-top"]: "0px",
+        } as React.CSSProperties)
+        : viewportStyle;
 
     if (!mounted) {
-        return <div ref={appShellRef} className="chat-app" style={{ ...viewportStyle, background: "#FFFDF5" }} />;
+        return <div ref={appShellRef} className="chat-app" style={{ ...appShellViewportStyle, background: "#FFFDF5" }} />;
     }
 
     return (
-        <div ref={appShellRef} className="chat-app" style={viewportStyle}>
+        <div ref={appShellRef} className="chat-app" style={appShellViewportStyle}>
             {effectiveCharacter ? (
                 <div
                     key={`chatroom-${effectiveCharacter.id}`}
@@ -793,13 +918,18 @@ export default function ChatApp() {
                 >
                     {/* Tab content — all tabs stay mounted to preserve state/data */}
                     <div className="chat-app-content no-scrollbar" style={{ overflowY: activeTab === "profile" ? "hidden" : undefined }}>
-                        <div style={{ width: "100%", display: activeTab === "explore" ? "block" : "none" }}>
-                            <ExploreTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} onPreviewChange={setIsPreviewOpen} />
+                        <div style={{ width: "100%", height: "100%", minHeight: 0, display: activeTab === "explore" ? "block" : "none" }}>
+                            <ExploreTab
+                                onSelectCharacter={handleSelectCharacter}
+                                onSelectGroup={handleSelectGroup}
+                                onPreviewChange={setIsPreviewOpen}
+                                isActive={activeTab === "explore"}
+                            />
                         </div>
-                        <div style={{ width: "100%", display: activeTab === "chats" ? "block" : "none" }}>
+                        <div style={{ width: "100%", height: "100%", minHeight: 0, display: activeTab === "chats" ? "block" : "none" }}>
                             <ChatsTab onSelectCharacter={handleSelectCharacter} onSelectGroup={handleSelectGroup} myCharacters={myCharacters} allCharacters={allCharacters} isLoading={isLoadingChats} />
                         </div>
-                        <div style={{ width: "100%", display: activeTab === "create" ? "block" : "none" }}>
+                        <div style={{ width: "100%", height: "100%", minHeight: 0, display: activeTab === "create" ? "block" : "none" }}>
                             <CreateTab
                                 onNavigate={(tab: Tab) => setActiveTab(tab)}
                                 onSelectCharacter={handleSelectCharacter}
@@ -816,7 +946,7 @@ export default function ChatApp() {
                     </div>
 
                     {/* Premium floating tab layout */}
-                    {!(activeTab === "create" && isCreateScreenActive) && !isPreviewOpen && (
+                    {!(activeTab === "create" && isCreateScreenActive) && !isPreviewOpen && !shellKeyboardOpen && (
                         <LayoutGroup>
                             <div className="chat-nav-wrapper">
                             {/* Left FAB: Explore */}

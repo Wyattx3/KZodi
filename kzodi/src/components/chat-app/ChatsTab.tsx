@@ -1,9 +1,9 @@
 "use client";
 import React from "react";
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { motion, AnimatePresence, LayoutGroup, useDragControls } from "framer-motion";
 import { useChatStore, type Conversation } from "@/lib/chatStore";
 import { useIOSViewportContainment } from "@/lib/useIOSViewportContainment";
-import { CHARACTERS, type Character } from "@/data/characters";
+import { type Character } from "@/data/characters";
 import WorldBuildingModal from "./WorldBuildingModal";
 
 interface ChatsTabProps {
@@ -26,7 +26,162 @@ function formatTime(ts: number): string {
     return `${days}d ago`;
 }
 
+function ChatListSkeletonRow({ itemKey, delay = 0 }: { itemKey: string; delay?: number }) {
+    return (
+        <motion.div
+            key={itemKey}
+            className="chats-item"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, delay }}
+            style={{ background: "#FFFDF5", pointerEvents: "none" }}
+            aria-hidden="true"
+        >
+            <div className="chats-item-avatar" style={{ background: "rgba(0,0,0,0.06)" }} />
+            <div className="chats-item-info">
+                <div className="chats-item-top">
+                    <div style={{ width: "40%", height: "16px", background: "rgba(0,0,0,0.06)", borderRadius: "4px" }} />
+                    <div style={{ width: "15%", height: "12px", background: "rgba(0,0,0,0.04)", borderRadius: "4px" }} />
+                </div>
+                <div className="chats-item-bottom" style={{ marginTop: "6px" }}>
+                    <div style={{ width: "70%", height: "14px", background: "rgba(0,0,0,0.04)", borderRadius: "4px" }} />
+                </div>
+            </div>
+        </motion.div>
+    );
+}
+
 // ─── Group Creation Modal ────────────────────────────────────────────────────
+
+const SWIPE_START_THRESHOLD = 26;
+const SWIPE_AXIS_BUFFER = 14;
+const SWIPE_OPEN_VELOCITY = -650;
+
+function SwipeableChatRow({
+    actionWidth,
+    isOpen,
+    actionTray,
+    onActivate,
+    onOpenChange,
+    onDragStateChange,
+    children,
+}: {
+    actionWidth: number;
+    isOpen: boolean;
+    actionTray: React.ReactNode;
+    onActivate: (event: React.MouseEvent<HTMLDivElement>) => void;
+    onOpenChange: (nextOpen: boolean) => void;
+    onDragStateChange?: (dragging: boolean) => void;
+    children: React.ReactNode;
+}) {
+    const dragControls = useDragControls();
+    const pointerIntentRef = React.useRef({
+        pointerId: -1,
+        startX: 0,
+        startY: 0,
+        dragStarted: false,
+    });
+
+    const resetPointerIntent = React.useCallback(() => {
+        pointerIntentRef.current = {
+            pointerId: -1,
+            startX: 0,
+            startY: 0,
+            dragStarted: false,
+        };
+    }, []);
+
+    const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        pointerIntentRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            dragStarted: false,
+        };
+    }, []);
+
+    const handlePointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+        const intent = pointerIntentRef.current;
+        if (intent.pointerId !== event.pointerId || intent.dragStarted) return;
+
+        const deltaX = event.clientX - intent.startX;
+        const deltaY = event.clientY - intent.startY;
+        const absX = Math.abs(deltaX);
+        const absY = Math.abs(deltaY);
+
+        if (absY > SWIPE_START_THRESHOLD && absY > absX + SWIPE_AXIS_BUFFER) {
+            if (isOpen) {
+                onOpenChange(false);
+            }
+            onDragStateChange?.(false);
+            resetPointerIntent();
+            return;
+        }
+
+        const shouldStartOpening = deltaX < -SWIPE_START_THRESHOLD && absX > absY + SWIPE_AXIS_BUFFER;
+        const shouldStartClosing = isOpen && deltaX > SWIPE_START_THRESHOLD && absX > absY + SWIPE_AXIS_BUFFER;
+
+        if (shouldStartOpening || shouldStartClosing) {
+            intent.dragStarted = true;
+            onDragStateChange?.(true);
+            dragControls.start(event, { snapToCursor: false });
+        }
+    }, [dragControls, isOpen, onDragStateChange, onOpenChange, resetPointerIntent]);
+
+    const handlePointerRelease = React.useCallback(() => {
+        if (!pointerIntentRef.current.dragStarted) {
+            onDragStateChange?.(false);
+        }
+        resetPointerIntent();
+    }, [onDragStateChange, resetPointerIntent]);
+
+    return (
+        <div className="chats-swipe-row">
+            {actionTray}
+            <motion.div
+                className="chats-item"
+                drag="x"
+                dragControls={dragControls}
+                dragListener={false}
+                dragDirectionLock
+                dragConstraints={{ left: -actionWidth, right: 0 }}
+                dragElastic={0.02}
+                dragMomentum={false}
+                initial={false}
+                animate={{ x: isOpen ? -actionWidth : 0 }}
+                transition={{ type: "spring", stiffness: 320, damping: 34 }}
+                onDragStart={() => onDragStateChange?.(true)}
+                onDragEnd={(event, info) => {
+                    const shouldOpen = info.offset.x < -(actionWidth * 0.58) || info.velocity.x < SWIPE_OPEN_VELOCITY;
+                    onOpenChange(shouldOpen);
+                    onDragStateChange?.(false);
+                    resetPointerIntent();
+                }}
+                onClick={onActivate}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerRelease}
+                onPointerCancel={handlePointerRelease}
+                style={{
+                    position: "relative",
+                    zIndex: 1,
+                    background: "#FFFDF5",
+                    WebkitUserSelect: "none",
+                    userSelect: "none",
+                    touchAction: "pan-y",
+                    WebkitTouchCallout: "none",
+                    cursor: "pointer",
+                    width: "100%",
+                }}
+                whileTap={{ cursor: "grabbing" }}
+            >
+                {children}
+            </motion.div>
+        </div>
+    );
+}
 
 function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
     charMap: Record<string, Character>;
@@ -440,7 +595,11 @@ function GroupCreateModal({ charMap, conversations, onClose, onCreated }: {
 // ─── Main ChatsTab ───────────────────────────────────────────────────────────
 
 export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacters = [], allCharacters = [], isLoading = false }: ChatsTabProps) {
-    const [conversations, setConversations] = React.useState<Conversation[]>([]);
+    const [conversations, setConversations] = React.useState<Conversation[]>(() => {
+        const convos = Object.values(useChatStore.getState().conversations);
+        convos.sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+        return convos;
+    });
     const [searchQuery, setSearchQuery] = React.useState("");
     const [actionConvo, setActionConvo] = React.useState<string | null>(null);
     const [draggingConvo, setDraggingConvo] = React.useState<string | null>(null);
@@ -452,6 +611,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
     const [resolvedChars, setResolvedChars] = React.useState<Record<string, Character>>({});
     // profileFetchingId: tracks which char ID is being fetched before opening profile
     const [profileFetchingId, setProfileFetchingId] = React.useState<string | null>(null);
+    const [showLoadingSkeleton, setShowLoadingSkeleton] = React.useState(isLoading && conversations.length === 0);
     const pressTimer = React.useRef<NodeJS.Timeout | null>(null);
     const menuOpenedAt = React.useRef<number>(0);
 
@@ -517,6 +677,27 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [conversations]);
 
+    React.useEffect(() => {
+        if (!isLoading) {
+            setShowLoadingSkeleton(false);
+            return;
+        }
+
+        if (conversations.length > 0) {
+            setShowLoadingSkeleton(false);
+            return;
+        }
+
+        setShowLoadingSkeleton(true);
+        const timer = window.setTimeout(() => {
+            setShowLoadingSkeleton(false);
+        }, 1200);
+
+        return () => {
+            window.clearTimeout(timer);
+        };
+    }, [conversations.length, isLoading]);
+
     const filteredConvos = React.useMemo(() => {
         let baseConvos = conversations;
         if (activeFilter === "personal") {
@@ -547,6 +728,11 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             return [];
         });
     }, [conversations, searchQuery, charMap, activeFilter]);
+
+    const shouldShowSkeleton = showLoadingSkeleton && conversations.length === 0;
+    const shouldShowEmptyState = !shouldShowSkeleton && conversations.length === 0;
+    const shouldShowSearchEmpty = !shouldShowSkeleton && conversations.length > 0 && filteredConvos.length === 0 && Boolean(searchQuery);
+    const shouldShowFilterEmpty = !shouldShowSkeleton && conversations.length > 0 && filteredConvos.length === 0 && !searchQuery;
 
     return (
         <div className="chats-container">
@@ -651,7 +837,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                 {/* Filter Tabs */}
                 {conversations.length > 0 && (
                     <LayoutGroup>
-                        <div style={{ padding: "0 20px 12px", display: "flex", gap: "8px", overflowX: "auto" }} className="no-scrollbar">
+                        <div className="chats-filter-strip no-scrollbar">
                             {["all", "personal", "group", "story"].map((filter) => (
                                 <motion.button
                                     key={filter}
@@ -710,7 +896,15 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         </div>
                     </motion.div>
                 )}
+            </div>
 
+            <div
+                className="chats-scroll no-scrollbar"
+                onScroll={() => {
+                    if (actionConvo) setActionConvo(null);
+                    if (draggingConvo) setDraggingConvo(null);
+                }}
+            >
                 {/* Online avatars */}
                 {conversations.length > 0 && (
                     <motion.div
@@ -741,35 +935,19 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
 
                 {/* Divider */}
                 {conversations.length > 0 && <div className="chats-divider" />}
-            </div>
 
-            <div className="chats-list">
-                <AnimatePresence>
-                    {isLoading ? (
-                        Array.from({ length: 6 }).map((_, i) => (
-                            <motion.div
-                                key={`skeleton-${i}`}
-                                className="chats-item"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.3, delay: i * 0.05 }}
-                                style={{ background: "#FFFDF5", pointerEvents: "none" }}
-                            >
-                                <div className="chats-item-avatar" style={{ background: "rgba(0,0,0,0.06)" }} />
-                                <div className="chats-item-info">
-                                    <div className="chats-item-top">
-                                        <div style={{ width: "40%", height: "16px", background: "rgba(0,0,0,0.06)", borderRadius: "4px" }} />
-                                        <div style={{ width: "15%", height: "12px", background: "rgba(0,0,0,0.04)", borderRadius: "4px" }} />
-                                    </div>
-                                    <div className="chats-item-bottom" style={{ marginTop: "6px" }}>
-                                        <div style={{ width: "70%", height: "14px", background: "rgba(0,0,0,0.04)", borderRadius: "4px" }} />
-                                    </div>
-                                </div>
-                            </motion.div>
-                        ))
-                    ) : (
-                        filteredConvos.map(({ convo, matchedMsg }, i) => {
+                <div className="chats-list">
+                    <AnimatePresence>
+                        {shouldShowSkeleton ? (
+                            Array.from({ length: 6 }).map((_, i) => (
+                                <ChatListSkeletonRow
+                                    key={`skeleton-${i}`}
+                                    itemKey={`skeleton-${i}`}
+                                    delay={i * 0.05}
+                                />
+                            ))
+                        ) : (
+                            filteredConvos.map(({ convo, matchedMsg }, i) => {
                         // Helper: replace sticker tags with a friendly label.
                         // Handles both plain "[[STICKER: ...]]" and group-prefixed "Name: [[STICKER: ...]]"
                         const formatPreview = (content: string): string => {
@@ -789,68 +967,59 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                             const unreadCount = convo.messages.filter(m => m.role === "assistant" && m.status !== "seen").length;
 
                             return (
-                                <div key={convo.characterId} style={{ position: "relative", overflow: "hidden" }}>
-                                    {/* Swipe actions */}
-                                    <div style={{
-                                        position: "absolute", top: 0, right: 0, bottom: 0,
-                                        width: "60px", display: "flex", alignItems: "center",
-                                        justifyContent: "center", zIndex: 0,
-                                        opacity: (draggingConvo === convo.characterId || actionConvo === convo.characterId) ? 1 : 0,
-                                        transition: "opacity 0.15s", pointerEvents: (draggingConvo === convo.characterId || actionConvo === convo.characterId) ? "auto" : "none"
-                                    }}>
-                                        <button
-                                            onClick={async (e) => {
-                                                e.stopPropagation();
-                                                useChatStore.getState().deleteConversation(convo.characterId);
-                                                try {
-                                                    await fetch("/api/memory", {
-                                                        method: "DELETE",
-                                                        headers: { "Content-Type": "application/json" },
-                                                        body: JSON.stringify({ characterId: convo.characterId })
-                                                    });
-                                                } catch (err) { }
-                                            }}
-                                            aria-label="Delete"
-                                            style={{
-                                                width: "42px", height: "42px", borderRadius: "50%",
-                                                border: "none", background: "#EF4444", color: "#fff",
-                                                display: "flex", alignItems: "center", justifyContent: "center",
-                                                cursor: "pointer", boxShadow: "0 2px 8px rgba(239,68,68,0.3)"
-                                            }}
-                                        >
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                                                <path d="M5 7h14M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                                <path d="M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
-                                            </svg>
-                                        </button>
-                                    </div>
-
-                                    <motion.div
-                                        className="chats-item"
-                                        drag="x"
-                                        dragConstraints={{ left: -60, right: 0 }}
-                                        dragElastic={0.05}
-                                        initial={false}
-                                        animate={{ x: actionConvo === convo.characterId ? -60 : 0 }}
-                                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                        onDragStart={() => setDraggingConvo(convo.characterId)}
-                                        onDragEnd={(e, info) => {
-                                            const isSwiped = info.offset.x < -35 || info.velocity.x < -80;
-                                            if (isSwiped) setActionConvo(convo.characterId);
-                                            else setActionConvo(null);
-                                            setTimeout(() => setDraggingConvo(null), 200);
-                                        }}
-                                        onClick={(e) => {
-                                            if (actionConvo) { e.stopPropagation(); setActionConvo(null); }
-                                            else onSelectGroup?.(convo.characterId);
-                                        }}
-                                        style={{
-                                            position: "relative", zIndex: 1,
-                                            background: "#FFFDF5",
-                                            WebkitUserSelect: "none", userSelect: "none",
-                                            touchAction: "pan-y", cursor: "pointer"
-                                        }}
-                                    >
+                                <SwipeableChatRow
+                                    key={convo.characterId}
+                                    actionWidth={60}
+                                    isOpen={actionConvo === convo.characterId}
+                                    onOpenChange={(nextOpen) => setActionConvo(nextOpen ? convo.characterId : null)}
+                                    onDragStateChange={(dragging) => {
+                                        if (dragging) setDraggingConvo(convo.characterId);
+                                        else setTimeout(() => setDraggingConvo((current) => current === convo.characterId ? null : current), 120);
+                                    }}
+                                    onActivate={(e) => {
+                                        if (actionConvo) {
+                                            e.stopPropagation();
+                                            setActionConvo(null);
+                                        } else {
+                                            onSelectGroup?.(convo.characterId);
+                                        }
+                                    }}
+                                    actionTray={(
+                                        <div style={{
+                                            position: "absolute", top: 0, right: 0, bottom: 0,
+                                            width: "76px", display: "flex", alignItems: "center",
+                                            justifyContent: "flex-end", paddingRight: "16px", zIndex: 0,
+                                            opacity: (draggingConvo === convo.characterId || actionConvo === convo.characterId) ? 1 : 0,
+                                            transition: "opacity 0.15s", pointerEvents: (draggingConvo === convo.characterId || actionConvo === convo.characterId) ? "auto" : "none"
+                                        }}>
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    useChatStore.getState().deleteConversation(convo.characterId);
+                                                    try {
+                                                        await fetch("/api/memory", {
+                                                            method: "DELETE",
+                                                            headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({ characterId: convo.characterId })
+                                                        });
+                                                    } catch (err) { }
+                                                }}
+                                                aria-label="Delete"
+                                                style={{
+                                                    width: "42px", height: "42px", borderRadius: "50%",
+                                                    border: "none", background: "#EF4444", color: "#fff",
+                                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                                    cursor: "pointer", boxShadow: "0 2px 8px rgba(239,68,68,0.3)"
+                                                }}
+                                            >
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                                    <path d="M5 7h14M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                                    <path d="M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    )}
+                                >
                                         {/* Group avatar: stacked */}
                                         <div className="chats-item-avatar" style={{ position: "relative" }}>
                                             {convo.groupImage ? (
@@ -939,23 +1108,21 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                                 </div>
                                             </div>
                                         </div>
-                                    </motion.div>
-                                </div>
+                                </SwipeableChatRow>
                             );
                         }
 
                         // ── Regular Chat Row ──────────────────────
-                        const char = charMap[convo.characterId] || {
-                            id: convo.characterId,
-                            name: convo.customName || convo.characterId.split("-")[0] || "Character",
-                            tag: "Original",
-                            description: "",
-                            longDescription: "",
-                            tags: [],
-                            personality: "",
-                            greeting: "",
-                            image: `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${convo.characterId}`
-                        } as Character;
+                        const char = charMap[convo.characterId];
+                        if (!char) {
+                            return (
+                                <ChatListSkeletonRow
+                                    key={`loading-${convo.characterId}`}
+                                    itemKey={`loading-${convo.characterId}`}
+                                    delay={Math.min(i, 6) * 0.03}
+                                />
+                            );
+                        }
                         
                         const displayName = convo.customName || char.name;
                         
@@ -964,12 +1131,25 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                         const displayContent = matchedMsg ? matchedMsg.content : convo.lastMessage;
                         const unreadCount = convo.messages.filter(m => m.role === "assistant" && m.status !== "seen").length;
                         return (
-                            <div key={convo.characterId} style={{ position: "relative", overflow: "hidden" }}>
+                            <SwipeableChatRow
+                                key={convo.characterId}
+                                actionWidth={110}
+                                isOpen={actionConvo === convo.characterId}
+                                onOpenChange={(nextOpen) => setActionConvo(nextOpen ? convo.characterId : null)}
+                                onDragStateChange={(dragging) => {
+                                    if (dragging) setDraggingConvo(convo.characterId);
+                                    else setTimeout(() => setDraggingConvo((current) => current === convo.characterId ? null : current), 120);
+                                }}
+                                onActivate={(e) => {
+                                    if (actionConvo) { e.stopPropagation(); setActionConvo(null); }
+                                    else onSelectCharacter(char);
+                                }}
+                                actionTray={
                                 <div
                                     style={{
                                         position: "absolute", top: 0, right: 0, bottom: 0,
-                                        width: "110px", display: "flex", alignItems: "center",
-                                        justifyContent: "center", gap: "12px", zIndex: 0,
+                                        width: "126px", display: "flex", alignItems: "center",
+                                        justifyContent: "flex-end", gap: "12px", paddingRight: "16px", zIndex: 0,
                                         opacity: (draggingConvo === convo.characterId || actionConvo === convo.characterId) ? 1 : 0,
                                         transition: "opacity 0.15s ease",
                                         pointerEvents: (draggingConvo === convo.characterId || actionConvo === convo.characterId) ? "auto" : "none"
@@ -1072,35 +1252,8 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                         </svg>
                                     </button>
                                 </div>
-
-                                <motion.div
-                                    className="chats-item"
-                                    drag="x"
-                                    dragConstraints={{ left: -110, right: 0 }}
-                                    dragElastic={0.05}
-                                    initial={false}
-                                    animate={{ x: actionConvo === convo.characterId ? -110 : 0 }}
-                                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                    onDragStart={() => setDraggingConvo(convo.characterId)}
-                                    onDragEnd={(e, info) => {
-                                        const isSwiped = info.offset.x < -35 || info.velocity.x < -80;
-                                        if (isSwiped) setActionConvo(convo.characterId);
-                                        else setActionConvo(null);
-                                        setTimeout(() => setDraggingConvo(null), 200);
-                                    }}
-                                    onClick={(e) => {
-                                        if (actionConvo) { e.stopPropagation(); setActionConvo(null); }
-                                        else onSelectCharacter(char);
-                                    }}
-                                    style={{
-                                        position: "relative", zIndex: 1,
-                                        background: "#FFFDF5",
-                                        WebkitUserSelect: "none", userSelect: "none",
-                                        touchAction: "pan-y", WebkitTouchCallout: "none",
-                                        cursor: "pointer"
-                                    }}
-                                    whileTap={{ cursor: "grabbing" }}
-                                >
+                                }
+                            >
                                     <div className="chats-item-avatar">
                                         <img src={char.image} alt={char.name} style={{ pointerEvents: "none", width: "48px", height: "48px", borderRadius: "50%", objectFit: "cover" }} />
                                         <span className="chats-item-online-dot" />
@@ -1121,18 +1274,18 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
                                                 {unreadCount > 0 && <span className="chats-item-msg-count">{unreadCount}</span>}
                                                 {isAiLast && unreadCount > 0 && <span className="chats-item-unread" />}
                                             </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                </motion.div>
-                            </div>
+                            </SwipeableChatRow>
                         );
-                    })
-                    )}
-                </AnimatePresence>
+                            })
+                        )}
+                    </AnimatePresence>
+                </div>
             </div>
 
             {/* Empty state */}
-            {conversations.length === 0 && (
+            {shouldShowEmptyState && (
                 <motion.div
                     key="chats-empty-state-final"
                     style={{
@@ -1181,7 +1334,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             )}
 
             {/* Search empty */}
-            {conversations.length > 0 && filteredConvos.length === 0 && searchQuery && (
+            {shouldShowSearchEmpty && (
                 <motion.div
                     className="chats-empty-search"
                     style={{ padding: "40px 24px", textAlign: "center" }}
@@ -1192,7 +1345,7 @@ export default function ChatsTab({ onSelectCharacter, onSelectGroup, myCharacter
             )}
 
             {/* Filter empty */}
-            {conversations.length > 0 && filteredConvos.length === 0 && !searchQuery && (
+            {shouldShowFilterEmpty && (
                 <motion.div
                     className="chats-empty-filter"
                     style={{ padding: "80px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}

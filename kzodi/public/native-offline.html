@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Kakoei Offline</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #110f0d;
+      --card: rgba(26, 22, 19, 0.92);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f8f4ea;
+      --muted: rgba(248, 244, 234, 0.66);
+      --accent: #ffe566;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(255, 229, 102, 0.14), transparent 35%),
+        linear-gradient(180deg, #0d0b09 0%, var(--bg) 100%);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(100%, 560px);
+      border-radius: 28px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+      padding: 28px;
+      backdrop-filter: blur(24px);
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: rgba(255, 229, 102, 0.74);
+    }
+
+    h1 {
+      margin: 14px 0 0;
+      font-family: "Outfit", system-ui, sans-serif;
+      font-size: 30px;
+      line-height: 1.1;
+    }
+
+    p {
+      margin: 14px 0 0;
+      line-height: 1.8;
+      color: var(--muted);
+    }
+
+    .actions {
+      margin-top: 22px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      border-radius: 999px;
+      padding: 13px 18px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #17120f;
+    }
+
+    .secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .status {
+      margin-top: 18px;
+      font-size: 13px;
+      color: rgba(248, 244, 234, 0.56);
+    }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="eyebrow">Offline Fallback</div>
+    <h1>Kakoei is waiting for the network.</h1>
+    <p>
+      The mobile shell stayed alive instead of showing a blank screen. As soon as the connection is healthy again,
+      the live Next.js app will reopen automatically.
+    </p>
+    <div class="actions">
+      <button class="primary" id="retry-button" type="button">Try Again</button>
+      <button class="secondary" id="refresh-button" type="button">Refresh State</button>
+    </div>
+    <div class="status" id="status-label">Watching for connectivity…</div>
+  </section>
+
+  <script>
+    const statusLabel = document.getElementById("status-label");
+    const retryButton = document.getElementById("retry-button");
+    const refreshButton = document.getElementById("refresh-button");
+
+    function getTargetUrl() {
+      return new URLSearchParams(window.location.search).get("target") || "https://www.kakoei.com/chat";
+    }
+
+    async function tryReconnect() {
+      const targetUrl = getTargetUrl();
+      statusLabel.textContent = "Checking the live app…";
+
+      try {
+        const response = await fetch(targetUrl, { method: "HEAD", cache: "no-store", mode: "no-cors" });
+        void response;
+        window.location.replace(targetUrl);
+      } catch {
+        statusLabel.textContent = "Still offline. Kakoei will keep retrying in the background.";
+      }
+    }
+
+    retryButton.addEventListener("click", tryReconnect);
+    refreshButton.addEventListener("click", () => {
+      statusLabel.textContent = navigator.onLine
+        ? "Connection restored locally. Retrying the live app…"
+        : "Device is still offline.";
+      if (navigator.onLine) {
+        void tryReconnect();
+      }
+    });
+
+    window.addEventListener("online", () => {
+      statusLabel.textContent = "Network detected. Reopening Kakoei…";
+      void tryReconnect();
+    });
+
+    window.addEventListener("offline", () => {
+      statusLabel.textContent = "Device is offline. Cached UI will come back once the app shell reconnects.";
+    });
+
+    window.setInterval(() => {
+      if (navigator.onLine) {
+        void tryReconnect();
+      }
+    }, 12000);
+  </script>
+</body>
+</html>

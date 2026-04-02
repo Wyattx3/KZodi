@@ -6,16 +6,21 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",
     "@astrodraw/astrochart": "^3.0.2",
     "@auth/pg-adapter": "^1.11.1",
-    "@capacitor/android": "^8.2.0",
+    "@capacitor/android": "^8.3.0",
     "@capacitor/app": "^8.0.1",
-    "@capacitor/cli": "^8.2.0",
+    "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.2.0",
+    "@capacitor/ios": "^8.3.0",
+    "@capacitor/keyboard": "^8.0.2",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/preferences": "^8.0.1",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@neondatabase/serverless": "^1.0.2",
     "@pinecone-database/pinecone": "^7.0.0",
@@ -59,6 +64,7 @@
     "eslint-config-next": "^16.2.1",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.1.4",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3"
   }
 }

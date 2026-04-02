@@ -22,6 +22,13 @@
   --font-chalk: 'Caveat', cursive;
 }
 
+:root {
+  --mobile-viewport-height: 100dvh;
+  --mobile-viewport-top: 0px;
+  --mobile-keyboard-inset: 0px;
+  --mobile-composer-height: 0px;
+}
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
@@ -40,15 +47,22 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
   }
 
   body {
     font-family: var(--font-body);
-    background-color: #EEEDEA;
+    background-color: #FFFDF5;
     color: var(--color-warm-black);
     min-height: 100%;
     height: 100%;
+    width: 100%;
+    min-width: 100vw;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
   }
 
@@ -807,7 +821,7 @@
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 :root {
-  --app-max-width: 500px;
+  --app-max-width: 100vw;
 
   /* ── Nav geometry tokens ─────────────────────────────────── */
   --chat-nav-item-size: 48px;    /* icon-button / tab-item size (used by FABs & pill items) */
@@ -833,7 +847,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: #FAFAFA;
+  background: #FFFDF5;
   width: 100%;
   min-height: 100%;
   height: 100%;
@@ -846,12 +860,17 @@ body {
 }
 
 .app-root {
-  width: 100%;
+  width: 100vw;
+  min-width: 100vw;
+  max-width: none;
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
+  background: #FFFDF5;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -865,22 +884,25 @@ body {
 
 
 .chat-app {
-  width: 100%;
-  max-width: var(--app-max-width);
-  margin: 0 auto;
-  min-height: var(--ios-viewport-height, 100%);
-  height: var(--ios-viewport-height, 100%);
+  width: 100vw;
+  min-width: 100vw;
+  max-width: 100vw;
+  margin: 0;
+  min-height: var(--mobile-viewport-height, var(--ios-viewport-height, 100dvh));
+  height: var(--mobile-viewport-height, var(--ios-viewport-height, 100dvh));
   display: flex;
   flex-direction: column;
   background: #FFFDF5;
   overflow: hidden;
   overscroll-behavior: none;
-  position: relative;
-  top: var(--ios-viewport-top, 0px);
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--mobile-viewport-top, var(--ios-viewport-top, 0px));
   color: #4A3728;
-  box-shadow: 0 0 100px rgba(0, 0, 0, 0.08);
-  border-left: 1px solid rgba(0, 0, 0, 0.03);
-  border-right: 1px solid rgba(0, 0, 0, 0.03);
+  box-shadow: none;
+  border-left: none;
+  border-right: none;
   /* Fix for some browsers scroll issue */
   z-index: 10;
 }
@@ -915,6 +937,7 @@ body {
 
 .chat-app-view {
   width: 100%;
+  max-width: 100%;
   flex: 1;
   position: relative;
   z-index: 1;
@@ -931,7 +954,12 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  overflow-y: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   z-index: 5;
@@ -946,10 +974,12 @@ body {
 .chat-nav-wrapper {
   position: fixed;
   bottom: calc(var(--chat-nav-offset) + env(safe-area-inset-bottom, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: var(--app-max-width);
+  left: 0;
+  right: 0;
+  transform: none;
+  width: 100vw;
+  min-width: 100vw;
+  max-width: 100vw;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1132,23 +1162,30 @@ body {
 .explore-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
+  width: 100%;
+  min-width: 100%;
   padding: 0;
+  background: #FFFDF5;
 }
 
 .explore-scroll-content {
   flex: 1;
+  min-height: 0;
+  width: 100%;
   overflow-y: auto;
   padding: 0 18px var(--nav-clearance);
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 .explore-header-sticky {
   position: sticky;
   top: 0;
   z-index: 40;
+  width: 100%;
   background: rgba(253, 251, 245, 0.95);
   backdrop-filter: blur(12px);
   padding: env(safe-area-inset-top, 0px) 18px 0;
@@ -1221,7 +1258,12 @@ body {
 .explore-search-mode {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
+  min-height: 0;
+  width: 100%;
+  min-width: 100%;
+  overflow: hidden;
   background:
     radial-gradient(circle at top, rgba(255, 229, 102, 0.16) 0%, rgba(255, 229, 102, 0) 32%),
     linear-gradient(180deg, #FDFBF5 0%, #FFF7EE 54%, #F8EFE4 100%);
@@ -1229,9 +1271,9 @@ body {
 }
 
 .explore-search-header {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 60;
+  flex-shrink: 0;
   padding-top: env(safe-area-inset-top, 0px);
   background: linear-gradient(180deg, rgba(253, 251, 245, 0.98) 0%, rgba(253, 251, 245, 0.92) 100%);
   border-bottom: 1px solid rgba(74, 55, 40, 0.06);
@@ -1316,8 +1358,12 @@ body {
 
 .explore-search-scroll {
   flex: 1;
+  min-height: 0;
+  width: 100%;
   overflow-y: auto;
   padding: 0 14px calc(var(--nav-clearance) + 24px);
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 .explore-search-dashboard,
@@ -2732,12 +2778,30 @@ body {
    Chats Tab â€” Light Kawaii
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .chats-container {
-  padding: 0 16px;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   position: relative;
+  width: 100%;
+  padding: 0;
+  background: #FFFDF5;
 }
 
 /* Sticky fade overlay at the bottom of the chat list */
-.chats-container::after {
+.chats-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  position: relative;
+}
+
+.chats-scroll::after {
   content: '';
   display: block;
   position: sticky;
@@ -2745,7 +2809,7 @@ body {
   left: 0;
   right: 0;
   height: 100px;
-  margin: 0 -16px;
+  margin: 0;
   margin-top: -100px;
   background: linear-gradient(to bottom, rgba(255, 253, 245, 0) 0%, rgba(255, 253, 245, 0.6) 30%, rgba(255, 253, 245, 0.9) 60%, #FFFDF5 100%);
   pointer-events: none;
@@ -2753,12 +2817,12 @@ body {
 }
 
 .chats-sticky-header {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 20;
+  flex-shrink: 0;
   background: #FFFDF5;
-  margin: 0 -16px;
-  padding: env(safe-area-inset-top, 0px) 16px 0;
+  margin: 0;
+  padding: env(safe-area-inset-top, 0px) 0 0;
 }
 
 
@@ -2766,7 +2830,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 4px 8px;
+  padding: 16px 16px 8px;
+}
+
+.chats-filter-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 16px 12px;
 }
 
 .chats-title {
@@ -2806,7 +2877,7 @@ body {
 
 /* Search â€” Light */
 .chats-search-wrap {
-  padding: 0 4px 8px;
+  padding: 0 16px 8px;
 }
 
 .chats-search-box {
@@ -2853,7 +2924,7 @@ body {
   display: flex;
   gap: 16px;
   overflow-x: auto;
-  padding: 4px 4px 16px;
+  padding: 4px 16px 16px;
 }
 
 .chats-online-item {
@@ -2897,17 +2968,24 @@ body {
 .chats-divider {
   height: 1px;
   background: #F3F4F6;
-  margin: 0 4px 8px;
+  margin: 0 16px 8px;
 }
 
 /* List — Light */
 .chats-list {
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin: 0 -16px;
+  width: 100%;
+  margin: 0;
   padding-bottom: var(--nav-clearance); /* Space for bottom nav + safe area */
-  /* negate container padding so items go edge-to-edge */
+}
+
+.chats-swipe-row {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
 }
 
 .chats-item {
@@ -2915,6 +2993,7 @@ body {
   align-items: center;
   gap: 14px;
   padding: 16px;
+  width: 100%;
   border-radius: 0;
   margin: 0;
   cursor: pointer;
@@ -2925,6 +3004,18 @@ body {
   -webkit-user-select: none;
   user-select: none;
   background: #FFFFFF;
+}
+
+@supports (width: 100svw) {
+  body,
+  .app-root,
+  .chat-app,
+  .chat-nav-wrapper,
+  .story-explore-root {
+    width: 100svw;
+    min-width: 100svw;
+    max-width: 100svw;
+  }
 }
 
 .chats-item:active {
@@ -3037,10 +3128,18 @@ body {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    Chat Room â€” Light Kawaii
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-/* 
-    iOS Keyboard Smooth Fixes: 
-    Locks the body completely to stop Layout Viewport pushing 
+/*
+    Mobile shell lock:
+    Freeze the document itself so only approved inner surfaces can scroll.
 */
+html.ios-scroll-lock,
+html.ios-chat-lock {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
 body.ios-scroll-lock,
 body.ios-chat-lock {
   position: fixed !important;
@@ -3056,9 +3155,9 @@ body.ios-chat-lock {
   position: absolute;
   left: 0;
   right: 0;
-  top: var(--ios-viewport-top, 0px);
+  top: var(--mobile-viewport-top, var(--ios-viewport-top, 0px));
   width: 100%;
-  height: var(--ios-viewport-height, 100%);
+  height: var(--mobile-viewport-height, var(--ios-viewport-height, 100dvh));
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -3093,8 +3192,7 @@ body.ios-chat-lock {
 
 /* Header */
 .chatroom-header {
-  position: sticky;
-  top: 0;
+  position: relative;
   width: 100%;
   flex-shrink: 0;
   display: flex;
@@ -3254,12 +3352,12 @@ body.ios-chat-lock {
   min-height: 0;
   width: 100%;
   height: 0;
-  /* Ensures flex container can scroll */
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   will-change: transform;
+  scroll-padding-bottom: calc(var(--mobile-composer-height, 0px) + max(20px, env(safe-area-inset-bottom)));
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
@@ -3285,10 +3383,11 @@ body.ios-chat-lock {
 .chatroom-messages {
   position: relative;
   padding: 16px 18px;
-  padding-bottom: calc(max(16px, env(safe-area-inset-bottom)) + 100px);
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow-anchor: none;
 }
 
 /* Date separator */
@@ -3557,8 +3656,7 @@ body.ios-chat-lock {
 
 /* Input Bar — Light */
 .chatroom-input-bar {
-  position: sticky;
-  bottom: 0;
+  position: relative;
   width: 100%;
   flex-shrink: 0;
   display: flex;
@@ -5613,6 +5711,9 @@ body.ios-chat-lock {
   position: fixed;
   left: 0;
   right: 0;
+  width: 100vw;
+  min-width: 100vw;
+  max-width: 100vw;
   top: var(--ios-viewport-top, 0px);
   height: var(--ios-viewport-height, 100%);
   min-height: var(--ios-viewport-height, 100%);
@@ -5753,6 +5854,7 @@ body.ios-chat-lock {
 /* ── Scroll Content ─────────────────────────────── */
 .se-scroll {
   flex: 1;
+  width: 100%;
   overflow-y: auto;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }

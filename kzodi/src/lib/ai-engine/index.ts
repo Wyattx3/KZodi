@@ -12,10 +12,12 @@
  *   5. Timing and metadata computed from emotional state
  */
 
-import { groq, MODELS } from "@/lib/groq";
+import { groq } from "@/lib/groq";
 import Sentiment from "sentiment";
 import { processHeart, calculateTiming } from "./heart";
 import { thinkAboutMessage, buildCognitivePrompt } from "./brain";
+import { getRoleplayModelPlan } from "./routing";
+import { buildRuntimeLanguageReminder } from "./language";
 import type {
     EngineInput,
     EngineOutput,
@@ -70,32 +72,12 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     });
 
     // ─── Routing Logic Configuration ──────────────────────────────────
-    const isBurmese = responseLanguage === "Burmese (Unicode)" ||
-        responseLanguage === "Burmese (Zawgyi)" ||
-        responseLanguage === "Mix (Burmese + English)";
-    const isNonEnglish = responseLanguage && responseLanguage !== "English (Default)";
-
-    let brainModel: string;
-    let generationModel: string;
-    let fallbackModel: string | undefined;
-
-    if (isBurmese) {
-        // Myanmar language — use Gemini Flash for strong Burmese text generation
-        // DeepSeek V3p1 was producing garbled/gibberish Myanmar Unicode
-        brainModel = MODELS.CHAT; // Use Kimi K2 for brain reasoning (structured JSON)
-        generationModel = MODELS.GEMINI; // Gemini Flash for actual Burmese text generation
-        fallbackModel = "grok-4-1-fast-reasoning"; // User requested grok fallback for Myanmar
-    } else {
-        // Other Languages (English, Japanese, etc.)
-        // Use Kimi K2 via MODELS.CHAT for all contexts
-        brainModel = MODELS.CHAT;
-        if (context === "reading") {
-            generationModel = MODELS.CHAT;
-        } else {
-            // Roleplay chat — use versatile model for faster generation
-            generationModel = "llama-3.3-70b-versatile";
-        }
-    }
+    const {
+        brainModel,
+        generationModel,
+        fallbackModel,
+        isBurmese,
+    } = getRoleplayModelPlan(responseLanguage, context);
 
     console.log(`[AI Routing] Language: ${responseLanguage || "English"}, Brain: ${brainModel}, Generation: ${generationModel}`);
 
@@ -168,13 +150,15 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     // Build messages array
     // For Fireworks/DeepSeek: increase history to 20 messages to provide enough context
     // for logical conversation flow, resolving the issue of nonsensical replies.
-    const historyLimit = isFireworksModel ? 20 : 30;
+    const historyLimit = isBurmese ? 24 : (isFireworksModel ? 20 : 30);
     const recentHistory = history.slice(-historyLimit);
 
     // For group chats, prepend the groupCue to the user message so the AI sees
     // which character just spoke, enabling inter-character banter.
     // groupCue is ONLY used here in generation — Heart, Brain, and memory use clean `message`.
     const generationMessage = groupCue && message ? `${groupCue} ${message}` : message;
+
+    const runtimeLanguageReminder = buildRuntimeLanguageReminder(responseLanguage);
 
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
         { role: "system", content: systemPrompt },
@@ -199,18 +183,23 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
                 content: finalContent,
             };
         }),
+        ...(runtimeLanguageReminder ? [{
+            role: "system" as const,
+            content: runtimeLanguageReminder,
+        }] : []),
         ...(generationMessage ? [{ role: "user" as const, content: generationMessage }] : []),
     ];
 
     // Emotional state affects generation parameters
     const isEmotional = heartState.userEmotion !== "neutral" || context === "comfort";
     let maxTokens = isEmotional ? 800 : 600;
-    const temperature = isEmotional ? 0.95 : 0.9;
+    let temperature = isEmotional ? 0.95 : 0.9;
 
     // For Burmese, allow higher maxTokens since Myanmar Unicode characters
     // use more tokens per word than English. Length is still enforced
     // post-generation by enforceShortMessages().
     if (isBurmese) {
+        temperature = isEmotional ? 0.94 : 0.9;
         maxTokens = isEmotional ? 1000 : 800;
     }
 
@@ -219,6 +208,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
             messages,
             model: generationModel,
             fallbackModel,
+            disableProviderFallback: isBurmese,
             temperature,
             max_tokens: maxTokens,
         },

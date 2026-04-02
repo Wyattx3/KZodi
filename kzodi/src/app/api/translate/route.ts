@@ -55,6 +55,7 @@ async function translateSingle(text: string, targetLang: string): Promise<string
 
   const result = await aiClient.chat({
     model: modelToUse,
+    disableProviderFallback: targetLang === "my",
     temperature: 0.3,
     max_tokens: 4000,
     messages: [
@@ -110,6 +111,7 @@ async function translateBatch(
 
   const response = await aiClient.chat({
     model: modelToUse,
+    disableProviderFallback: targetLang === "my",
     temperature: 0.3,
     max_tokens: Math.min(entries.length * 2000, 8000),
     messages: [

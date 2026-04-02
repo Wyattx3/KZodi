@@ -5,10 +5,18 @@ import { generateEmbeddings } from "@/lib/ai-setup";
 import { auth } from "@/auth";
 import { processMessage, type EngineInput } from "@/lib/ai-engine";
 import { buildStoryPrompt } from "@/lib/ai-engine/story-engine";
+import {
+    buildRuntimeLanguageReminder,
+    getTargetLanguageLabel,
+    isBurmeseResponseLanguage,
+    shouldRepairResponseLanguage,
+} from "@/lib/ai-engine/language";
 import { getLatestReadingForUser } from "@/lib/db";
 import { groq, MODELS } from "@/lib/groq";
 import { callGroqCompound, shouldUseCompoundTools } from "@/lib/groq-compound";
 import { applyBehaviorCooldowns } from "@/lib/ai-engine/cooldown";
+import { ensureVisibleReplyContent, hasVisibleReplyText } from "@/lib/ai-engine/replyIntegrity";
+import { unwrapStructuredReplyPayload } from "@/lib/ai-engine/structuredReply";
 
 // ─── Request Interface ──────────────────────────────────────────────────────
 
@@ -252,10 +260,21 @@ function restoreReactionDirectives(
     return restored;
 }
 
+function buildLastChanceVisibleReply(responseLanguage?: string): string {
+    if (responseLanguage === "Mix (Burmese + English)") {
+        return "ဟုတ်တယ် that's what I mean";
+    }
+    if (responseLanguage === "Burmese (Unicode)" || responseLanguage === "Burmese (Zawgyi)") {
+        return "ဟုတ်တယ် အဲဒါတကယ်ပြောတာ";
+    }
+    return "i mean it.";
+}
+
 // ─── Clean AI response text ──────────────────────────────────────────────────
 
 function cleanResponseText(rawContent: string, characterName: string): string {
     let content = rawContent.replace(/^["']+|["']+$/g, "").trim();
+    content = unwrapStructuredReplyPayload(content);
 
     // Strip <think>...</think> tags from DeepSeek reasoning models (GREEDY match)
     content = content.replace(/<think>[\s\S]*<\/think>/g, "").trim();
@@ -295,39 +314,7 @@ function cleanResponseText(rawContent: string, characterName: string): string {
         .replace(/\s{2,}/g, " ")                            // Clean up double spaces from removals
         .trim();
 
-    // Fallback: If AI wraps response in ```json text ```, strip the wrapper
-    const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;
-    const match = content.match(jsonBlockRegex);
-    if (match) {
-        content = match[1].trim();
-    }
-
-    // Also if it outputs a single JSON object wrapping its message
-    if (content.startsWith("{") && content.endsWith("}")) {
-        try {
-            const parsed = JSON.parse(content);
-            if (parsed.reply) content = parsed.reply;
-            else if (parsed.text) content = parsed.text;
-            else if (parsed.content) content = parsed.content;
-            else if (parsed.response) content = parsed.response;
-            else if (parsed.message) content = parsed.message;
-        } catch {
-            // Myanmar text or STICKER tags often break JSON.parse
-            // Try regex extraction as fallback
-            const replyExtract = content.match(/"(?:reply|text|content|response|message)"\s*:\s*"([\s\S]*?)"\s*(?:,|})/);
-            if (replyExtract) {
-                content = replyExtract[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
-            } else {
-                // Last resort: strip the JSON wrapper characters and keep the inner text
-                content = content.replace(/^\{\s*"(?:reply|text|content|response|message|thought|thoughts)"\s*:\s*"?/i, '').replace(/"?\s*\}$/, '').trim();
-            }
-        }
-    }
-
-    // Strip partial JSON fragments embedded in text (e.g., {"reply": "..."} mixed with normal text)
-    content = content.replace(/\{\s*"(?:reply|text|content|response|message)"\s*:\s*"([^"]*)"\s*\}/gi, '$1');
-    // Strip remaining orphaned curly braces with key-value patterns
-    content = content.replace(/\{\s*"\w+"\s*:\s*(?:"[^"]*"|\[[^\]]*\]|\{[^\}]*\})\s*\}/g, "").trim();
+    content = unwrapStructuredReplyPayload(content);
 
     content = content.replace(/^\[MessageID:\s*[^\]]+\]\s*/i, "").trim();
 
@@ -337,6 +324,7 @@ function cleanResponseText(rawContent: string, characterName: string): string {
     const namePrefixRegex = new RegExp(`^\\[?(?:${safeCharName}|${safeFirstName})\\]?:?\\s*`, 'i');
     content = content.replace(namePrefixRegex, "").trim();
     content = content.replace(/^\[[^\]]+\]:\s*/, "").trim();
+    content = unwrapStructuredReplyPayload(content);
 
     return content;
 }
@@ -429,6 +417,174 @@ function enforceShortMessages(content: string, isBurmese: boolean): string {
     }
 
     return finalBubbles.join(" | ");
+}
+
+async function recoverVisibleReplyText(params: {
+    characterName: string;
+    characterPersonality: string;
+    characterTag: string;
+    responseLanguage?: string;
+    currentContent: string;
+    latestUserMessage: string;
+    history: { role: string; content: string }[];
+    strategy?: string;
+    tonePlan?: string;
+}): Promise<string> {
+    const targetLanguage = getTargetLanguageLabel(params.responseLanguage);
+    const recentHistory = params.history
+        .filter((entry) => entry.content && entry.content.trim())
+        .slice(-6)
+        .map((entry) => ({
+            role: entry.role === "assistant" ? "assistant" as const : "user" as const,
+            content: entry.content,
+        }));
+
+    const recoveryResult = await groq.chat(
+        {
+            model: isBurmeseResponseLanguage(params.responseLanguage) ? MODELS.GEMINI : MODELS.CHAT,
+            fallbackModel: undefined,
+            disableProviderFallback: isBurmeseResponseLanguage(params.responseLanguage),
+            temperature: 0.75,
+            max_tokens: 120,
+            messages: [
+                {
+                    role: "system",
+                    content: `You are ${params.characterName}, a ${params.characterTag} character in a chat app.
+Personality: ${params.characterPersonality}
+
+Your identity must stay EXACTLY the same in every language. Only the wording changes.
+Write ONLY the short visible text that should accompany the action metadata below.
+
+ACTION METADATA:
+${params.currentContent || "(none)"}
+
+RULES:
+- Reply in ${targetLanguage}
+- If the latest user message is in English but the configured reply language is not English, keep the reply in ${targetLanguage}
+- 1 short message bubble, max 2 short sentences
+- No JSON
+- No analysis or narration
+- No [[REACT:...]] tags
+- No [[STICKER:...]] tags
+- Stay directly on-topic with the latest user message`,
+                },
+                ...recentHistory,
+                {
+                    role: "user",
+                    content: `Latest user message: ${params.latestUserMessage || "(empty)"}
+Tone plan: ${params.tonePlan || "natural"}
+Strategy: ${params.strategy || "continue the conversation naturally"}
+
+Write the visible reply text only.`,
+                },
+            ],
+        },
+        {
+            cachePrefix: "roleplay-recovery",
+            useCache: false,
+            maxRetries: 2,
+        }
+    );
+
+    return cleanResponseText(recoveryResult.content || "", params.characterName)
+        .replace(/\[\[\s*(?:REACT|STICKER)\s*:[\s\S]*?\]+/gi, "")
+        .replace(/\|/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+}
+
+function extractVisibleReplyText(content: string): string {
+    return content
+        .replace(/\[\[\s*(?:REACT|STICKER|REPLY)\s*:[\s\S]*?\]+/gi, " ")
+        .replace(/\|/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+}
+
+function rebuildReplyWithVisibleText(content: string, repairedText: string): string {
+    const directives = content.match(/\[\[\s*(?:REACT|STICKER|REPLY)\s*:[\s\S]*?\]+/gi) || [];
+    if (directives.length === 0) {
+        return repairedText;
+    }
+
+    return ensureVisibleReplyContent(directives.join(" "), repairedText);
+}
+
+async function repairReplyLanguage(params: {
+    characterName: string;
+    characterPersonality: string;
+    characterTag: string;
+    responseLanguage?: string;
+    currentVisibleText: string;
+    latestUserMessage: string;
+    history: { role: string; content: string }[];
+    strategy?: string;
+    tonePlan?: string;
+}): Promise<string> {
+    const targetLanguage = getTargetLanguageLabel(params.responseLanguage);
+    const runtimeLanguageReminder = buildRuntimeLanguageReminder(params.responseLanguage);
+    const recentHistory = params.history
+        .filter((entry) => entry.content && entry.content.trim())
+        .slice(-6)
+        .map((entry) => ({
+            role: entry.role === "assistant" ? "assistant" as const : "user" as const,
+            content: entry.content,
+        }));
+
+    const result = await groq.chat(
+        {
+            model: isBurmeseResponseLanguage(params.responseLanguage) ? MODELS.GEMINI : MODELS.CHAT,
+            fallbackModel: undefined,
+            disableProviderFallback: isBurmeseResponseLanguage(params.responseLanguage),
+            temperature: 0.55,
+            max_tokens: 180,
+            messages: [
+                {
+                    role: "system",
+                    content: `You are ${params.characterName}, a ${params.characterTag} character in a chat app.
+Personality: ${params.characterPersonality}
+
+Your job is to rewrite the draft reply below into ${targetLanguage} while preserving the EXACT same personality, intent, boundaries, and emotional tone.
+
+DRAFT REPLY:
+${params.currentVisibleText}
+
+RULES:
+- Output only the visible reply text
+- Reply in ${targetLanguage}
+- Keep it directly on-topic with the latest user message
+- 1-2 short sentences maximum
+- No JSON
+- No narration about rewriting
+- Do not become more generic or more flirty than the original character`,
+                },
+                ...(runtimeLanguageReminder ? [{
+                    role: "system" as const,
+                    content: runtimeLanguageReminder,
+                }] : []),
+                ...recentHistory,
+                {
+                    role: "user",
+                    content: `Latest user message: ${params.latestUserMessage || "(empty)"}
+Tone plan: ${params.tonePlan || "natural"}
+Strategy: ${params.strategy || "answer directly and stay in character"}
+
+Rewrite the visible reply now.`,
+                },
+            ],
+        },
+        {
+            cachePrefix: "roleplay-language-repair",
+            useCache: false,
+            maxRetries: 2,
+        }
+    );
+
+    return cleanResponseText(result.content || "", params.characterName)
+        .replace(/\[\[\s*(?:REACT|STICKER|REPLY)\s*:[\s\S]*?\]+/gi, "")
+        .replace(/\|/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
 }
 
 // ─── Main API Route ──────────────────────────────────────────────────────────
@@ -682,7 +838,8 @@ IMPORTANT RULES:
                         ...(storyPlayerMessage ? [{ role: "user" as const, content: storyPlayerMessage }] : []),
                     ],
                     model: isBurmeseStory ? MODELS.GEMINI : MODELS.CHAT,
-                    fallbackModel: isBurmeseStory ? "grok-4-1-fast-reasoning" : undefined,
+                    fallbackModel: undefined,
+                    disableProviderFallback: isBurmeseStory,
                     temperature: 0.9,
                     max_tokens: 1200,
                 },
@@ -721,9 +878,7 @@ IMPORTANT RULES:
         content = sanitizeStickers(content, characterName);
 
         // Enforce short messages at code level (regardless of what the model outputs)
-        const isBurmeseResponse = responseLanguage === "Burmese (Unicode)" ||
-            responseLanguage === "Burmese (Zawgyi)" ||
-            responseLanguage === "Mix (Burmese + English)";
+        const isBurmeseResponse = isBurmeseResponseLanguage(responseLanguage);
         content = enforceShortMessages(content, isBurmeseResponse);
         content = restoreReactionDirectives(content, protectedReply.directives);
 
@@ -741,6 +896,62 @@ IMPORTANT RULES:
         
         content = cooldownResult.content;
         const finalReplyToId = cooldownResult.shouldReplyToId;
+
+        if (engineOutput.action !== "ignore" && !hasVisibleReplyText(content)) {
+            try {
+                const recoveredText = await recoverVisibleReplyText({
+                    characterName,
+                    characterPersonality,
+                    characterTag,
+                    responseLanguage,
+                    currentContent: content,
+                    latestUserMessage: message || history[history.length - 1]?.content || "",
+                    history: history.map((entry) => ({
+                        role: entry.role,
+                        content: entry.content || "",
+                    })),
+                    strategy: engineOutput.cognitiveState.brain.strategy,
+                    tonePlan: engineOutput.cognitiveState.brain.tonePlan,
+                });
+                content = ensureVisibleReplyContent(
+                    content,
+                    recoveredText || buildLastChanceVisibleReply(responseLanguage)
+                );
+            } catch (recoveryError) {
+                console.warn("[Roleplay] Failed to recover visible reply text:", recoveryError);
+                content = ensureVisibleReplyContent(content, buildLastChanceVisibleReply(responseLanguage));
+            }
+        }
+
+        const visibleReplyText = extractVisibleReplyText(content);
+        if (
+            engineOutput.action !== "ignore" &&
+            visibleReplyText &&
+            shouldRepairResponseLanguage(visibleReplyText, responseLanguage)
+        ) {
+            try {
+                const repairedVisibleText = await repairReplyLanguage({
+                    characterName,
+                    characterPersonality,
+                    characterTag,
+                    responseLanguage,
+                    currentVisibleText: visibleReplyText,
+                    latestUserMessage: message || history[history.length - 1]?.content || "",
+                    history: history.map((entry) => ({
+                        role: entry.role,
+                        content: entry.content || "",
+                    })),
+                    strategy: engineOutput.cognitiveState.brain.strategy,
+                    tonePlan: engineOutput.cognitiveState.brain.tonePlan,
+                });
+
+                if (repairedVisibleText) {
+                    content = rebuildReplyWithVisibleText(content, repairedVisibleText);
+                }
+            } catch (languageRepairError) {
+                console.warn("[Roleplay] Failed to repair reply language:", languageRepairError);
+            }
+        }
 
         // Keep in-band [[REACT:...]] directives for the client to parse and apply.
         // Display-only sanitization happens client-side and memory sanitization happens below.

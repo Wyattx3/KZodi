@@ -1,16 +1,9 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import AppShellAuthGate from "@/components/system/AppShellAuthGate";
 
-export default async function ChatLayout({
+export default function ChatLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const session = await auth();
-
-    if (!session) {
-        redirect("/"); // Redirect to Get Started / Auth page
-    }
-
-    return <>{children}</>;
+    return <AppShellAuthGate>{children}</AppShellAuthGate>;
 }

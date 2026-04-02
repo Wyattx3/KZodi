@@ -1,16 +1,9 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import AppShellAuthGate from "@/components/system/AppShellAuthGate";
 
-export default async function StoryLayout({
+export default function StoryLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const session = await auth();
-
-    if (!session) {
-        redirect("/");
-    }
-
-    return <>{children}</>;
+    return <AppShellAuthGate>{children}</AppShellAuthGate>;
 }

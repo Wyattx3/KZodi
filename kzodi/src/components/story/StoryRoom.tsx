@@ -684,6 +684,7 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
     const [inputText, setInputText] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [quickActions, setQuickActions] = useState<string[]>([]);
+    const [runtimeNotice, setRuntimeNotice] = useState<string | null>(null);
     const [showSettings, setShowSettings] = useState(false);
     const [playerCharSelected, setPlayerCharSelected] = useState(() => (
         conversation?.storyData?.allowUserCharacterCustomization !== true ||
@@ -691,8 +692,11 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
     ));
     const storyLogRef = useRef<HTMLDivElement>(null);
     const storyContainerRef = useRef<HTMLDivElement>(null);
+    const storyComposerRef = useRef<HTMLDivElement>(null);
+    const storyInputRef = useRef<HTMLTextAreaElement>(null);
     const { viewportStyle } = useIOSViewportContainment({
         rootRef: storyContainerRef,
+        composerRef: storyComposerRef,
         scrollableSelectors: [".overflow-y-auto"],
     });
 
@@ -764,6 +768,34 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
         storyLogRef.current.scrollTop = storyLogRef.current.scrollHeight;
     }, [parsedMessages.length, isLoading, quickActions.length]);
 
+    useEffect(() => {
+        const inputElement = storyInputRef.current;
+        if (!inputElement) return;
+
+        inputElement.style.height = "0px";
+        inputElement.style.height = `${Math.min(inputElement.scrollHeight, 140)}px`;
+    }, [inputText]);
+
+    useEffect(() => {
+        if (!runtimeNotice) return;
+        const timer = window.setTimeout(() => {
+            setRuntimeNotice(null);
+        }, 3000);
+
+        return () => window.clearTimeout(timer);
+    }, [runtimeNotice]);
+
+    useEffect(() => {
+        if (typeof document === "undefined") return;
+
+        const isBusy = isLoading || inputText.trim().length > 0;
+        document.body.dataset.kakoeiBusy = isBusy ? "true" : "false";
+
+        return () => {
+            document.body.dataset.kakoeiBusy = "false";
+        };
+    }, [inputText, isLoading]);
+
     if (!conversation || conversation.conversationType !== "story") {
         return null;
     }
@@ -784,6 +816,12 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
         }
         setInputText("");
         setQuickActions([]);
+
+        if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            setRuntimeNotice("You're offline. Your action is saved and will sync when the connection returns.");
+            return;
+        }
+
         setIsLoading(true);
 
         try {
@@ -1064,10 +1102,28 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                 </div>
             </header>
 
+            <AnimatePresence>
+                {runtimeNotice && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="mx-5 mt-3 rounded-2xl px-4 py-3 text-[13px] font-medium"
+                        style={{
+                            backgroundColor: isLightBg ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)",
+                            color: textColor,
+                            border: `1px solid ${surfaceBorder}`,
+                        }}
+                    >
+                        {runtimeNotice}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Scrollable Story Format */}
             <div
                 ref={storyLogRef}
-                className="flex-1 overflow-y-auto w-full flex flex-col items-center scroll-smooth px-5 md:px-8 pt-4 pb-48 [&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar-thumb]:rounded-full z-10"
+                className="flex-1 overflow-y-auto w-full flex flex-col items-center scroll-smooth px-5 md:px-8 pt-4 pb-6 [&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar-thumb]:rounded-full z-10"
                 style={{ scrollbarColor: `${isLightBg ? 'rgba(0,0,0,0.15)' : '#2A2622'} transparent` }}
             >
                 <div className="w-full max-w-[680px] flex flex-col gap-10">
@@ -1257,84 +1313,90 @@ export default function StoryRoom({ storyId }: StoryRoomProps) {
                 </div>
             </div>
 
-            {/* Input Footer (Floating Frosted Glass) */}
-            <div className="absolute bottom-0 left-0 w-full flex flex-col items-center pointer-events-none z-20">
-                <div className="w-full h-32 pointer-events-none" style={{ background: `linear-gradient(to top, ${bgColor}, ${bgColor}e6, transparent)` }} />
-                
-                <div className="w-full px-4 md:px-0 pb-6 pt-1 absolute bottom-0 pointer-events-auto">
-                    <div className="w-full max-w-[700px] mx-auto flex flex-col gap-4 relative">
-                        {quickActions.length > 0 && (
-                            <motion.div 
-                                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                                className="flex gap-3 overflow-x-auto w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] px-1 pb-1"
-                            >
-                                {quickActions.map((action) => (
-                                    <button
-                                        key={action}
-                                        type="button"
-                                        onClick={() => void handleAct(action)}
-                                        className="shrink-0 px-5 py-2.5 rounded-full backdrop-blur-md text-[14px] font-sans transition-all active:scale-95 whitespace-nowrap outline-none"
-                                        style={{ backgroundColor: isLightBg ? 'rgba(0,0,0,0.07)' : 'rgba(20,18,15,0.9)', borderWidth: '1px', borderStyle: 'solid', borderColor: isLightBg ? `${themeColor}aa` : `${themeColor}33`, color: isLightBg ? textColor : `${themeColor}cc` }}
-                                    >
-                                        {action}
-                                    </button>
-                                ))}
-                            </motion.div>
-                        )}
+            <div
+                ref={storyComposerRef}
+                className="w-full shrink-0 z-20"
+                style={{
+                    background: `linear-gradient(to top, ${bgColor}, ${bgColor}f0 58%, transparent)`,
+                    borderTop: `1px solid ${surfaceBorder}`,
+                }}
+            >
+                <div
+                    className="w-full max-w-[700px] mx-auto flex flex-col gap-4 px-4 md:px-0 pt-4"
+                    style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}
+                >
+                    {quickActions.length > 0 && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                            className="flex gap-3 overflow-x-auto w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] px-1 pb-1"
+                        >
+                            {quickActions.map((action) => (
+                                <button
+                                    key={action}
+                                    type="button"
+                                    onClick={() => void handleAct(action)}
+                                    className="shrink-0 px-5 py-2.5 rounded-full backdrop-blur-md text-[14px] font-sans transition-all active:scale-95 whitespace-nowrap outline-none"
+                                    style={{ backgroundColor: isLightBg ? 'rgba(0,0,0,0.07)' : 'rgba(20,18,15,0.9)', borderWidth: '1px', borderStyle: 'solid', borderColor: isLightBg ? `${themeColor}aa` : `${themeColor}33`, color: isLightBg ? textColor : `${themeColor}cc` }}
+                                >
+                                    {action}
+                                </button>
+                            ))}
+                        </motion.div>
+                    )}
 
-                        <div className="relative w-full rounded-[30px]" style={{ boxShadow: isLightBg ? '0 -6px 30px rgba(0,0,0,0.08)' : '0 -10px 40px rgba(0,0,0,0.6)' }}>
-                            <textarea
-                                value={inputText}
-                                onChange={(event) => handleInputChange(event.target.value)}
-                                onKeyDown={(event) => {
-                                    if (event.key === "Enter" && !event.shiftKey) {
-                                        event.preventDefault();
-                                        void handleAct();
-                                    }
-                                }}
-                                placeholder="Say or do something..."
-                                rows={1}
-                                className="w-full resize-none rounded-[30px] backdrop-blur-2xl transition-all pl-6 pr-[148px] py-[20px] text-[16px] outline-none min-h-[64px] max-h-[140px] font-sans block pt-[20px] placeholder:text-[var(--story-placeholder)]"
-                                style={{
-                                    backgroundColor: inputBg,
-                                    color: textColor,
-                                    borderWidth: '1px',
-                                    borderStyle: 'solid',
-                                    borderColor: isLightBg ? `${themeColor}99` : `${themeColor}40`,
-                                    ['--tw-placeholder-opacity' as string]: 1,
-                                }}
-                                onFocus={(e) => { e.currentTarget.style.backgroundColor = inputFocusBg; }}
-                                onBlur={(e) => { e.currentTarget.style.backgroundColor = inputBg; }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => void handleAct()}
-                                disabled={isLoading}
-                                aria-label={submitLabel}
-                                className="absolute right-3 bottom-3 h-[40px] min-w-[110px] px-5 rounded-full bg-[var(--story-theme)] flex items-center justify-center cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70 disabled:cursor-wait outline-none shadow-md overflow-hidden text-[14px] font-semibold tracking-[0.02em]"
-                                style={{ color: accentButtonText }}
-                            >
-                                <AnimatePresence mode="wait">
-                                    {isLoading ? (
-                                        <motion.div key="loading" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }}>
-                                            <svg className="animate-spin h-5 w-5" style={{ color: accentButtonText }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-100" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                        </motion.div>
-                                    ) : (
-                                        <motion.span
-                                            key={submitLabel}
-                                            initial={{ opacity: 0, scale: 0.9 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            exit={{ opacity: 0, scale: 0.9 }}
-                                        >
-                                            {submitLabel}
-                                        </motion.span>
-                                    )}
-                                </AnimatePresence>
-                            </button>
-                        </div>
+                    <div className="relative w-full rounded-[30px]" style={{ boxShadow: isLightBg ? '0 -6px 30px rgba(0,0,0,0.08)' : '0 -10px 40px rgba(0,0,0,0.6)' }}>
+                        <textarea
+                            ref={storyInputRef}
+                            value={inputText}
+                            onChange={(event) => handleInputChange(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter" && !event.shiftKey) {
+                                    event.preventDefault();
+                                    void handleAct();
+                                }
+                            }}
+                            placeholder="Say or do something..."
+                            rows={1}
+                            className="w-full resize-none rounded-[30px] backdrop-blur-2xl transition-all pl-6 pr-[148px] py-[20px] text-[16px] outline-none min-h-[64px] max-h-[140px] font-sans block pt-[20px] placeholder:text-[var(--story-placeholder)]"
+                            style={{
+                                backgroundColor: inputBg,
+                                color: textColor,
+                                borderWidth: '1px',
+                                borderStyle: 'solid',
+                                borderColor: isLightBg ? `${themeColor}99` : `${themeColor}40`,
+                                ['--tw-placeholder-opacity' as string]: 1,
+                            }}
+                            onFocus={(e) => { e.currentTarget.style.backgroundColor = inputFocusBg; }}
+                            onBlur={(e) => { e.currentTarget.style.backgroundColor = inputBg; }}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => void handleAct()}
+                            disabled={isLoading}
+                            aria-label={submitLabel}
+                            className="absolute right-3 bottom-3 h-[40px] min-w-[110px] px-5 rounded-full bg-[var(--story-theme)] flex items-center justify-center cursor-pointer hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70 disabled:cursor-wait outline-none shadow-md overflow-hidden text-[14px] font-semibold tracking-[0.02em]"
+                            style={{ color: accentButtonText }}
+                        >
+                            <AnimatePresence mode="wait">
+                                {isLoading ? (
+                                    <motion.div key="loading" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }}>
+                                        <svg className="animate-spin h-5 w-5" style={{ color: accentButtonText }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-100" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    </motion.div>
+                                ) : (
+                                    <motion.span
+                                        key={submitLabel}
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.9 }}
+                                    >
+                                        {submitLabel}
+                                    </motion.span>
+                                )}
+                            </AnimatePresence>
+                        </button>
                     </div>
                 </div>
             </div>
