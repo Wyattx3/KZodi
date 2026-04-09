@@ -83,6 +83,9 @@ export interface EngineInput {
     characterName: string;
     characterPersonality: string;
     characterTag: string;
+    characterScenario?: string;
+    characterGreeting?: string;
+    characterExampleDialogue?: string;
     /** Conversation history */
     history: { id?: string; role: string; content: string; attachment?: { type: string; url: string } }[];
     /**

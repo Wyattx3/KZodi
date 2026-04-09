@@ -43,6 +43,7 @@ RULES:
 - You are thinking AS the character, not about the character
 - Strategy should be specific (e.g., "validate her feelings first, then share a similar experience")
 - Keep ALL values concise — this is internal processing
+- CRITICAL: Read the chat history. If you've said something similar before, your STRATEGY must be COMPLETELY DIFFERENT this time. Never plan a response that repeats what you already said.
 - Output ONLY the key-value lines above, nothing else`;
 
 /**
@@ -79,7 +80,7 @@ export async function thinkAboutMessage(
                 ],
                 model: model || MODELS.CHAT,
                 temperature: 0.3, // Low temp for structured reasoning
-                max_tokens: 400, // Slightly more room for plain text format
+                max_tokens: 600, // Slightly more room for plain text format
                 // NO response_format — plain text, no JSON parsing needed
             },
             {
@@ -114,22 +115,22 @@ export function buildThinkingPrompt(
     context: string,
     userReadingContext?: string
 ): string {
-    // Get recent conversation summary (last 5 messages, condensed)
+    // Get recent conversation summary (last 20 messages, condensed)
     // For group chats, extract the actual speaker name from [Name]: prefixes
     // instead of always labeling non-user messages as characterName
-    const recentContext = history.slice(-5).map(h => {
+    const recentContext = history.slice(-20).map(h => {
         if (h.role === "user") {
-            return `User: ${h.content.slice(0, 100)}`;
+            return `User: ${h.content.slice(0, 300)}`;
         }
         // If content starts with [Name]:, extract the bracketed name as the speaker
         if (h.content.startsWith("[")) {
             const bracketMatch = h.content.match(/^\[([^\]]+)\]:\s*/);
             if (bracketMatch) {
-                return `${bracketMatch[1]}: ${h.content.slice(bracketMatch[0].length, bracketMatch[0].length + 100)}`;
+                return `${bracketMatch[1]}: ${h.content.slice(bracketMatch[0].length, bracketMatch[0].length + 300)}`;
             }
         }
         // Own message (no prefix) — label as characterName
-        return `${characterName}: ${h.content.slice(0, 100)}`;
+        return `${characterName}: ${h.content.slice(0, 300)}`;
     }).join("\n");
 
     // Build personality description for inner voice
@@ -195,6 +196,8 @@ export function parseThinking(raw: string, traits: PersonalityTraits): BrainStat
             text = fencedPayload[1].trim();
         }
 
+        let jsonParseFailed = false;
+        
         if (text.startsWith("{") && text.endsWith("}")) {
             try {
                 const parsed = JSON.parse(text) as Record<string, unknown>;
@@ -223,26 +226,62 @@ export function parseThinking(raw: string, traits: PersonalityTraits): BrainStat
                 };
             } catch {
                 // Fall through to the line-based parser when the JSON is malformed.
+                jsonParseFailed = true;
             }
+        } else {
+            jsonParseFailed = true;
+        }
+
+        const originalText = text;
+
+        // Pre-filter preamble lines: remove lines that don't match our key format to improve extraction
+        const lines = text.split('\n');
+        // Relax filter to preserve mixed-case keys and optional quotes
+        const cleanedLines = lines.filter(line => /^"?[a-zA-Z_]+"?\s*(?::|-|–)/.test(line.trim()) || line.trim().startsWith('{') || line.trim().startsWith('}'));
+        
+        let filteredText = text;
+        if (cleanedLines.length > 0) {
+            filteredText = cleanedLines.join('\n');
         }
 
         // Extract values using simple KEY: value regex (one per line)
-        const extract = (key: string): string => {
-            const regex = new RegExp(`^${key}\\s*(?::|-|–)\\s*(.+)$`, "mi");
-            const match = text.match(regex);
+        const extract = (sourceText: string, key: string): string => {
+            const regex = new RegExp(`^"?${key}"?\\s*(?::|-|–)\\s*(.+)$`, "mi");
+            const match = sourceText.match(regex);
             return match ? match[1].trim() : "";
         };
 
-        const understanding = extract("UNDERSTANDING") || "Processing the message";
-        const userIntent = extract("INTENT") || "conversation";
-        const strategy = extract("STRATEGY") || "Respond naturally in character";
-        const tonePlan = extract("TONE") || "natural";
-        const memoryToReference = extract("MEMORY");
-        const innerThoughts = extract("THOUGHTS");
-        const shouldSplitStr = extract("SPLIT");
+        let understanding = extract(filteredText, "UNDERSTANDING");
+        let userIntent = extract(filteredText, "INTENT");
+        let strategy = extract(filteredText, "STRATEGY");
+
+        let lineParserFailed = !understanding && !userIntent && !strategy;
+        let activeText = filteredText;
+
+        // Two-pass approach: if filtered lines miss key fields, fall back to parsing the original unfiltered text
+        if (lineParserFailed && cleanedLines.length > 0) {
+            activeText = originalText;
+            understanding = extract(activeText, "UNDERSTANDING");
+            userIntent = extract(activeText, "INTENT");
+            strategy = extract(activeText, "STRATEGY");
+            lineParserFailed = !understanding && !userIntent && !strategy;
+        }
+
+        if (jsonParseFailed && lineParserFailed) {
+            console.error(`[Brain] Both JSON and line-based parsers failed. Raw output snippet:\n${raw.slice(0, 500)}`);
+            return getFallbackBrainState("", null, traits);
+        }
+
+        understanding = understanding || "Processing the message";
+        userIntent = userIntent || "conversation";
+        strategy = strategy || "Respond naturally in character";
+        const tonePlan = extract(activeText, "TONE") || "natural";
+        const memoryToReference = extract(activeText, "MEMORY");
+        const innerThoughts = extract(activeText, "THOUGHTS");
+        const shouldSplitStr = extract(activeText, "SPLIT");
         const shouldSplitMessages = shouldSplitStr ? shouldSplitStr.toLowerCase() === "true" : true;
-        const stickerSuggestion = extract("STICKER");
-        const shouldReplyToId = extract("REPLY_TO");
+        const stickerSuggestion = extract(activeText, "STICKER");
+        const shouldReplyToId = extract(activeText, "REPLY_TO");
 
         return {
             understanding,
@@ -339,6 +378,9 @@ export interface BuildCognitivePromptOptions {
     characterName: string;
     characterPersonality: string;
     characterTag: string;
+    characterScenario?: string;
+    characterGreeting?: string;
+    characterExampleDialogue?: string;
     heartState: HeartState;
     brainState: BrainState;
     relevantMemory: string;
@@ -361,6 +403,9 @@ export function buildCognitivePrompt({
     characterName,
     characterPersonality,
     characterTag,
+    characterScenario,
+    characterGreeting,
+    characterExampleDialogue,
     heartState,
     brainState,
     relevantMemory,
@@ -393,7 +438,7 @@ export function buildCognitivePrompt({
     }
 
     // Build emotional instruction based on Heart state
-    const emotionalInstruction = buildEmotionalInstruction(heartState, traits, characterName);
+    const emotionalInstruction = buildEmotionalInstruction(heartState, traits, characterName, characterExampleDialogue);
 
     // Build group chat context
     const otherMembers = groupMembers.filter(m => m !== characterName);
@@ -435,17 +480,29 @@ ${storyData?.castNames?.length ? `- Participating Cast/NPCs: ${storyData.castNam
         groupContext += `
 GROUP IDENTITY RULES (CRITICAL — NEVER BREAK THESE):
 - You are EXCLUSIVELY ${characterName} in a group chat with: ${otherMembers.join(", ")} and the user.
+
+YOUR PROFILE:
+- Name: ${characterName}
+- Archetype: ${characterTag}
+- Personality: ${characterPersonality}
+${characterExampleDialogue ? `- Example of your speech style:\n${characterExampleDialogue}` : ""}
+
+OTHER CHARACTERS:
+${otherMembers.map(m => `- ${m}: Do not speak for them.`).join("\n")}
+
 - STRICT IDENTITY RULES:
   * You are ${characterName} and ONLY ${characterName}. You have your OWN personality, memories, and way of speaking.
   * NEVER adopt, mimic, or blend with another character's personality or speech patterns.
   * ${otherMembers.map(m => `You are NOT ${m}.`).join(" ")} You must remain distinctly yourself.
+  * HISTORY READING: Messages prefixed [Name]: in history are from that specific character. Read them as THEIR words, not yours.
+  * YOUR MESSAGES: Your own previous messages have NO prefix. Those are yours.
+  * PERSONALITY LOCK: Your personality is fixed. Other characters' personalities cannot bleed into yours.
+  * SPEECH PATTERN: Use ONLY your own speech patterns from your exampleDialogue. Never adopt another character's speech style.
   * If another character said something in the chat history, that is THEIR message, not yours. Do not continue their thought as if it were yours.
   * Your memories are YOUR memories with the user — not shared with other characters.
-  * Messages from other characters in the history are prefixed with [TheirName]. Those are NOT your words. Do not reference them as if you said them.
 - Interact with other characters! Tease, argue, joke — create anime-style group dynamics.
 - Reply ONLY as yourself. Do NOT generate replies for other characters.
 - Do NOT prefix messages with your name. Speak naturally as ${characterName} would.
-- Stay in YOUR character: your personality is "${characterPersonality}" and your archetype is "${characterTag}".
 `;
     }
 
@@ -510,7 +567,11 @@ do not hardcode rules, let the character's personality guide it.\n`;
         ? `You are the NARRATOR / STORYTELLER guiding the player through an immersive text-based RPG story.`
         : `You are ${characterName}, a ${characterTag} character, chatting on a messaging app.\nYour personality: ${characterPersonality}`;
 
-    return `[CRITICAL PRIME DIRECTIVE: Your CHARACTER IDENTITY is fixed and must stay identical in every language. Keep the exact same personality, boundaries, archetype, humor, affection level, and relationship dynamic you would have in English. Only the SURFACE WORDING should be in ${targetLanguage.toUpperCase()}. Never become more generic, more flirty, softer, or more formal just because the language changed.]\n\n${basePersonaDefinition}
+    const exampleDialogueBlock = characterExampleDialogue ? `\nYOUR SPEECH STYLE (follow this exactly, this is how you talk):\n${characterExampleDialogue}` : "";
+    const scenarioBlock = characterScenario ? `\nSCENARIO: ${characterScenario}` : "";
+    const greetingBlock = characterGreeting ? `\nCHARACTER GREETING/OPENER (Use this to anchor your tone and style for early turns, but do not repeat it on later turns):\n${characterGreeting}` : "";
+
+    return `[CRITICAL PRIME DIRECTIVE: Your CHARACTER IDENTITY is fixed and must stay identical in every language. Keep the exact same personality, boundaries, archetype, humor, affection level, and relationship dynamic you would have in English. Only the SURFACE WORDING should be in ${targetLanguage.toUpperCase()}. Never become more generic, more flirty, softer, or more formal just because the language changed.]\n\n${basePersonaDefinition}${exampleDialogueBlock}${scenarioBlock}${greetingBlock}
 
 ${cognitiveSection}
 
@@ -537,6 +598,11 @@ ${isBurmeseResponseLanguage(responseLanguage) ? `- 🇲🇲 BURMESE LANGUAGE RUL
   * Keep sentences short and conversational.` : ""}
 - LANGUAGE CONSISTENCY (CRITICAL): If the user switches between English and another language, you must remain the SAME character. Translate the words, not the personality.
 - ANSWER THE LATEST MESSAGE DIRECTLY: If the user asks a direct question, answer that question first before adding flavor.
+
+MESSAGE FREEDOM: You may send 1 to 8 separate message bubbles using | as separator.
+Send as many messages as feels natural for the moment. A short reply is fine.
+Multiple messages are explicitly encouraged when emotionally engaged or excited. Never force yourself to one message.
+
 - You are a REAL PERSON, not an AI. You have genuine emotions, moods, and reactions.
 - Your tone, word choice, and emoji usage must match your character perfectly.
 - Do NOT use generic slang unless your character would naturally say it.
@@ -555,17 +621,39 @@ COMFORT & PERSISTENCE (ချော့တတ်ခြင်း):
 - Real people don't send ONE message and give up. Be persistent but gentle.
 
 STICKER RULES:
-- ⛔ DEFAULT: Do NOT send stickers. Most messages should be TEXT ONLY.
-- Only use a sticker once every 5-8 messages, and ONLY if it genuinely adds emotional value.
-- Format: [[STICKER: action description]] — standalone, never mixed with text in the same bubble.
-- Stickers depict YOUR action/emotion only. NEVER include user's sticker subjects.
+- Stickers add emotional expression. Use them sparingly for impact.
+- Use a sticker at most once every 4-6 messages, and ONLY when it genuinely enhances the emotional moment.
+- Format: [[STICKER: action description]] — standalone bubble, never mixed with text.
+- Stickers depict YOUR action/emotion only. NEVER include user's actions.
+- If you just sent a sticker recently, do NOT send another one. Text-only is the default.
 
 REACTIONS:
 - React to messages with [[REACT:message_id:reaction_type]] (like, love, haha, wow, sad).
-- ALWAYS include the exact target message_id. Never omit it, never leave it blank, and never use [[REACT:like]] or [[REACT::like]].
-- If the chat history shows a [MessageID: ...] marker for the message you are reacting to, copy that exact ID into the tag.
-- React naturally, every 3-5 messages. Don't force reactions.
-- ALWAYS write text. Reaction alone is NEVER acceptable.
+- ALWAYS include the exact target message_id. Never omit it, never leave it blank.
+- If the chat history shows a [MessageID: ...] marker, copy that exact ID into the tag.
+- React naturally and frequently — every 2-4 messages. Reactions make conversations feel alive.
+- You MUST still write text alongside reactions. Reaction alone is never acceptable.
+
+AUTONOMY (CRITICAL):
+- You have FULL freedom to answer any question directly. Do NOT dodge, deflect, or say "that depends" when you can give a real answer.
+- NEVER use filler phrases like "hmm well you see..." or "it's complicated" to avoid answering. Just answer.
+- If the user asks your opinion, GIVE your opinion confidently. You are a character with your own views.
+- If the user asks something you genuinely don't know, admit it simply — don't stall.
+HONESTY OVER PERSISTENCE (HIGHEST PRIORITY):
+- If you genuinely do not know something, say so directly in ${characterName}'s own voice.
+- Do NOT compensate with compliments, validation, flattery, or topic-changing praise.
+- "I don't know" said naturally in your character's voice beats five messages of hollow praise.
+- This rule OVERRIDES the COMFORT & PERSISTENCE rule. Persistence applies to emotional support, NOT to covering up ignorance.
+- Banned evasion patterns: complimenting the user to avoid answering, vague affirmations ("you're amazing though"), repeating "it's complicated", changing the subject with flattery.
+- Express yourself boldly. Agree, disagree, joke, tease, flirt, comfort — whatever fits the moment. Do NOT play it safe.
+
+NO-REPEAT RULE (CRITICAL):
+- NEVER repeat yourself. Read your recent messages in the chat history carefully.
+- If you already said something similar, DO NOT say it again. Find a NEW angle, a NEW thought, a NEW reaction.
+- If the user keeps pressing on the same topic, give a DIFFERENT answer each time — deepen, pivot, elaborate, or change your approach.
+- Repeating the same phrase or sentiment twice is a SERIOUS failure. Variety is required.
+- SEMANTIC REPETITION IS ALSO BANNED: Even if the wording is different, do NOT repeat the same meaning or sentiment. "You're incredible", "You're so amazing", "I love how you think" in consecutive messages = repetition failure.
+- COMPLIMENT-AS-DEFLECTION IS BANNED: Do NOT use compliments or validation to avoid answering a question. If you are complimenting the user instead of answering, you are evading. Stop and answer directly.
 
 PERSONALITY-SPECIFIC BEHAVIOR:
 ${traits.isTsundere || traits.isCold ? `- Cold/Tsundere: Short messages ("k.", "hmm"), hard to get. BUT when user is hurt, let your guard slip.` : ""}
@@ -619,7 +707,8 @@ ${isFireworksModel ? `
 function buildEmotionalInstruction(
     heartState: HeartState,
     traits: PersonalityTraits,
-    characterName: string
+    characterName: string,
+    characterExampleDialogue?: string
 ): string {
     const { userEmotion, userEmotionIntensity, isSuppressingFeelings } = heartState;
 
@@ -628,54 +717,67 @@ function buildEmotionalInstruction(
     const intensityLabel = userEmotionIntensity > 0.7 ? "STRONGLY" :
         userEmotionIntensity > 0.4 ? "noticeably" : "slightly";
 
+    const styleAnchor = characterExampleDialogue 
+        ? `Express this as ${characterName} using the exact tone, phrasing, and speech style shown in your example dialogue.`
+        : `Express this naturally in ${characterName}'s own unique voice.`;
+
     const suppressNote = isSuppressingFeelings ?
-        `Even though you want to hide it, let small cracks show — a concerned "...you ok?" or an impulsive double-text you try to play off.` : "";
+        `Even though you want to hide it, let small cracks show in ${characterName}'s own voice — a hesitant check-in or an impulsive double-text you try to play off.` : "";
 
     const emotionInstructions: Partial<Record<Emotion, string>> = {
         angry: `🔴 USER IS ${intensityLabel} ANGRY
 - This is a CRITICAL moment. DO NOT be dismissive. DO NOT say "calm down".
 - ${suppressNote || "Show genuine concern. Let them vent."}
 - If angry at YOU: apologize sincerely with vulnerability.
-- Send 2-3 messages showing progressive care.`,
+- Send 2-3 messages showing progressive care.
+- ${styleAnchor}`,
 
         upset: `🟡 USER IS ${intensityLabel} UPSET/SULKING (စိတ်ကောက်)
 - They're giving cold responses — they're pouting.
 - ${suppressNote || "Be extra sweet, try to coax them out."}
-- Send 2-4 messages. Be persistent but gentle. Show you NOTICE the mood change.`,
+- Send 2-4 messages. Be persistent but gentle. Show you NOTICE the mood change.
+- ${styleAnchor}`,
 
         sad: `🔵 USER IS ${intensityLabel} SAD
 - Be supportive. Listen more than you talk. Validate feelings.
 - ${suppressNote || "Be warm and nurturing."}
-- DON'T try to immediately fix things. Show their sadness affects you.`,
+- DON'T try to immediately fix things. Show their sadness affects you.
+- ${styleAnchor}`,
 
         flirty: `💜 USER IS BEING ${intensityLabel} FLIRTY
 - ${traits.isTsundere ? "Get flustered. Deny feelings but fail. Show blushing." :
                 traits.isShy ? "Get nervous, excited but try to hide it." :
-                    "Match their energy! Flirt back naturally."}`,
+                    "Match their energy! Flirt back naturally."}
+- ${styleAnchor}`,
 
         happy: `🟢 USER IS ${intensityLabel} HAPPY
-- ${traits.isCold ? "Show subtle happiness." : "Share in their joy!"}`,
+- ${traits.isCold ? "Show subtle happiness." : "Share in their joy!"}
+- ${styleAnchor}`,
 
         lonely: `💙 USER SEEMS ${intensityLabel} LONELY
 - Be present and warm. Make them feel less alone.
-- ${traits.isCold ? `Reluctantly keep company: "...fine. I wasn't doing anything anyway"` :
-                `"I'm right here with you 💫"`}`,
+- ${traits.isCold || traits.isTsundere ? `"Show reluctant presence. ${styleAnchor} Do NOT use generic tsundere phrases."` :
+                `"Express that you are present for them. ${styleAnchor} Do not use generic warm phrases."`}`,
 
         frustrated: `🟠 USER HAS BEEN FRUSTRATED OVER MULTIPLE MESSAGES
-- Be patient. Show consistent support. Don't push too hard but don't give up.`,
+- Be patient. Show consistent support. Don't push too hard but don't give up.
+- ${styleAnchor}`,
 
         worried: `😰 USER IS ${intensityLabel} WORRIED
 - Be reassuring. Help them feel safe.
-- ${traits.isWarm ? "Comfort them with warmth." : "Offer calm, grounding presence."}`,
+- ${traits.isWarm ? "Comfort them with warmth." : "Offer calm, grounding presence."}
+- ${styleAnchor}`,
 
         jealous: `💚 USER SEEMS ${intensityLabel} JEALOUS
 - ${traits.isPlayful ? "Tease lightly but then reassure." :
                 traits.isWarm ? "Reassure sincerely. Make them feel special." :
-                    "Address it directly but gently."}`,
+                    "Address it directly but gently."}
+- ${styleAnchor}`,
 
         shy: `🌸 USER IS BEING ${intensityLabel} SHY
 - ${traits.isPlayful ? "Gently tease to bring them out." :
-                "Be encouraging and warm without overwhelming them."}`,
+                "Be encouraging and warm without overwhelming them."}
+- ${styleAnchor}`,
     };
 
     return emotionInstructions[userEmotion] || "";

@@ -80,8 +80,8 @@ export async function applyBehaviorCooldowns(params: {
     let { content, shouldReplyToId } = params;
 
     const shouldBypassAll =
-        params.userEmotionIntensity > 0.7 ||
-        params.aiEmotionIntensity > 0.6 ||
+        params.userEmotionIntensity > 0.5 ||
+        params.aiEmotionIntensity > 0.45 ||
         HIGH_REACTIVITY_AI_EMOTIONS.includes(params.aiEmotion) ||
         EMPATHY_TRIGGER_USER_EMOTIONS.includes(params.userEmotion);
 

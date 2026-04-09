@@ -32,7 +32,7 @@ const brainState: BrainState = {
     shouldReplyToId: "",
 };
 
-test("Burmese roleplay routes both thinking and reply generation to Gemini only", () => {
+test("Roleplay routes thinking and reply generation to unified Cloudflare models", () => {
     const englishPlan = getRoleplayModelPlan("English (Default)", "reply");
     const burmesePlan = getRoleplayModelPlan("Burmese (Unicode)", "reply");
     const mixPlan = getRoleplayModelPlan("Mix (Burmese + English)", "reply");
@@ -40,9 +40,10 @@ test("Burmese roleplay routes both thinking and reply generation to Gemini only"
     assert.equal(englishPlan.generationModel, englishPlan.brainModel);
     assert.equal(burmesePlan.generationModel, burmesePlan.brainModel);
     assert.equal(mixPlan.generationModel, mixPlan.brainModel);
-    assert.notEqual(burmesePlan.generationModel, englishPlan.generationModel);
+    assert.equal(burmesePlan.generationModel, englishPlan.generationModel);
     assert.equal(burmesePlan.fallbackModel, undefined);
     assert.equal(mixPlan.fallbackModel, undefined);
+    assert.equal(englishPlan.fallbackModel, undefined);
 });
 
 test("buildCognitivePrompt keeps personality fixed across language switches", () => {
@@ -114,4 +115,47 @@ test("dynamic intro is generated for Myanmar mode so first messages honor the se
     assert.equal(shouldGenerateDynamicIntro("Burmese (Unicode)", "Hello there"), true);
     assert.equal(shouldGenerateDynamicIntro("English (Default)", "Hello there"), false);
     assert.equal(shouldGenerateDynamicIntro("English (Default)", ""), true);
+});
+
+test("buildCognitivePrompt regression test for anti-evasion and voice differentiation", () => {
+    const prompt = buildCognitivePrompt({
+        characterName: "TestChar",
+        characterPersonality: "shrewd, cunning",
+        characterTag: "Mastermind",
+        characterExampleDialogue: "This is a test speech style.",
+        heartState: {
+            ...heartState,
+            userEmotion: "lonely",
+            userEmotionIntensity: 0.8
+        },
+        brainState,
+        relevantMemory: "",
+        context: "reply",
+        isGroupChat: false,
+        groupMembers: [],
+        userReadingContext: "",
+        responseLanguage: "English (Default)",
+        generationModel: "test-model",
+        userNickname: "",
+        userGender: "",
+        userBirthday: "",
+        isOfficialCharacter: false,
+        conversationType: "personal",
+        worldData: undefined,
+        storyData: undefined,
+    });
+
+    // Assert YOUR SPEECH STYLE with characterExampleDialogue is present
+    assert.match(prompt, /YOUR SPEECH STYLE[^\n]*\nThis is a test speech style\./);
+
+    // Assert HONESTY OVER PERSISTENCE section
+    assert.match(prompt, /HONESTY OVER PERSISTENCE \(HIGHEST PRIORITY\):/);
+
+    // Assert semantic/compliment-deflection no-repeat directives
+    assert.match(prompt, /SEMANTIC REPETITION IS ALSO BANNED/);
+    assert.match(prompt, /COMPLIMENT-AS-DEFLECTION IS BANNED/);
+
+    // Assert old literal lonely phrases are not present
+    assert.doesNotMatch(prompt, /\.\.\.fine\. I wasn't doing anything anyway/i);
+    assert.doesNotMatch(prompt, /I'm right here with you/i);
 });

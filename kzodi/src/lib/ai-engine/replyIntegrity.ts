@@ -1,7 +1,18 @@
 const ACTION_DIRECTIVE_REGEX = /\[\[\s*(?:REACT|STICKER)\s*:[\s\S]*?\]+/gi;
 
 export function extractActionDirectives(content: string): string[] {
-    return content.match(ACTION_DIRECTIVE_REGEX)?.map((directive) => directive.trim()) || [];
+    const rawDirectives = content.match(ACTION_DIRECTIVE_REGEX)?.map((directive) => directive.trim()) || [];
+    return rawDirectives.filter((d) => {
+        if (/\[\[\s*STICKER\s*:\s*\]\]/i.test(d)) return false;
+        if (/\[\[\s*REACT\s*:/i.test(d)) {
+            const inner = d.replace(/\[\[/g, "").replace(/\]\]/g, "").trim();
+            const parts = inner.split(":");
+            if (parts.length < 3) return false;
+            const msgId = parts[1].trim();
+            if (msgId === "" || msgId.length <= 5 || !/^[A-Za-z0-9_-]+$/.test(msgId)) return false;
+        }
+        return true;
+    });
 }
 
 export function stripActionDirectives(content: string): string {

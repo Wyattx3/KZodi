@@ -1240,6 +1240,20 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         return firstUnread ? firstUnread.id : null;
     });
 
+    function unlockAndProcessQueue() {
+        isAiRespondingRef.current = false;
+        if (pendingMessagesRef.current.length > 0) {
+            const queued = pendingMessagesRef.current;
+            pendingMessagesRef.current = [];
+            const lastMsg = queued[queued.length - 1];
+            console.log(`[Chat] 🔄 Processing ${queued.length} queued message(s), triggering on latest`);
+            setTimeout(() => {
+                triggerAiResponse(lastMsg.text, lastMsg.repliedContent, lastMsg.repliedId)
+                    .catch(err => console.error("Queued AI response failed:", err));
+            }, 300);
+        }
+    }
+
     const triggerAiResponse = async (userMessageText: string, repliedMessageContent?: string, repliedId?: string) => {
         if (typeof navigator !== "undefined" && navigator.onLine === false) {
             showTransientNotice("You're offline. Your message is saved and will sync when the connection returns.");
@@ -1372,7 +1386,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             characterName: member.name,
                             characterPersonality: member.personality,
                             characterTag: member.tag,
-                            history: history.slice(-15),
+                            history: history.slice(-20),
                             context: "reply",
                             isGroupChat: true,
                             groupMembers: groupMemberNames,
@@ -1397,7 +1411,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 }
             }
 
-            isAiRespondingRef.current = false;
+            unlockAndProcessQueue();
             setIsTyping(false);
             setTypingMemberName(null);
             return;
@@ -1428,7 +1442,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             characterName: "Narrator",
                             characterPersonality: "Omniscient narrator, descriptive storyteller",
                             characterTag: "Narrator",
-                            history: history.slice(-15),
+                            history: history.slice(-20),
                             context: "reply",
                             isGroupChat: false,
                             groupMembers: [],
@@ -1447,8 +1461,8 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 } catch (err) {
                     console.error("Narrator response failed:", err);
                 } finally {
-                    isAiRespondingRef.current = false;
                     setIsTyping(false);
+                    unlockAndProcessQueue();
                 }
                 return;
             }
@@ -1461,6 +1475,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         // Don't show typing yet — wait for seen to appear first
 
         try {
+            isAiRespondingRef.current = true;
             const responseLanguage = useChatStore.getState().responseLanguage;
             const isMyanmarReplyMode = isBurmeseResponseLanguage(responseLanguage);
             const currentMessages = useChatStore.getState().conversations[character.id]?.messages || [];
@@ -1513,18 +1528,15 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                 // NOW show typing indicator
                 setIsTyping(true);
 
-                // Mark that AI is actively responding (pauses syncFromDB)
-                isAiRespondingRef.current = true;
-
                 if (data.action === "ignore") {
                     await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 500));
                     setIsTyping(false);
-                    isAiRespondingRef.current = false;
+                    unlockAndProcessQueue();
                 } else {
                     if (!data.reply) {
                         // Reaction-only turn: cooldown stripped all text, nothing to render.
                         setIsTyping(false);
-                        isAiRespondingRef.current = false;
+                        unlockAndProcessQueue();
                         return;
                     }
                     await processAiResponse(data.reply, undefined, undefined, data.delayFactor, data.replyToId);
@@ -1553,7 +1565,7 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                                     characterName: conversationType === "story" ? "Narrator" : character.name,
                                     characterPersonality: conversationType === "story" ? "Omniscient narrator, descriptive storyteller" : character.personality,
                                     characterTag: conversationType === "story" ? "Narrator" : character.tag,
-                                    history: updatedHistory.slice(-15),
+                                    history: updatedHistory.slice(-20),
                                     context: "comfort",
                                     isGroupChat: false,
                                     groupMembers: [],
@@ -1578,32 +1590,17 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                             setIsTyping(false);
                         }
                     }
-                    isAiRespondingRef.current = false;
-
-                    // 🔄 Process queued messages — user sent more while we were responding
-                    if (pendingMessagesRef.current.length > 0) {
-                        const queued = pendingMessagesRef.current;
-                        pendingMessagesRef.current = [];
-                        // Use the LAST queued message as the main trigger
-                        // (AI will see all the queued messages in chat history anyway)
-                        const lastMsg = queued[queued.length - 1];
-                        console.log(`[Chat] 🔄 Processing ${queued.length} queued message(s), triggering on latest`);
-                        // Small delay so the user sees their messages appear first
-                        setTimeout(() => {
-                            triggerAiResponse(lastMsg.text, lastMsg.repliedContent, lastMsg.repliedId)
-                                .catch(err => console.error("Queued AI response failed:", err));
-                        }, 300);
-                    }
+                    unlockAndProcessQueue();
                 }
             } else {
                 addReply(character.id, "Hmm, I lost my train of thought.");
                 setIsTyping(false);
-                isAiRespondingRef.current = false;
+                unlockAndProcessQueue();
             }
         } catch {
             addReply(character.id, "Something went wrong.");
             setIsTyping(false);
-            isAiRespondingRef.current = false;
+            unlockAndProcessQueue();
         }
     };
 
@@ -2237,7 +2234,6 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
         // The reaction was already applied above — no chat bubble is needed.
         if (finalParts.length === 0) {
             setIsTyping(false);
-            isAiRespondingRef.current = false;
             return;
         }
 
@@ -2354,15 +2350,14 @@ export default function ChatRoom({ character, onBack, initialShowProfile = false
                         await processAiResponse(data.reply, undefined, undefined, data.delayFactor);
                     } else {
                         setIsTyping(false);
-                        isAiRespondingRef.current = false;
                     }
                 } else {
                     setIsTyping(false);
-                    isAiRespondingRef.current = false;
                 }
             } catch {
                 setIsTyping(false);
-                isAiRespondingRef.current = false;
+            } finally {
+                unlockAndProcessQueue();
             }
         }, delay);
 

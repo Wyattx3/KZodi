@@ -343,48 +343,48 @@ export function calculateTiming(
     aiSentimentScore: number
 ): TimingState {
     // Base delays
-    let seenDelay = 1000 + Math.random() * 2000; // 1-3s default
-    let readDelay = 300 + Math.random() * 700;     // 0.3-1s default
+    let seenDelay = 500 + Math.random() * 1000; // 0.5-1.5s default
+    let readDelay = 200 + Math.random() * 400;   // 0.2-0.6s default
     let delayFactor = 1.0;
 
     // AI emotional state affects timing
     if (aiSentimentScore > 1.0 || aiEmotion === "happy" || aiEmotion === "excited") {
-        seenDelay = 500 + Math.random() * 1000;    // 0.5-1.5s (reads fast)
-        readDelay = 100 + Math.random() * 300;      // 0.1-0.4s (types fast)
-        delayFactor = 0.8;
+        seenDelay = 300 + Math.random() * 500;    // 0.3-0.8s (reads fast)
+        readDelay = 100 + Math.random() * 200;    // 0.1-0.3s (types fast)
+        delayFactor = 0.7;
     }
 
     if (aiEmotion === "upset" || aiEmotion === "frustrated") {
-        seenDelay = 3000 + Math.random() * 3000;   // 3-6s (sulking)
-        readDelay = 1500 + Math.random() * 2000;    // 1.5-3.5s
-        delayFactor = 1.8;
+        seenDelay = 1500 + Math.random() * 1500;  // 1.5-3s (sulking)
+        readDelay = 500 + Math.random() * 800;     // 0.5-1.3s
+        delayFactor = 1.4;
     }
 
     if (aiEmotion === "angry" || aiSentimentScore < -1.5) {
-        seenDelay = 5000 + Math.random() * 3000;   // 5-8s (very upset)
-        readDelay = 2000 + Math.random() * 2000;    // 2-4s
-        delayFactor = 2.5;
+        seenDelay = 2000 + Math.random() * 2000;  // 2-4s (very upset)
+        readDelay = 800 + Math.random() * 1200;    // 0.8-2s
+        delayFactor = 1.8;
     }
 
     if (aiEmotion === "worried" || aiEmotion === "tender") {
-        seenDelay = 800 + Math.random() * 800;     // 0.8-1.6s (alert, caring)
-        readDelay = 200 + Math.random() * 400;      // 0.2-0.6s
-        delayFactor = 0.9;
+        seenDelay = 400 + Math.random() * 500;    // 0.4-0.9s (alert, caring)
+        readDelay = 100 + Math.random() * 300;     // 0.1-0.4s
+        delayFactor = 0.8;
     }
 
     if (aiEmotion === "shy" || aiEmotion === "flirty") {
-        seenDelay = 2000 + Math.random() * 2000;   // 2-4s (Hesitant / processing feelings)
-        readDelay = 800 + Math.random() * 1200;     // 0.8-2s
-        delayFactor = 1.3;
+        seenDelay = 800 + Math.random() * 1200;   // 0.8-2s (hesitant)
+        readDelay = 400 + Math.random() * 600;     // 0.4-1s
+        delayFactor = 1.1;
     }
 
     // User emotion affects AI timing too
     if (["angry", "upset", "frustrated"].includes(userEmotion)) {
-        seenDelay = Math.max(seenDelay, 4000 + Math.random() * 4000); // 4-8s minimum
+        seenDelay = Math.max(seenDelay, 1500 + Math.random() * 1500); // 1.5-3s minimum
     }
 
     // Intensity amplifies delays
-    const intensityMultiplier = 0.7 + (aiIntensity * 0.6); // 0.7 - 1.3
+    const intensityMultiplier = 0.8 + (aiIntensity * 0.4); // 0.8 - 1.2
     seenDelay *= intensityMultiplier;
     readDelay *= intensityMultiplier;
 

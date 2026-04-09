@@ -26,6 +26,9 @@ interface RoleplayRequest {
     characterName: string;
     characterPersonality: string;
     characterTag: string;
+    characterScenario?: string;
+    characterGreeting?: string;
+    characterExampleDialogue?: string;
     history: { id?: string; role: string; content: string; attachment?: { type: string; url: string } }[];
     context?: "reply" | "proactive" | "proactive-cold" | "proactive-friendly" | "comfort";
     isGroupChat?: boolean;
@@ -53,7 +56,23 @@ function getPinecone() {
     }
     return pineconeInstance;
 }
-const INDEX_NAME = 'kakoei-multi';
+const INDEX_NAME = 'kakoei-multilingual-memory';
+const INDEX_HOST = process.env.PINECONE_INDEX_HOST || '';
+
+/** Get the Pinecone index — uses host URL if available (recommended for v7), falls back to name lookup */
+function getPineconeIndex() {
+    const pc = getPinecone();
+    if (!pc) return null;
+    try {
+        if (INDEX_HOST) {
+            return pc.index(INDEX_NAME, INDEX_HOST);
+        }
+        return pc.index(INDEX_NAME);
+    } catch (e) {
+        console.error("[Pinecone] Failed to get index:", e);
+        return null;
+    }
+}
 
 // ─── RAG Memory Management ─────────────────────────────────────────────────
 
@@ -98,9 +117,8 @@ function classifyMemoryImportance(text: string): "high" | "medium" | "low" {
 
 async function retrieveContext(query: string, characterId: string, userId: string): Promise<string> {
     try {
-        const pc = getPinecone();
-        if (!pc || !query) return "";
-        const index = pc.index(INDEX_NAME);
+        const index = getPineconeIndex();
+        if (!index || !query) return "";
         const vector = await generateEmbeddings(query);
         if (!vector || vector.length === 0) return "";
 
@@ -146,11 +164,10 @@ async function retrieveContext(query: string, characterId: string, userId: strin
 
 async function saveContext(text: string, characterId: string, userId: string, importance: "high" | "medium" | "low" = "medium") {
     try {
-        const pc = getPinecone();
-        if (!pc) return;
         if (importance === "low" && text.length < 15) return;
 
-        const index = pc.index(INDEX_NAME);
+        const index = getPineconeIndex();
+        if (!index) return;
         const vector = await generateEmbeddings(text);
         if (!vector || vector.length === 0) return;
 
@@ -176,7 +193,11 @@ async function saveContext(text: string, characterId: string, userId: string, im
             }]
         });
         console.log(`[RAG] Memory saved (${importance}): ${text.slice(0, 80)}...`);
-    } catch (e) {
+    } catch (e: any) {
+        if (e?.name === "PineconeNotFoundError" || e?.status === 404 || e?.message?.includes("404")) {
+            // Index doesn't exist yet — silently skip
+            return;
+        }
         console.error("Context save failed:", e);
     }
 }
@@ -260,19 +281,11 @@ function restoreReactionDirectives(
     return restored;
 }
 
-function buildLastChanceVisibleReply(responseLanguage?: string): string {
-    if (responseLanguage === "Mix (Burmese + English)") {
-        return "ဟုတ်တယ် that's what I mean";
-    }
-    if (responseLanguage === "Burmese (Unicode)" || responseLanguage === "Burmese (Zawgyi)") {
-        return "ဟုတ်တယ် အဲဒါတကယ်ပြောတာ";
-    }
-    return "i mean it.";
-}
+// BuildLastChanceVisibleReply removed
 
 // ─── Clean AI response text ──────────────────────────────────────────────────
 
-function cleanResponseText(rawContent: string, characterName: string): string {
+function cleanResponseText(rawContent: string, characterName: string, isStoryMode: boolean = false): string {
     let content = rawContent.replace(/^["']+|["']+$/g, "").trim();
     content = unwrapStructuredReplyPayload(content);
 
@@ -319,11 +332,13 @@ function cleanResponseText(rawContent: string, characterName: string): string {
     content = content.replace(/^\[MessageID:\s*[^\]]+\]\s*/i, "").trim();
 
     // Remove character name prefixes
-    const safeCharName = characterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const safeFirstName = characterName.split(" ")[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const namePrefixRegex = new RegExp(`^\\[?(?:${safeCharName}|${safeFirstName})\\]?:?\\s*`, 'i');
-    content = content.replace(namePrefixRegex, "").trim();
-    content = content.replace(/^\[[^\]]+\]:\s*/, "").trim();
+    if (!isStoryMode) {
+        const safeCharName = characterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const safeFirstName = characterName.split(" ")[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const namePrefixRegex = new RegExp(`^\\[?(?:${safeCharName}|${safeFirstName})\\]?:?\\s*`, 'i');
+        content = content.replace(namePrefixRegex, "").trim();
+        content = content.replace(/^\[[^\]]+\]:\s*/, "").trim();
+    }
     content = unwrapStructuredReplyPayload(content);
 
     return content;
@@ -337,7 +352,7 @@ function cleanResponseText(rawContent: string, characterName: string): string {
  * so we enforce short messages programmatically.
  *
  * Rules:
- *   - Each bubble (split by |) must be max ~120 chars for Burmese, ~200 for others
+ *   - Each bubble (split by |) must be max ~160 chars for Burmese, ~350 for others
  *   - If a bubble is too long, split it at sentence boundaries
  *   - Strip any remaining meta-commentary or analysis text
  */
@@ -372,7 +387,7 @@ function enforceShortMessages(content: string, isBurmese: boolean): string {
     // Split by existing pipe separators
     const bubbles = cleaned.split(/\s*\|\s*/).filter(b => b.trim().length > 0);
 
-    const maxCharsPerBubble = isBurmese ? 160 : 250;
+    const maxCharsPerBubble = isBurmese ? 160 : 350;
     const finalBubbles: string[] = [];
 
     for (const bubble of bubbles) {
@@ -409,9 +424,9 @@ function enforceShortMessages(content: string, isBurmese: boolean): string {
 
     // Limit total number of bubbles to prevent infinite distinct chat notifications,
     // but NEVER delete the actual text. Just squash the remaining text into the last bubble.
-    if (finalBubbles.length > 6) {
-        const kept = finalBubbles.slice(0, 5);
-        const squashed = finalBubbles.slice(5).join(" ");
+    if (finalBubbles.length > 8) {
+        const kept = finalBubbles.slice(0, 7);
+        const squashed = finalBubbles.slice(7).join(" ");
         kept.push(squashed);
         return kept.join(" | ");
     }
@@ -595,7 +610,7 @@ export async function POST(request: NextRequest) {
 
         if (!session?.user) {
             return NextResponse.json(
-                { reply: "...", action: "ignore", error: "Unauthorized" },
+                { reply: null, action: "ignore" },
                 { status: 401 }
             );
         }
@@ -621,6 +636,7 @@ export async function POST(request: NextRequest) {
             worldData,
             storyData
         } = body;
+        let { characterScenario, characterGreeting, characterExampleDialogue } = body;
 
         let userNickname, userGender, userBirthday;
         try {
@@ -647,6 +663,32 @@ export async function POST(request: NextRequest) {
             }
         } catch (e) {
             console.warn("[Roleplay] Failed to fetch user profile context:", e);
+        }
+
+        if (reqCharId && (!characterScenario || !characterGreeting || !characterExampleDialogue)) {
+            try {
+                const valkey = (await import("@/lib/redis")).default;
+                const { pool } = await import("@/lib/db");
+                const charCacheKey = `char:${reqCharId}:fields`;
+                const cachedChar = await valkey.get(charCacheKey);
+                if (cachedChar) {
+                    const c = JSON.parse(cachedChar);
+                    if (!characterScenario) characterScenario = c.scenario;
+                    if (!characterGreeting) characterGreeting = c.greeting;
+                    if (!characterExampleDialogue) characterExampleDialogue = c.example_dialogue;
+                } else {
+                    const res = await pool.query("SELECT scenario, greeting, example_dialogue FROM characters WHERE id = $1 LIMIT 1", [reqCharId]);
+                    if (res.rows[0]) {
+                        const c = res.rows[0];
+                        await valkey.setex(charCacheKey, 300, JSON.stringify(c));
+                        if (!characterScenario) characterScenario = c.scenario;
+                        if (!characterGreeting) characterGreeting = c.greeting;
+                        if (!characterExampleDialogue) characterExampleDialogue = c.example_dialogue;
+                    }
+                }
+            } catch (e) {
+                console.warn("[Roleplay] Failed to fetch character fields explicitly:", e);
+            }
         }
 
         const isOfficialCharacter = !characterTag?.match(/^(Original|Specialist)$/i) && !creatorId;
@@ -777,6 +819,9 @@ IMPORTANT RULES:
             characterName,
             characterPersonality,
             characterTag,
+            characterScenario,
+            characterGreeting,
+            characterExampleDialogue,
             history,
             context,
             isGroupChat,
@@ -823,10 +868,6 @@ IMPORTANT RULES:
                 playerMessage: storyPlayerMessage,
             });
 
-            const isBurmeseStory = responseLanguage === "Burmese (Unicode)" ||
-                responseLanguage === "Burmese (Zawgyi)" ||
-                responseLanguage === "Mix (Burmese + English)";
-
             const storyResult = await groq.chat(
                 {
                     messages: [
@@ -837,11 +878,11 @@ IMPORTANT RULES:
                         })),
                         ...(storyPlayerMessage ? [{ role: "user" as const, content: storyPlayerMessage }] : []),
                     ],
-                    model: isBurmeseStory ? MODELS.GEMINI : MODELS.CHAT,
+                    model: MODELS.CHAT,
                     fallbackModel: undefined,
-                    disableProviderFallback: isBurmeseStory,
+                    disableProviderFallback: true,
                     temperature: 0.9,
-                    max_tokens: 1200,
+                    max_tokens: 6000,
                 },
                 {
                     cachePrefix: "story-roleplay",
@@ -852,7 +893,7 @@ IMPORTANT RULES:
 
             const protectedStoryContent = protectReactionDirectives(storyResult.content || "");
             const content = restoreReactionDirectives(
-                cleanResponseText(protectedStoryContent.content, characterName),
+                cleanResponseText(protectedStoryContent.content, characterName, true),
                 protectedStoryContent.directives
             );
 
@@ -915,11 +956,15 @@ IMPORTANT RULES:
                 });
                 content = ensureVisibleReplyContent(
                     content,
-                    recoveredText || buildLastChanceVisibleReply(responseLanguage)
+                    recoveredText || ""
                 );
             } catch (recoveryError) {
                 console.warn("[Roleplay] Failed to recover visible reply text:", recoveryError);
-                content = ensureVisibleReplyContent(content, buildLastChanceVisibleReply(responseLanguage));
+                content = ensureVisibleReplyContent(content, "");
+            }
+            
+            if (!hasVisibleReplyText(content)) {
+                return NextResponse.json({ reply: null, action: "ignore" });
             }
         }
 

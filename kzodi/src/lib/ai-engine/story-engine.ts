@@ -21,7 +21,7 @@ export function buildStoryPrompt({
             ? legacyCastNames.join(", ")
             : "No established cast yet.";
     const recentHistory = history
-        .slice(-10)
+        .slice(-20)
         .map((entry) => `${entry.role === "user" ? "Player" : "Narrator"}: ${entry.content}`)
         .join("\n");
     const languageInstruction = responseLanguage === "English (Default)" || !responseLanguage
@@ -47,16 +47,17 @@ OUTPUT RULES
 - Begin EVERY response with exactly one scene tag in this format: [[SCENE: location | mood | time]]
 - Do not use bullet points, markdown headers, or chat-style formatting
 - Never open with chatty assistant phrases like "Sure!", "Of course!", "Great!", or similar
-- Keep narrator prose to a maximum of 2 short paragraphs (3-4 sentences each) per turn.
+- Keep narrator prose to a maximum of 2 short paragraphs (2-3 sentences each) per turn.
 - Do not over-narrate. Keep narrator prose brief and atmospheric.
-- Every turn must include at least one cast member speaking, acting, or reacting using the tag formats below.
-- Character dialogue: [CHAR:CharacterName]dialogue text[/CHAR]
-- Character action/emote: [ACTION:CharacterName]action description[/ACTION]
-- Character inner thought: [THINK:CharacterName]thought text[/THINK]
-- World/environment event: [WORLD]event description[/WORLD]
+- Every response MUST include at least one speaking turn using [CHAR:CharacterName]dialogue[/CHAR]. This is a NON-OPTIONAL HARD REQUIREMENT.
+- You MUST include an inner thought using [THINK:CharacterName]thought[/THINK] at least once every two turns. This is a NON-OPTIONAL HARD REQUIREMENT.
+- [ACTION:CharacterName]action[/ACTION] — NPC doing something (Optional)
+- [WORLD]event description[/WORLD] — World/environment event (REQUIRED whenever any environmental, background, or world change is described)
+- [[SCENE: location | mood | time]] — Scene header (every response)
+- [[ACTIONS: opt1 | opt2 | opt3]] — Player choices (every 2-3 turns)
 - Interpret the player's input flexibly: it may contain speech, action, emotion, silence, or a mix of these
 - Do not over-author the player's inner feelings, choices, or behavior beyond what their input clearly supports
-- Include [[ACTIONS: opt1 | opt2 | opt3]] every 2-3 turns at dramatically appropriate moments. This is strongly recommended, not optional.
+- Include [[ACTIONS: opt1 | opt2 | opt3]] every 2-3 turns at dramatically appropriate moments. This is REQUIRED every 2-3 turns.
 - If you include [[ACTIONS: ...]], place it at the end and never provide more than 3 options
 - Keep continuity with prior events and the last known scene
 - Write ALL output in ${languageInstruction}

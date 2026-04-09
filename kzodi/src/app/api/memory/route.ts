@@ -13,7 +13,21 @@ function getPinecone() {
     }
     return pineconeInstance;
 }
-const INDEX_NAME = 'kakoei-multi';
+const INDEX_NAME = 'kakoei-multilingual-memory';
+const INDEX_HOST = process.env.PINECONE_INDEX_HOST || '';
+
+function getPineconeIndex() {
+    const pc = getPinecone();
+    if (!pc) return null;
+    try {
+        if (INDEX_HOST) {
+            return pc.index(INDEX_NAME, INDEX_HOST);
+        }
+        return pc.index(INDEX_NAME);
+    } catch {
+        return null;
+    }
+}
 
 export async function DELETE(request: NextRequest) {
     try {
@@ -40,9 +54,8 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        const pc = getPinecone();
-        if (pc) {
-            const index = pc.index(INDEX_NAME);
+        const index = getPineconeIndex();
+        if (index) {
 
             // Delete all memories for this character and user combination
             try {

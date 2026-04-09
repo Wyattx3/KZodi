@@ -17,8 +17,8 @@ export function getRoleplayModelPlan(
     const isNonEnglish = isNonEnglishResponseLanguage(responseLanguage);
 
     return {
-        brainModel: isBurmese ? MODELS.GEMINI : MODELS.CHAT,
-        generationModel: isBurmese ? MODELS.GEMINI : MODELS.CHAT,
+        brainModel: "@cf/google/gemma-4-26b-a4b-it",
+        generationModel: "@cf/google/gemma-4-26b-a4b-it",
         fallbackModel: undefined,
         isBurmese,
         isNonEnglish,

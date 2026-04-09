@@ -3,7 +3,21 @@ import { Pinecone } from '@pinecone-database/pinecone';
 import { generateEmbeddings } from "@/lib/ai-setup";
 import { auth } from "@/auth";
 
-const INDEX_NAME = 'kakoei-multi';
+const INDEX_NAME = 'kakoei-multilingual-memory';
+const INDEX_HOST = process.env.PINECONE_INDEX_HOST || '';
+
+function getPineconeIndex() {
+    const pc = getPinecone();
+    if (!pc) return null;
+    try {
+        if (INDEX_HOST) {
+            return pc.index(INDEX_NAME, INDEX_HOST);
+        }
+        return pc.index(INDEX_NAME);
+    } catch {
+        return null;
+    }
+}
 
 let pineconeInstance: Pinecone | null = null;
 function getPinecone() {
@@ -33,12 +47,10 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: "characterId required" }, { status: 400 });
         }
 
-        const pc = getPinecone();
-        if (!pc) {
+        const index = getPineconeIndex();
+        if (!index) {
             return NextResponse.json({ error: "Pinecone not configured" }, { status: 500 });
         }
-
-        const index = pc.index(INDEX_NAME);
 
         // If a query is provided, do semantic search; otherwise list recent
         let vector: number[] | undefined;
@@ -95,12 +107,10 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: "characterId required" }, { status: 400 });
         }
 
-        const pc = getPinecone();
-        if (!pc) {
+        const index = getPineconeIndex();
+        if (!index) {
             return NextResponse.json({ error: "Pinecone not configured" }, { status: 500 });
         }
-
-        const index = pc.index(INDEX_NAME);
 
         if (clearAll) {
             // Delete all vectors for this character + user
@@ -151,12 +161,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "characterId and text required" }, { status: 400 });
         }
 
-        const pc = getPinecone();
-        if (!pc) {
+        const index = getPineconeIndex();
+        if (!index) {
             return NextResponse.json({ error: "Pinecone not configured" }, { status: 500 });
         }
-
-        const index = pc.index(INDEX_NAME);
         const vector = await generateEmbeddings(text);
         if (!vector || vector.length === 0) {
             return NextResponse.json({ error: "Embedding failed" }, { status: 500 });

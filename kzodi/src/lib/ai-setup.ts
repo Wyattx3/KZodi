@@ -21,7 +21,8 @@ function getPinecone() {
 }
 
 // 1024-dimension index for Pinecone Multilingual AI embeddings
-const INDEX_NAME = 'kakoei-multi';
+const INDEX_NAME = 'kakoei-multilingual-memory';
+const INDEX_HOST = process.env.PINECONE_INDEX_HOST || '';
 
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY || ''
@@ -186,8 +187,13 @@ export async function analyzeCharacterSource(text: string, name: string) {
         temperature: 0.5,
         response_format: { type: "json_object" }
     });
-
-    return JSON.parse(completion.choices[0]?.message?.content || "{}");
+    const content = completion.choices[0]?.message?.content || "{}";
+    try {
+        return JSON.parse(content);
+    } catch (err) {
+        console.error(`[ai-setup] JSON.parse failed for analyzeCharacterSource. Raw snippet: ${content.substring(0, 100)}`);
+        return {};
+    }
 }
 
 // Index into Pinecone
@@ -196,7 +202,7 @@ export async function indexCharacterData(charId: string, text: string, metadata:
     if (!pc) return;
 
     const chunks = text.match(/.{1,1000}/g) || [];
-    const index = pc.index(INDEX_NAME);
+    const index = INDEX_HOST ? pc.index(INDEX_NAME, INDEX_HOST) : pc.index(INDEX_NAME);
 
     const vectorData = [];
 

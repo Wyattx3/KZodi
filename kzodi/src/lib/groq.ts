@@ -101,14 +101,14 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // ─── Model Configuration ─────────────────────────────────────────────────────
 
-const MODEL = "moonshotai/kimi-k2-instruct-0905";
+const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const FALLBACK_MODEL = "llama-3.3-70b-versatile";
-const GEMINI_MODEL = "gemini-3-flash-preview";
+const GEMINI_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 
 export const MODELS = {
   CHAT: MODEL,
-  ANALYZE: MODEL,
-  VISION: MODEL, // Fallback to text model since vision model is unavailable
+  ANALYZE: "moonshotai/kimi-k2-instruct-0905",
+  VISION: "moonshotai/kimi-k2-instruct-0905", // Fallback to text model since vision model is unavailable
   GEMINI: GEMINI_MODEL,
 } as const;
 
@@ -117,6 +117,7 @@ const MODEL_TPM_LIMITS: Record<string, number> = {
   "gemini-3-flash-preview": 1_000_000,
   "moonshotai/kimi-k2-instruct-0905": 300_000,
   "llama-3.3-70b-versatile": 300_000,
+  "@cf/google/gemma-4-26b-a4b-it": 999_999_999,
 };
 
 // ─── LRU Cache ───────────────────────────────────────────────────────────────
@@ -317,10 +318,12 @@ export const PROVIDERS = {
   XAI: "xai",
   OLLAMA: "ollama",
   FIREWORKS: "fireworks",
-  GEMINI: "gemini"
+  GEMINI: "gemini",
+  CLOUDFLARE: "cloudflare"
 };
 
 function determineProvider(model: string): string {
+  if (model.startsWith("@cf/")) return PROVIDERS.CLOUDFLARE;
   if (model.includes("gemini")) return PROVIDERS.GEMINI;
   if (model.includes("grok")) return PROVIDERS.XAI;
   if (model.includes("ollama")) return PROVIDERS.OLLAMA;
@@ -342,7 +345,8 @@ class MultiProviderClient {
     if (!this.queues.has(model)) {
       // Allow more concurrency for Ollama since it's local
       const isOllama = model.includes("ollama");
-      this.queues.set(model, new RequestQueue(isOllama ? 4 : 2));
+      const isCloudflare = model.startsWith("@cf/");
+      this.queues.set(model, new RequestQueue(isOllama ? 4 : (isCloudflare ? 8 : 2)));
     }
     return this.queues.get(model)!;
   }
@@ -369,7 +373,8 @@ class MultiProviderClient {
     const result = await queue.enqueue(() => this.callWithRetry(params, maxRetries, useCache ? cachePrefix : null));
 
     // Auto-fallback: if primary model returns empty/too-short, try fallback model
-    const fallbackToUse = params.disableProviderFallback ? undefined : (params.fallbackModel || FALLBACK_MODEL);
+    const provider = determineProvider(model);
+    const fallbackToUse = params.disableProviderFallback || provider === PROVIDERS.CLOUDFLARE ? undefined : (params.fallbackModel || FALLBACK_MODEL);
     if ((!result.content || result.content.length < 10) && model === MODEL && fallbackToUse) {
       console.warn(`[AI] Primary model empty (${result.content.length} chars). Auto-fallback to ${fallbackToUse}...`);
       const fallbackParams = { ...params, model: fallbackToUse };
@@ -391,7 +396,7 @@ class MultiProviderClient {
     const backoffs = [1000, 2000, 4000, 8000];
     const model = params.model || MODELS.CHAT;
     const provider = determineProvider(model);
-    const fallbackToUse = params.disableProviderFallback ? undefined : (params.fallbackModel || FALLBACK_MODEL);
+    const fallbackToUse = params.disableProviderFallback || provider === PROVIDERS.CLOUDFLARE ? undefined : (params.fallbackModel || FALLBACK_MODEL);
 
     // Estimate tokens
     const inputText = params.messages.map((m) => m.content).join("");
@@ -450,6 +455,15 @@ class MultiProviderClient {
              return { content: "", finish_reason: "missing_api_key", truncated: false, cached: false, provider };
           }
           headers.Authorization = `Bearer ${apiKey}`;
+        } else if (provider === PROVIDERS.CLOUDFLARE) {
+          const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const apiToken = process.env.CLOUDFLARE_API_TOKEN || process.env.CLOUDFLARE_WORKER_AI_API;
+          if (!accountId || !apiToken) {
+            console.warn("[AI] CLOUDFLARE credentials missing");
+            return { content: "", finish_reason: "missing_api_key", truncated: false, cached: false, provider };
+          }
+          apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/chat/completions`;
+          headers.Authorization = `Bearer ${apiToken}`;
         } else if (provider === PROVIDERS.GROQ) {
           apiUrl = GROQ_URL;
           const currentKey = keyPool.getKey();
@@ -495,6 +509,9 @@ class MultiProviderClient {
           body.temperature = params.temperature ?? 0.7;
           body.max_tokens = params.max_tokens ?? 1000;
           // Do NOT send response_format for DeepSeek — it causes malformed output
+        } else if (provider === PROVIDERS.CLOUDFLARE) {
+          body.temperature = params.temperature ?? 0.7;
+          body.max_tokens = params.max_tokens ?? 1000;
         } else {
           body.temperature = params.temperature ?? 0.7;
           body.max_tokens = params.max_tokens ?? 1000;
@@ -533,7 +550,7 @@ class MultiProviderClient {
           return { content: "", finish_reason: "rate_limited", truncated: false, cached: false, provider };
         }
 
-        if (res.status >= 500) {
+        if (res.status >= 500 || (res.status === 429 && provider === PROVIDERS.CLOUDFLARE)) {
           const waitMs = backoffs[attempt] || 8000;
           console.warn(`[AI] Server error (${res.status}) on ${model}. Wait ${waitMs}ms`);
           if (attempt < maxRetries) {
@@ -575,6 +592,20 @@ class MultiProviderClient {
           content = data.message?.content || "";
           finishReason = data.done ? "stop" : "unknown";
           // Optional: map Ollama specific metrics here if wanted
+        } else if (provider === PROVIDERS.CLOUDFLARE) {
+          const chatContent = data.choices?.[0]?.message?.content;
+          if (chatContent) {
+            content = chatContent;
+            console.log(`[AI][CLOUDFLARE] Parsed using OpenAI-compatible content path (${content.length} chars)`);
+          } else {
+            content = data.result?.response || "";
+            if (content) {
+              console.log(`[AI][CLOUDFLARE] Parsed using legacy result.response path (${content.length} chars)`);
+            } else {
+              console.log(`[AI][CLOUDFLARE] Response empty or format unrecognized`);
+            }
+          }
+          finishReason = "stop"; 
         } else {
           const choice = data.choices?.[0];
           // IMPORTANT: DeepSeek models return reasoning in `reasoning_content` (separate field).
@@ -587,22 +618,6 @@ class MultiProviderClient {
             console.log(`[AI][FIREWORKS] actual content: "${content.slice(0, 100)}..."`);
           }
 
-          // Strip <think>...</think> tags that DeepSeek may embed in content
-          // Use GREEDY matching to catch everything between first <think> and last </think>
-          content = content.replace(/<think>[\s\S]*<\/think>/g, "").trim();
-          // Handle unclosed </think> tag (reasoning at start of content)
-          const thinkEndIdx = content.indexOf("</think>");
-          if (thinkEndIdx !== -1) {
-            content = content.slice(thinkEndIdx + 8).trim();
-          }
-          // Handle opening <think> without closing (cut off by max_tokens)
-          const thinkStartIdx = content.indexOf("<think>");
-          if (thinkStartIdx !== -1) {
-            content = content.slice(0, thinkStartIdx).trim();
-          }
-
-
-
           finishReason = choice?.finish_reason || "unknown";
           truncated = finishReason === "length";
 
@@ -613,6 +628,20 @@ class MultiProviderClient {
           } else {
             this.tpm.record(model, estimatedTotal);
           }
+        }
+
+        // Strip <think>...</think> tags that DeepSeek may embed in content
+        // Use GREEDY matching to catch everything between first <think> and last </think>
+        content = content.replace(/<think>[\s\S]*<\/think>/g, "").trim();
+        // Handle unclosed </think> tag (reasoning at start of content)
+        const thinkEndIdx = content.indexOf("</think>");
+        if (thinkEndIdx !== -1) {
+          content = content.slice(thinkEndIdx + 8).trim();
+        }
+        // Handle opening <think> without closing (cut off by max_tokens)
+        const thinkStartIdx = content.indexOf("<think>");
+        if (thinkStartIdx !== -1) {
+          content = content.slice(0, thinkStartIdx).trim();
         }
 
         if (truncated) {

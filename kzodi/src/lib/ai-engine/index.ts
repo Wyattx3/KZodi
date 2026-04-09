@@ -39,6 +39,9 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         characterName,
         characterPersonality,
         characterTag,
+        characterScenario,
+        characterGreeting,
+        characterExampleDialogue,
         history,
         context,
         isGroupChat,
@@ -129,6 +132,9 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
         characterName,
         characterPersonality,
         characterTag,
+        characterScenario,
+        characterGreeting,
+        characterExampleDialogue,
         heartState,
         brainState,
         relevantMemory,
@@ -150,7 +156,7 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
     // Build messages array
     // For Fireworks/DeepSeek: increase history to 20 messages to provide enough context
     // for logical conversation flow, resolving the issue of nonsensical replies.
-    const historyLimit = isBurmese ? 24 : (isFireworksModel ? 20 : 30);
+    const historyLimit = 20;
     const recentHistory = history.slice(-historyLimit);
 
     // For group chats, prepend the groupCue to the user message so the AI sees
@@ -167,6 +173,10 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
             let textContent = h.role === "user" && h.id && h.content
                 ? `[MessageID: ${h.id}] ${h.content}`
                 : (h.content || " ");
+
+            if (isGroupChat && h.role === "assistant" && !textContent.startsWith("[")) {
+                textContent = `[${characterName}]: ${textContent}`;
+            }
 
             // For Fireworks: truncate older messages to save input tokens
             if (isFireworksModel && !isRecent && textContent.length > 200) {
@@ -192,16 +202,11 @@ export async function processMessage(input: EngineInput): Promise<EngineOutput> 
 
     // Emotional state affects generation parameters
     const isEmotional = heartState.userEmotion !== "neutral" || context === "comfort";
-    let maxTokens = isEmotional ? 800 : 600;
-    let temperature = isEmotional ? 0.95 : 0.9;
-
-    // For Burmese, allow higher maxTokens since Myanmar Unicode characters
-    // use more tokens per word than English. Length is still enforced
-    // post-generation by enforceShortMessages().
-    if (isBurmese) {
-        temperature = isEmotional ? 0.94 : 0.9;
-        maxTokens = isEmotional ? 1000 : 800;
-    }
+    const baseTokens = isGroupChat ? 3500 : 3000;
+    const emotionalBonus = isEmotional ? 800 : 0;
+    const burmeseBonus = isBurmese ? 500 : 0;
+    const maxTokens = Math.min(baseTokens + emotionalBonus + burmeseBonus, 4096);
+    const temperature = isEmotional ? 0.97 : 0.92;
 
     const result = await groq.chat(
         {

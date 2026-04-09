@@ -90,8 +90,8 @@ Using this information, generate your response. Remember to format the output wi
     if (!result.content) {
       console.error("[Chat] Empty response, finish_reason:", result.finish_reason);
       return NextResponse.json(
-        { reply: "The stars are momentarily clouded. Please try again.", directLang: false },
-        { status: 200 }
+        { reply: null },
+        { status: 503 }
       );
     }
 
@@ -107,8 +107,8 @@ Using this information, generate your response. Remember to format the output wi
   } catch (error) {
     console.error("Chat error:", error);
     return NextResponse.json(
-      { reply: "Something went wrong. Please try again.", directLang: false },
-      { status: 200 }
+      { reply: null },
+      { status: 500 }
     );
   }
 }
