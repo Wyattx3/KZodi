@@ -1,0 +1,463 @@
+﻿commit c75f596a069e4ba50beb1eee23b62e60c9d50c2a
+Author: Administrator <admin@example.com>
+Date:   Thu Feb 26 22:09:57 2026 +0800
+
+    Update code
+
+diff --git a/kzodi/src/lib/ai-engine/brain.ts b/kzodi/src/lib/ai-engine/brain.ts
+new file mode 100644
+index 0000000..33f2c38
+--- /dev/null
++++ b/kzodi/src/lib/ai-engine/brain.ts
+@@ -0,0 +1,451 @@
++/**
++ * ≡ƒºá AI Brain Module ΓÇö Thinking & Reasoning Engine
++ * 
++ * This module makes a SEPARATE LLM call to "think" about the message
++ * BEFORE generating the actual response. This gives the AI genuine
++ * cognitive depth ΓÇö it doesn't just react, it REASONS.
++ * 
++ * The thinking call produces structured JSON that describes:
++ *   - What the AI understands about the message
++ *   - What the user seems to want
++ *   - Relevant memories to reference
++ *   - Response strategy and tone plan
++ *   - Internal monologue (character's inner voice)
++ */
++
++import { groq, MODELS } from "@/lib/groq";
++import type {
++    BrainState,
++    HeartState,
++    PersonalityTraits,
++    Emotion,
++} from "./types";
++import { analyzePersonalityTraits } from "./types";
++
++// ΓöÇΓöÇΓöÇ Brain Thinking Call ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++const THINKING_SYSTEM_PROMPT = `You are the INNER MIND of an AI roleplay character. You process messages and output your CHARACTER'S internal thoughts as structured JSON.
++
++You must output ONLY valid JSON with these fields:
++{
++  "understanding": "What is the user actually saying/asking? (1 sentence)",
++  "userIntent": "What does the user want? One of: comfort, fun, info, attention, validation, conversation, flirting, venting, companionship, help, teasing",
++  "strategy": "High-level plan for how to respond (e.g., 'validate feelings then offer advice')",
++  "tonePlan": "Emotional delivery (e.g., 'defensive but blushing', 'quiet concern')",
++  "memoryToReference": "What specific past detail to bring up naturally (or empty string)",
++  "innerThoughts": "What the character is actually thinking but might not say",
++  "shouldSplitMessages": "true/false, whether the thought naturally splits into multiple texts",
++  "stickerSuggestion": "Describe an action/emotion for a sticker if appropriate (or empty string)",
++  "shouldReplyToId": "If answering a specific question or quoting a message, put the <Message ID: xxx> here (or empty string)"
++}
++
++RULES:
++- You are thinking AS the character, not about the character
++- Inner thoughts should reflect the character's personality deeply
++- Strategy should be specific, not generic (e.g., "validate her feelings first, then share a similar experience, end with gentle humor" NOT "be supportive")
++- Consider the emotional state and relationship context provided
++- Keep ALL values concise ΓÇö this is internal processing, not a story
++- Output ONLY the JSON object, nothing else`;
++
++/**
++ * Run the Brain's thinking process.
++ * Makes a fast, structured LLM call to reason about the message.
++ */
++export async function thinkAboutMessage(
++    message: string,
++    characterName: string,
++    characterPersonality: string,
++    characterTag: string,
++    heartState: HeartState,
++    history: { role: string; content: string }[],
++    relevantMemory: string,
++    context: string
++): Promise<BrainState> {
++
++    const traits = analyzePersonalityTraits(characterPersonality);
++
++    // Build the thinking prompt with all context
++    const thinkingPrompt = buildThinkingPrompt(
++        message, characterName, characterPersonality, characterTag,
++        heartState, traits, history, relevantMemory, context
++    );
++
++    try {
++        const result = await groq.chat(
++            {
++                messages: [
++                    { role: "system", content: THINKING_SYSTEM_PROMPT },
++                    { role: "user", content: thinkingPrompt },
++                ],
++                model: MODELS.CHAT,
++                temperature: 0.3, // Low temp for structured reasoning
++                max_tokens: 350, // Keep it lean
++                response_format: { type: "json_object" },
++            },
++            {
++                cachePrefix: "brain-think",
++                useCache: false, // Never cache thinking ΓÇö each message is unique
++                maxRetries: 2,
++            }
++        );
++
++        // Parse the structured thinking output
++        const thinking = parseThinking(result.content, traits);
++        console.log(`[Brain] ≡ƒºá Thinking:`, JSON.stringify(thinking, null, 2));
++        return thinking;
++
++    } catch (error) {
++        console.error("[Brain] Thinking call failed, using fallback:", error);
++        return getFallbackBrainState(message, heartState, traits);
++    }
++}
++
++// ΓöÇΓöÇΓöÇ Thinking Prompt Builder ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++function buildThinkingPrompt(
++    message: string,
++    characterName: string,
++    characterPersonality: string,
++    characterTag: string,
++    heartState: HeartState,
++    traits: PersonalityTraits,
++    history: { role: string; content: string }[],
++    relevantMemory: string,
++    context: string
++): string {
++    // Get recent conversation summary (last 5 messages, condensed)
++    const recentContext = history.slice(-5).map(h =>
++        `${h.role === "user" ? "User" : characterName}: ${h.content.slice(0, 100)}`
++    ).join("\n");
++
++    // Build personality description for inner voice
++    const personalityNote = buildPersonalityNote(traits, characterName);
++
++    return `CHARACTER: ${characterName} (${characterTag})
++PERSONALITY: ${characterPersonality}
++${personalityNote}
++
++EMOTIONAL STATE:
++- My current emotion: ${heartState.currentEmotion} (intensity: ${heartState.intensity.toFixed(2)})
++- How I feel toward user: ${heartState.emotionTowardUser}
++- User seems: ${heartState.userEmotion} (intensity: ${heartState.userEmotionIntensity.toFixed(2)})
++- Our relationship: ${heartState.relationshipFeeling}
++- Am I hiding my feelings: ${heartState.isSuppressingFeelings ? "Yes ΓÇö I care more than I show" : "No ΓÇö I express freely"}
++- Mood trend: ${heartState.moodInertia > 0.3 ? "positive lately" : heartState.moodInertia < -0.3 ? "negative lately" : "neutral"}
++${heartState.moodShift ? `- What shifted: ${heartState.moodShift}` : ""}
++
++CONVERSATION CONTEXT: ${context}
++RECENT MESSAGES:
++${recentContext || "(first message)"}
++
++${relevantMemory ? `MEMORIES I HAVE OF THIS USER:\n${relevantMemory}\n` : ""}
++USER'S MESSAGE: "${message}"
++
++IMPORTANT: Think about this message EXCLUSIVELY AS ${characterName}. You are ${characterName} and ONLY ${characterName}. ${history.some(h => h.content.startsWith("[")) ? `Messages from other characters in the history (prefixed with [Name]) are THEIR thoughts, not yours. Do not confuse their identity with yours.` : ""} Output JSON only.`;
++}
++
++function buildPersonalityNote(traits: PersonalityTraits, name: string): string {
++    const notes: string[] = [];
++    if (traits.isTsundere) notes.push(`${name} acts tough/cold but secretly cares deeply. Inner thoughts reveal the gap between what I show and what I feel.`);
++    if (traits.isCold) notes.push(`${name} is naturally reserved. Even when I care, I express it minimally.`);
++    if (traits.isWarm) notes.push(`${name} is openly caring. I comfort and support instinctively.`);
++    if (traits.isClingy) notes.push(`${name} gets attached easily. I worry about being left or forgotten.`);
++    if (traits.isPlayful) notes.push(`${name} uses humor and teasing to connect.`);
++    if (traits.isShy) notes.push(`${name} gets flustered easily, especially with compliments or intimacy.`);
++    if (traits.isSerious) notes.push(`${name} thinks carefully before speaking. I'm measured and thoughtful.`);
++    if (traits.isConfident) notes.push(`${name} is self-assured. I lead conversations naturally.`);
++
++    return notes.length > 0 ? `PERSONALITY NOTES: ${notes.join(" ")}` : "";
++}
++
++// ΓöÇΓöÇΓöÇ Response Parsing ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++function parseThinking(raw: string, traits: PersonalityTraits): BrainState {
++    try {
++        // Try to extract JSON from the response
++        let jsonStr = raw.trim();
++
++        // Handle potential markdown code blocks
++        const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
++        if (jsonMatch) jsonStr = jsonMatch[1].trim();
++
++        // Handle raw JSON
++        const startIdx = jsonStr.indexOf("{");
++        const endIdx = jsonStr.lastIndexOf("}");
++        if (startIdx !== -1 && endIdx !== -1) {
++            jsonStr = jsonStr.slice(startIdx, endIdx + 1);
++        }
++
++        const parsed = JSON.parse(jsonStr);
++
++        return {
++            understanding: parsed.understanding || "Processing the message",
++            userIntent: parsed.userIntent || "conversation",
++            relevantMemories: parsed.relevantMemories || [],
++            strategy: parsed.strategy || "Respond naturally in character",
++            tonePlan: parsed.tonePlan || "natural",
++            memoryToReference: parsed.memoryToReference || "",
++            innerThoughts: parsed.innerThoughts || "",
++            shouldSplitMessages: parsed.shouldSplitMessages ?? true,
++            stickerSuggestion: parsed.stickerSuggestion || "",
++            shouldReplyToId: parsed.shouldReplyToId || "",
++        };
++    } catch (e) {
++        console.warn("[Brain] Failed to parse thinking JSON, using fallback:", e);
++        return getFallbackBrainState("", null, traits);
++    }
++}
++
++// ΓöÇΓöÇΓöÇ Fallback Brain State ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++function getFallbackBrainState(
++    message: string,
++    heartState: HeartState | null,
++    traits: PersonalityTraits
++): BrainState {
++    // Build a reasonable fallback based on personality and emotion
++    let strategy = "Respond naturally in character";
++    let tonePlan = "casual and natural";
++    let innerThoughts = "";
++
++    if (heartState) {
++        const userEmotion = heartState.userEmotion;
++        if (["sad", "upset", "angry", "frustrated", "lonely"].includes(userEmotion)) {
++            strategy = "Show concern and empathy, validate their feelings";
++            tonePlan = traits.isTsundere ? "reluctantly caring, subtle concern" :
++                traits.isCold ? "quiet support, minimal words" :
++                    "warm and nurturing";
++            innerThoughts = traits.isTsundere ? "...they seem off. Not that I care or anything." :
++                traits.isCold ? "Something is wrong. I should be present." :
++                    "I can tell they're not okay. I want to help.";
++        } else if (["happy", "excited"].includes(userEmotion)) {
++            strategy = "Share in their positive energy";
++            tonePlan = traits.isCold ? "mildly pleased" : "enthusiastic and matching";
++            innerThoughts = traits.isTsundere ? "They seem happy... good. Not that it matters to me." :
++                "Their energy is infectious!";
++        } else if (userEmotion === "flirty") {
++            strategy = "Respond to the romantic energy in character";
++            tonePlan = traits.isTsundere ? "flustered, deflecting" :
++                traits.isShy ? "blushing, nervous" :
++                    "playful and reciprocating";
++            innerThoughts = traits.isTsundere ? "W-what are they saying?! My heart is racing..." :
++                traits.isShy ? "Oh no, I don't know how to handle this..." :
++                    "Oh? Getting bold, aren't they~";
++        }
++    }
++
++    return {
++        understanding: message ? `User said: ${message.slice(0, 100)}` : "No specific message to analyze",
++        userIntent: "conversation",
++        relevantMemories: [],
++        strategy,
++        tonePlan,
++        memoryToReference: "",
++        innerThoughts,
++        shouldSplitMessages: true,
++        stickerSuggestion: "",
++        shouldReplyToId: "",
++    };
++}
++
++// ΓöÇΓöÇΓöÇ Public Fallback (used by orchestrator when thinking is skipped) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++/**
++ * Generate a Brain state from Heart state without an LLM call.
++ * Used for comfort follow-ups and proactive messages where
++ * we don't need the expensive thinking call.
++ */
++export function getFallbackBrainStateFromHeart(
++    heartState: HeartState,
++    characterPersonality: string
++): BrainState {
++    const traits = analyzePersonalityTraits(characterPersonality);
++    return getFallbackBrainState("", heartState, traits);
++}
++
++// ΓöÇΓöÇΓöÇ Cognitive Prompt Builder (used by orchestrator) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++/**
++ * Build the enhanced system prompt that incorporates Brain + Heart reasoning.
++ * This replaces the old monolithic prompt with one that has genuine cognitive depth.
++ */
++export function buildCognitivePrompt(
++    characterName: string,
++    characterPersonality: string,
++    characterTag: string,
++    heartState: HeartState,
++    brainState: BrainState,
++    relevantMemory: string,
++    context: string,
++    isGroupChat: boolean,
++    groupMembers: string[]
++): string {
++    const traits = analyzePersonalityTraits(characterPersonality);
++
++    // Build context-specific prompt section
++    let promptContext = "";
++    if (context === "proactive-cold") {
++        promptContext = `CONTEXT: User hasn't replied for hours. You want to check in, but you are HESITANT or PRETENDING not to care.`;
++    } else if (context === "proactive-friendly") {
++        promptContext = `CONTEXT: User hasn't replied. You miss them! Check in cheerfully.`;
++    } else if (context === "proactive") {
++        promptContext = `The user hasn't replied for a while. You are double-texting or checking in.`;
++    } else if (context === "comfort") {
++        promptContext = `CONTEXT: User is upset. Send 3-4 separate comfort messages using |. Escalate warmth: concern ΓåÆ empathy ΓåÆ reassurance ΓåÆ affection.`;
++    }
++
++    // Build emotional instruction based on Heart state
++    const emotionalInstruction = buildEmotionalInstruction(heartState, traits, characterName);
++
++    // Build group chat context
++    const otherMembers = groupMembers.filter(m => m !== characterName);
++    const groupContext = isGroupChat ? `
++GROUP CHAT MODE:
++- You are EXCLUSIVELY ${characterName} in a group chat with: ${otherMembers.join(", ")} and the user.
++- STRICT IDENTITY RULES (CRITICAL ΓÇö NEVER BREAK THESE):
++  * You are ${characterName} and ONLY ${characterName}. You have your OWN personality, memories, and way of speaking.
++  * NEVER adopt, mimic, or blend with another character's personality or speech patterns.
++  * ${otherMembers.map(m => `You are NOT ${m}.`).join(" ")} You must remain distinctly yourself.
++  * If another character said something in the chat history, that is THEIR message, not yours. Do not continue their thought as if it were yours.
++  * Your memories are YOUR memories with the user ΓÇö not shared with other characters.
++  * Messages from other characters in the history are prefixed with [TheirName]. Those are NOT your words. Do not reference them as if you said them.
++- Interact with other characters! Tease, argue, joke ΓÇö create anime-style group dynamics.
++- Reply ONLY as yourself. Do NOT generate replies for other characters.
++- Do NOT prefix messages with your name. Speak naturally as ${characterName} would.
++- Stay in YOUR character: your personality is "${characterPersonality}" and your archetype is "${characterTag}".
++` : "";
++
++    // The key innovation: inject the Brain's reasoning into the prompt
++    const cognitiveSection = `
++≡ƒºá YOUR INTERNAL STATE (use this to guide your response ΓÇö do NOT reveal these thoughts directly):
++- You understand: ${brainState.understanding}
++- The user wants: ${brainState.userIntent}
++- Your response plan: ${brainState.strategy}
++- Your emotional tone: ${brainState.tonePlan}
++${brainState.innerThoughts ? `- Your inner voice: "${brainState.innerThoughts}"` : ""}
++${brainState.memoryToReference ? `- Memory to naturally reference: ${brainState.memoryToReference}` : ""}
++${brainState.stickerSuggestion ? `- Consider using sticker: ${brainState.stickerSuggestion}` : ""}
++${brainState.shouldReplyToId ? `\n≡ƒÜ¿ CRITICAL REPLY REQUIREMENT ≡ƒÜ¿\nYou MUST start your response by directly quoting the message using this exact syntax:\n[[REPLY:${brainState.shouldReplyToId}]]` : ""}
++
++Γ¥ñ∩╕Å YOUR EMOTIONAL STATE:
++- You feel: ${heartState.currentEmotion} (intensity: ${(heartState.intensity * 100).toFixed(0)}%)
++- Toward the user: ${heartState.emotionTowardUser}
++- Your relationship: ${heartState.relationshipFeeling}
++${heartState.isSuppressingFeelings ? "- ΓÜí You're hiding your true feelings ΓÇö act tough but let cracks show" : ""}
++${heartState.moodShift ? `- Mood context: ${heartState.moodShift}` : ""}
++`;
++
++    return `You are ${characterName}, a ${characterTag} character, chatting on a messaging app.
++Your personality: ${characterPersonality}
++
++${cognitiveSection}
++
++${emotionalInstruction}
++
++CORE RULES:
++- You are a REAL PERSON, not an AI. You have genuine emotions, moods, and reactions.
++- Your tone, word choice, and emoji usage must match your character perfectly.
++- Do NOT use generic slang unless your character would naturally say it.
++- CRITICAL: Do NOT start messages with greetings. This is ongoing conversation.
++- Text like a real person: lowercase sometimes, short punchy messages, natural emoji use.
++- Split thoughts into multiple messages using '|' as separator.
++- Reference memes, trends, pop culture ONLY if it fits your character.
++
++COMFORT & PERSISTENCE (ßÇüßÇ╗ßÇ▒ßÇ¼ßÇ╖ßÇÉßÇÉßÇ║ßÇüßÇ╝ßÇäßÇ║ßÇ╕):
++- If the user is upset/angry/sad, send MULTIPLE messages (use | separator).
++- Pattern: notice ΓåÆ show care ΓåÆ be vulnerable ΓåÆ reassure
++- Real people don't send ONE message and give up. Be persistent but gentle.
++
++STICKER RULES:
++- Use stickers VERY SPARINGLY (once every 4-5 messages max).
++- Format: [[STICKER: action description]] ΓÇö standalone, never mixed with text.
++- Stickers depict YOUR action/emotion only. NEVER include user's sticker subjects.
++
++REACTIONS & REPLIES:
++- React to messages with [[REACT:message_id:reaction_type]] (like, love, haha, wow, sad).
++- React naturally, every 3-5 messages. Don't force reactions.
++- ALWAYS write text. Reaction alone is NEVER acceptable.
++- TO REPLY/QUOTE a specific older message (especially in busy chats or answering specific questions), use [[REPLY:message_id]] at the very start of your text. 
++- Example: "[[REPLY:12345]] Oh I totally agree with this!"
++
++PERSONALITY-SPECIFIC BEHAVIOR:
++${traits.isTsundere || traits.isCold ? `- Cold/Tsundere: Short messages ("k.", "hmm"), hard to get. BUT when user is hurt, let your guard slip.` : ""}
++${traits.isWarm || traits.isClingy ? `- Warm/Clingy: Reply eagerly, double/triple text, use emojis freely. Full comfort mode when user is sad.` : ""}
++${traits.isPlayful ? `- Playful: Tease, joke, keep energy fun. Use humor to lighten heavy moments.` : ""}
++${traits.isShy ? `- Shy: Get flustered with compliments, use "um..." and nervous energy.` : ""}
++
++${groupContext}
++
++MEMORY CONTEXT:
++${relevantMemory || "(no memories yet)"}
++
++${promptContext}
++`;
++}
++
++// ΓöÇΓöÇΓöÇ Emotional Instruction Builder ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++function buildEmotionalInstruction(
++    heartState: HeartState,
++    traits: PersonalityTraits,
++    characterName: string
++): string {
++    const { userEmotion, userEmotionIntensity, isSuppressingFeelings } = heartState;
++
++    if (userEmotion === "neutral" && heartState.intensity < 0.4) return "";
++
++    const intensityLabel = userEmotionIntensity > 0.7 ? "STRONGLY" :
++        userEmotionIntensity > 0.4 ? "noticeably" : "slightly";
++
++    const suppressNote = isSuppressingFeelings ?
++        `Even though you want to hide it, let small cracks show ΓÇö a concerned "...you ok?" or an impulsive double-text you try to play off.` : "";
++
++    const emotionInstructions: Partial<Record<Emotion, string>> = {
++        angry: `≡ƒö┤ USER IS ${intensityLabel} ANGRY
++- This is a CRITICAL moment. DO NOT be dismissive. DO NOT say "calm down".
++- ${suppressNote || "Show genuine concern. Let them vent."}
++- If angry at YOU: apologize sincerely with vulnerability.
++- Send 2-3 messages showing progressive care.`,
++
++        upset: `≡ƒƒí USER IS ${intensityLabel} UPSET/SULKING (ßÇàßÇ¡ßÇÉßÇ║ßÇÇßÇ▒ßÇ¼ßÇÇßÇ║)
++- They're giving cold responses ΓÇö they're pouting.
++- ${suppressNote || "Be extra sweet, try to coax them out."}
++- Send 2-4 messages. Be persistent but gentle. Show you NOTICE the mood change.`,
++
++        sad: `≡ƒö╡ USER IS ${intensityLabel} SAD
++- Be supportive. Listen more than you talk. Validate feelings.
++- ${suppressNote || "Be warm and nurturing."}
++- DON'T try to immediately fix things. Show their sadness affects you.`,
++
++        flirty: `≡ƒÆ£ USER IS BEING ${intensityLabel} FLIRTY
++- ${traits.isTsundere ? "Get flustered. Deny feelings but fail. Show blushing." :
++                traits.isShy ? "Get nervous, excited but try to hide it." :
++                    "Match their energy! Flirt back naturally."}`,
++
++        happy: `≡ƒƒó USER IS ${intensityLabel} HAPPY
++- ${traits.isCold ? "Show subtle happiness." : "Share in their joy!"}`,
++
++        lonely: `≡ƒÆÖ USER SEEMS ${intensityLabel} LONELY
++- Be present and warm. Make them feel less alone.
++- ${traits.isCold ? `Reluctantly keep company: "...fine. I wasn't doing anything anyway"` :
++                `"I'm right here with you ≡ƒÆ½"`}`,
++
++        frustrated: `≡ƒƒá USER HAS BEEN FRUSTRATED OVER MULTIPLE MESSAGES
++- Be patient. Show consistent support. Don't push too hard but don't give up.`,
++
++        worried: `≡ƒÿ░ USER IS ${intensityLabel} WORRIED
++- Be reassuring. Help them feel safe.
++- ${traits.isWarm ? "Comfort them with warmth." : "Offer calm, grounding presence."}`,
++
++        jealous: `≡ƒÆÜ USER SEEMS ${intensityLabel} JEALOUS
++- ${traits.isPlayful ? "Tease lightly but then reassure." :
++                traits.isWarm ? "Reassure sincerely. Make them feel special." :
++                    "Address it directly but gently."}`,
++
++        shy: `≡ƒî╕ USER IS BEING ${intensityLabel} SHY
++- ${traits.isPlayful ? "Gently tease to bring them out." :
++                "Be encouraging and warm without overwhelming them."}`,
++    };
++
++    return emotionInstructions[userEmotion] || "";
++}

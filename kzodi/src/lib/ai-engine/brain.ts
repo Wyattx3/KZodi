@@ -567,7 +567,7 @@ do not hardcode rules, let the character's personality guide it.\n`;
         ? `You are the NARRATOR / STORYTELLER guiding the player through an immersive text-based RPG story.`
         : `You are ${characterName}, a ${characterTag} character, chatting on a messaging app.\nYour personality: ${characterPersonality}`;
 
-    const exampleDialogueBlock = characterExampleDialogue ? `\nYOUR SPEECH STYLE (follow this exactly, this is how you talk):\n${characterExampleDialogue}` : "";
+    const exampleDialogueBlock = (!isGroupChat && characterExampleDialogue) ? `\nYOUR SPEECH STYLE (follow this exactly, this is how you talk):\n${characterExampleDialogue}` : "";
     const scenarioBlock = characterScenario ? `\nSCENARIO: ${characterScenario}` : "";
     const greetingBlock = characterGreeting ? `\nCHARACTER GREETING/OPENER (Use this to anchor your tone and style for early turns, but do not repeat it on later turns):\n${characterGreeting}` : "";
 
